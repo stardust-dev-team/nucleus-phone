@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "node server/index.js",
     "start": "node server/index.js",
-    "postinstall": "cd client && npm install",
-    "build": "cd client && npx vite build"
+    "build": "echo 'Client pre-built'"
   },
   "dependencies": {
     "cors": "^2.8.5",
