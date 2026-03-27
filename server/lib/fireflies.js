@@ -49,7 +49,10 @@ async function uploadToFireflies(recordingUrl, metadata) {
         query: FIREFLIES_UPLOAD_MUTATION,
         variables: {
           input: {
-            url: `${recordingUrl}.mp3`,
+            url: recordingUrl.replace(
+              'https://api.twilio.com',
+              `https://${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}@api.twilio.com`
+            ) + '.mp3',
             title,
             attendees,
           },
