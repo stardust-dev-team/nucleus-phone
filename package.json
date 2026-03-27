@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node server/index.js",
     "start": "node server/index.js",
-    "build": "echo 'Client pre-built'"
+    "build": "echo 'Client pre-built'",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@azure/msal-node": "^5.1.1",
@@ -21,5 +23,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }
