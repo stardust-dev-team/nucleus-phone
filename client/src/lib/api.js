@@ -6,6 +6,7 @@ async function apiFetch(path, options = {}) {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'fetch',
       ...options.headers,
     },
   });

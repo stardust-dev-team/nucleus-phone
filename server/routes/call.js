@@ -105,6 +105,11 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
     }
   }
   console.error(`[poll-fallback] Gave up dialing lead for ${conferenceName}`);
+  removeConference(conferenceName);
+  pool.query(
+    "UPDATE nucleus_phone_calls SET status = 'failed' WHERE id = $1 AND status != 'completed'",
+    [dbRowId]
+  ).catch((err) => console.error('Failed to mark call as failed:', err.message));
 }
 
 // POST /api/call/join — admin joins an active conference

@@ -5,6 +5,13 @@ function sessionAuth(req, res, next) {
   const token = req.cookies?.nucleus_session;
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
+  // State-changing requests via session cookie must include a custom header.
+  // HTML forms cannot set custom headers, so this blocks CSRF from same-site
+  // origins (sameSite:lax already blocks cross-site).
+  if (req.method !== 'GET' && !req.headers['x-requested-with']) {
+    return res.status(403).json({ error: 'Missing X-Requested-With header' });
+  }
+
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     req.user = { identity: payload.identity, role: payload.role, email: payload.email };
