@@ -66,7 +66,7 @@ export default function InteractionTimeline({ interactionHistory, priorCalls }) 
 
             return (
               <div
-                key={i}
+                key={`${e.date}-${e.agent}-${i}`}
                 className="flex items-center gap-2.5 py-2"
                 style={{ borderBottom: i < entries.length - 1 ? '1px solid var(--cockpit-card-border)' : 'none' }}
               >

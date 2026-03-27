@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 
 const DEFAULT_ITEMS = [
   'Verify role & decision authority',
@@ -23,11 +23,16 @@ function parseScript(adaptedScript) {
 
 export default function QualScript({ adaptedScript }) {
   const items = useMemo(() => parseScript(adaptedScript), [adaptedScript]);
+  const prevItemsRef = useRef(items);
   const [checks, setChecks] = useState(() => items.reduce((a, _, i) => ({ ...a, [i]: false }), {}));
 
-  // Reset checks when script items change (e.g. intel refresh)
+  // Reset checks only when script content actually changes (not just reference identity)
   useEffect(() => {
-    setChecks(items.reduce((a, _, i) => ({ ...a, [i]: false }), {}));
+    const prev = prevItemsRef.current;
+    if (prev.length !== items.length || prev.some((v, i) => v !== items[i])) {
+      setChecks(items.reduce((a, _, i) => ({ ...a, [i]: false }), {}));
+      prevItemsRef.current = items;
+    }
   }, [items]);
 
   const done = Object.values(checks).filter(Boolean).length;

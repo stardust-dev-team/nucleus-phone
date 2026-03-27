@@ -141,12 +141,11 @@ describe('GET /api/cockpit/:identifier', () => {
   });
 
   test('returns fallback data when all downstream sources fail', async () => {
-    // lookupCustomer fails
-    lookupCustomer.mockRejectedValue(new Error('UCIL down'));
-    // DB queries fail
-    pool.query.mockRejectedValue(new Error('connection lost'));
-    // HubSpot company fails
-    getCompany.mockRejectedValue(new Error('HubSpot 500'));
+    lookupCustomer.mockRejectedValueOnce(new Error('UCIL down'));
+    // Persistent mock (not *Once) — route handler calls pool.query N times;
+    // beforeEach resets via clearAllMocks + mockResolvedValue on next test.
+    pool.query.mockImplementation(() => Promise.reject(new Error('connection lost')));
+    getCompany.mockRejectedValueOnce(new Error('HubSpot 500'));
 
     const res = await request(app)
       .get('/api/cockpit/+16025551234')

@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { formatTime } from '../lib/format';
-import RapportCard from '../components/cockpit/RapportCard';
-import IntelPanel from '../components/cockpit/IntelPanel';
-import TimelinePanel from '../components/cockpit/TimelinePanel';
-import CompanyPanel from '../components/cockpit/CompanyPanel';
-import ProductPanel from '../components/cockpit/ProductPanel';
+import ContactIdentity from '../components/cockpit/ContactIdentity';
+import RapportOpener from '../components/cockpit/RapportOpener';
+import RapportTags from '../components/cockpit/RapportTags';
+import IntelNuggets from '../components/cockpit/IntelNuggets';
+import InteractionTimeline from '../components/cockpit/InteractionTimeline';
+import QualScript from '../components/cockpit/QualScript';
+import CompanyIntel from '../components/cockpit/CompanyIntel';
+import ProductReference from '../components/cockpit/ProductReference';
 
 const STATUS_TEXT = {
   connecting: 'Connecting...',
@@ -96,22 +99,37 @@ export default function Dialer({ identity, twilioHook, callState }) {
       {/* Scrollable content — cockpit panels or basic view */}
       <div className="flex-1 overflow-y-auto scroll-container px-4 py-4 space-y-4 pb-28">
         {cockpitData ? (
-          <>
-            <RapportCard identity={cockpitData.identity} rapport={cockpitData.rapport} />
-            <IntelPanel rapport={cockpitData.rapport} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <TimelinePanel
-                interactionHistory={cockpitData.interactionHistory}
-                priorCalls={cockpitData.priorCalls}
-              />
-              <CompanyPanel
-                companyData={cockpitData.companyData}
-                icpScore={cockpitData.icpScore}
-                pipelineData={cockpitData.pipelineData}
-              />
+          <div
+            data-theme="dark" /* Hardcoded: Dialer chrome uses jv-* dark, so panels must match */
+            className="bg-cp-bg text-cp-text rounded-lg"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6 px-4 py-4">
+              {/* Left column — Rapport */}
+              <div>
+                <ContactIdentity identity={cockpitData.identity} />
+                <RapportOpener openingLine={cockpitData.rapport?.opening_line} />
+                <RapportTags tags={cockpitData.rapport?.rapport_starters} />
+                <IntelNuggets
+                  nuggets={cockpitData.rapport?.intel_nuggets}
+                  watchOuts={cockpitData.rapport?.watch_outs}
+                />
+                <InteractionTimeline
+                  interactionHistory={cockpitData.interactionHistory}
+                  priorCalls={cockpitData.priorCalls}
+                />
+              </div>
+              {/* Right column — Business */}
+              <div>
+                <QualScript adaptedScript={cockpitData.rapport?.adapted_script} />
+                <CompanyIntel
+                  companyData={cockpitData.companyData}
+                  icpScore={cockpitData.icpScore}
+                  pipelineData={cockpitData.pipelineData}
+                />
+                <ProductReference productReference={cockpitData.rapport?.product_reference} />
+              </div>
             </div>
-            <ProductPanel rapport={cockpitData.rapport} />
-          </>
+          </div>
         ) : (
           /* Fallback: basic call screen for quick-dial / shadow joins */
           <div className="flex flex-col items-center justify-center py-16">

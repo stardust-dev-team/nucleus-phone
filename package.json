@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node server/index.js",
     "start": "node server/index.js",
-    "build": "echo 'Client pre-built'",
+    "build": "cd client && npm install && npx vite build",
     "test": "jest",
     "test:watch": "jest --watch"
   },

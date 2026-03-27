@@ -1,3 +1,8 @@
+// Flush microtask queue so fire-and-forget .then()/.catch() chains settle.
+// Works because history.js chains have no intermediate awaits. If that changes,
+// increase the flush count here — single point of fix.
+const flushFireAndForget = () => new Promise((r) => setImmediate(r));
+
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('../../lib/slack', () => ({
   sendSlackAlert: jest.fn().mockResolvedValue(true),
@@ -257,10 +262,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'qualified', qualification: 'hot', notes: 'ready to buy' })
       .expect(200);
 
-    // Flush fire-and-forget promises. This works because the async chains
-    // in history.js use .then()/.catch() without intermediate awaits. If someone
-    // adds an await inside those chains, this single flush won't be enough.
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(formatCallAlert).toHaveBeenCalledWith(
       expect.objectContaining({ qualification: 'hot' })
@@ -279,7 +281,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'callback_requested', qualification: 'warm' })
       .expect(200);
 
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(sendSlackAlert).toHaveBeenCalled();
   });
@@ -294,7 +296,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'not_interested', qualification: 'cold' })
       .expect(200);
 
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
@@ -311,7 +313,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'connected', notes: 'good chat' })
       .expect(200);
 
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(addNoteToContact).toHaveBeenCalledWith(
       '101',
@@ -329,7 +331,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'voicemail' })
       .expect(200);
 
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(addNoteToContact).not.toHaveBeenCalled();
   });
@@ -344,7 +346,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'connected' })
       .expect(200);
 
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(syncInteraction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -366,7 +368,7 @@ describe('POST /api/history/:id/disposition', () => {
       .send({ disposition: 'qualified', qualification: 'hot' })
       .expect(200);
 
-    await new Promise((r) => setImmediate(r));
+    await flushFireAndForget();
 
     expect(syncInteraction).toHaveBeenCalledWith(
       expect.objectContaining({
