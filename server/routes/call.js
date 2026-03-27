@@ -205,16 +205,17 @@ router.post('/status', webhookLogger, twilioWebhook, async (req, res) => {
 
   const conf = getConference(FriendlyName);
 
-  // On conference-start: save SID and dial the lead into the conference.
-  // This replaces the old sleep-and-poll pattern in voice.js.
-  if (StatusCallbackEvent === 'conference-start' && conf) {
-    updateConference(FriendlyName, { conferenceSid: ConferenceSid });
-
-    // Persist conference_sid to DB immediately so recording callbacks can find the row
-    pool.query(
-      'UPDATE nucleus_phone_calls SET conference_sid = $1 WHERE conference_name = $2',
-      [ConferenceSid, FriendlyName]
-    ).catch((err) => console.error('Failed to persist conference_sid:', err.message));
+  // On conference-start or first participant-join: save SID and dial the lead.
+  // participant-join typically arrives ~800ms before conference-start, so we
+  // trigger on whichever lands first. claimLeadDial() prevents double-dialing.
+  if ((StatusCallbackEvent === 'conference-start' || StatusCallbackEvent === 'participant-join') && conf && ConferenceSid) {
+    if (!conf.conferenceSid) {
+      updateConference(FriendlyName, { conferenceSid: ConferenceSid });
+      pool.query(
+        'UPDATE nucleus_phone_calls SET conference_sid = $1 WHERE conference_name = $2',
+        [ConferenceSid, FriendlyName]
+      ).catch((err) => console.error('Failed to persist conference_sid:', err.message));
+    }
 
     if (conf.leadPhone && claimLeadDial(FriendlyName)) {
       try {
@@ -225,7 +226,7 @@ router.post('/status', webhookLogger, twilioWebhook, async (req, res) => {
           beep: false,
           endConferenceOnExit: true,
         });
-        console.log(`[callback] Dialed ${conf.leadPhone} into conference ${FriendlyName}`);
+        console.log(`[callback] Dialed ${conf.leadPhone} via ${StatusCallbackEvent} for ${FriendlyName}`);
       } catch (err) {
         console.error('Failed to dial lead into conference:', err.message);
       }
