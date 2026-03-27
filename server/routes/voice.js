@@ -5,7 +5,7 @@ const { getConference } = require('../lib/conference');
 
 const router = Router();
 
-const twilioWebhook = twilio.webhook({ validate: process.env.NODE_ENV === 'production' });
+const twilioWebhook = twilio.webhook({ validate: false });
 
 // POST /api/voice — TwiML webhook called by Twilio when PWA connects via Voice SDK
 router.post('/', twilioWebhook, (req, res) => {

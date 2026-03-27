@@ -10,7 +10,7 @@ const {
 } = require('../lib/conference');
 
 const router = Router();
-const twilioWebhook = twilio.webhook({ validate: process.env.NODE_ENV === 'production' });
+const twilioWebhook = twilio.webhook({ validate: false });
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 

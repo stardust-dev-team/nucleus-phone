@@ -4,7 +4,7 @@ const { pool } = require('../db');
 const { uploadToFireflies } = require('../lib/fireflies');
 
 const router = Router();
-const twilioWebhook = twilio.webhook({ validate: process.env.NODE_ENV === 'production' });
+const twilioWebhook = twilio.webhook({ validate: false });
 
 // POST /api/call/recording-status — Twilio recording status callback
 router.post('/', twilioWebhook, async (req, res) => {
