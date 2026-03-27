@@ -16,13 +16,18 @@ export default function Dialer({ identity, twilioHook, callState }) {
   const [showKeypad, setShowKeypad] = useState(false);
   const barHeights = useMemo(() => [0, 1, 2, 3, 4].map(() => 12 + Math.random() * 20), []);
 
-  // Navigate to Call Complete when disconnected
+  // Navigate when disconnected: shadow joins skip disposition, go home
   useEffect(() => {
     if (status === 'disconnected' && callData) {
-      const timer = setTimeout(() => navigate('/complete'), 500);
-      return () => clearTimeout(timer);
+      if (callData.joined) {
+        clearCallData();
+        navigate('/');
+      } else {
+        const timer = setTimeout(() => navigate('/complete'), 500);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [status, callData, navigate]);
+  }, [status, callData, clearCallData, navigate]);
 
   // No call data — redirect
   useEffect(() => {
