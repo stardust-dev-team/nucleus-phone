@@ -15,12 +15,11 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
   const { identifier } = req.params;
   const refresh = req.query.refresh === 'true';
 
-  // Test caller — return rich mock data, no API calls
-  if (identifier === 'test-call') {
-    return res.json(TEST_COCKPIT_DATA);
-  }
-
   try {
+    // Test caller — return rich mock data, no API calls
+    if (identifier === 'test-call') {
+      return res.json(TEST_COCKPIT_DATA);
+    }
     // Step 1: Identity resolution
     const identity = await resolve(identifier);
 

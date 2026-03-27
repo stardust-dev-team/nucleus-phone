@@ -42,7 +42,7 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
     };
     try {
       await callState.startCall(contact, identity);
-      navigate('/dialer');
+      navigate('/dialer', { state: { cockpitData: data } });
     } catch (err) {
       alert('Call failed: ' + err.message);
     }
