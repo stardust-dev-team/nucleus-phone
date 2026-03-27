@@ -277,7 +277,7 @@ async function checkCreditBudget(service, dailyLimit = 10) {
   const meta = rows[0]?.metadata || {};
   const used = parseInt(meta.credits_used, 10) || 0;
 
-  if (used > dailyLimit) {
+  if (used >= dailyLimit) {
     console.log(`Credit budget exhausted for ${service}: ${used}/${dailyLimit}`);
     return false;
   }

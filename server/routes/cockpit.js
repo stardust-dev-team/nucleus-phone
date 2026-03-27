@@ -6,7 +6,6 @@ const { lookupCustomer } = require('../lib/customer-lookup');
 const { getCompany } = require('../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../lib/claude');
 const { normalizePhone } = require('../lib/phone');
-const { normalizeCompanyName } = require('../lib/company-normalizer');
 
 const router = Router();
 
@@ -45,26 +44,26 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
           ).then(r => r.rows).catch(() => [])
         : Promise.resolve([]),
 
-      // 2: Discovery pipeline data (use company_name_norm index)
+      // 2: Discovery pipeline data (case-insensitive exact match)
       identity.company
         ? pool.query(
             `SELECT domain, company_name, segment, status, discovery_source,
                     created_at, enriched_at
              FROM v35_discovery_queue
-             WHERE company_name_norm = $1
+             WHERE LOWER(company_name) = LOWER($1)
              ORDER BY created_at DESC LIMIT 5`,
-            [normalizeCompanyName(identity.company)]
+            [identity.company]
           ).then(r => r.rows).catch(() => [])
         : Promise.resolve([]),
 
-      // 3: ICP score from lead reservoir (use company_name_norm index)
+      // 3: ICP score from lead reservoir (case-insensitive exact match)
       identity.company
         ? pool.query(
             `SELECT domain, fit_score, fit_reason, persona, segment
              FROM v35_lead_reservoir
-             WHERE company_name_norm = $1
+             WHERE LOWER(company_name) = LOWER($1)
              LIMIT 1`,
-            [normalizeCompanyName(identity.company)]
+            [identity.company]
           ).then(r => r.rows[0] || null).catch(() => null)
         : Promise.resolve(null),
 

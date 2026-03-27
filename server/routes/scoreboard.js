@@ -147,13 +147,13 @@ async function checkMilestones() {
     newMilestones.push(key);
   }
 
-  // Persist newly sent milestones
+  // Persist newly sent milestones (cap at 200 most recent to prevent unbounded growth)
   if (newMilestones.length) {
-    const allKeys = [...sent, ...newMilestones];
+    const allKeys = [...sent, ...newMilestones].slice(-200);
     await pool.query(`
       INSERT INTO ucil_sync_state (sync_key, last_sync_at, metadata)
-      VALUES ('milestones_sent', NOW(), $1)
-      ON CONFLICT (sync_key) DO UPDATE SET metadata = $1, updated_at = NOW()
+      VALUES ('milestones_sent', NOW(), $1::jsonb)
+      ON CONFLICT (sync_key) DO UPDATE SET metadata = $1::jsonb, updated_at = NOW()
     `, [JSON.stringify({ keys: allKeys })]);
   }
 }
