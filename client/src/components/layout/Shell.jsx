@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 
 const STATUS_COLORS = {
   initializing: 'bg-jv-amber',
@@ -8,7 +8,7 @@ const STATUS_COLORS = {
   error: 'bg-jv-red',
 };
 
-export default function Shell({ identity, role, onLogout, deviceStatus, children }) {
+export default function Shell({ identity, role, onLogout, deviceStatus }) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -47,7 +47,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, children
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto scroll-container">
-        {children}
+        <Outlet />
       </main>
 
       {/* Bottom nav */}

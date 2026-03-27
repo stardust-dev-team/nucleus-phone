@@ -53,8 +53,21 @@ export default function App() {
   }
 
   return (
-    <Shell identity={identity} role={role} onLogout={handleLogout} deviceStatus={twilioHook.status}>
-      <Routes>
+    <Routes>
+      {/* Cockpit renders WITHOUT Shell */}
+      <Route
+        path="/cockpit/:id"
+        element={
+          <Cockpit
+            identity={identity}
+            callState={callState}
+            twilioStatus={twilioHook.status}
+          />
+        }
+      />
+
+      {/* Everything else renders inside Shell layout route */}
+      <Route element={<Shell identity={identity} role={role} onLogout={handleLogout} deviceStatus={twilioHook.status} />}>
         <Route
           path="/"
           element={
@@ -96,20 +109,10 @@ export default function App() {
             }
           />
         )}
-        <Route
-          path="/cockpit/:id"
-          element={
-            <Cockpit
-              identity={identity}
-              callState={callState}
-              twilioStatus={twilioHook.status}
-            />
-          }
-        />
         <Route path="/history" element={<History identity={identity} role={role} />} />
         <Route path="/scoreboard" element={<Scoreboard />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Shell>
+      </Route>
+    </Routes>
   );
 }

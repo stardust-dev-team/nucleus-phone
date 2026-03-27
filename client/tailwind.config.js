@@ -13,6 +13,12 @@ export default {
         'jv-amber': '#F59E0B',
         'jv-border': 'rgba(255,255,255,0.1)',
         'jv-muted': 'rgba(255,255,255,0.6)',
+        'cp-bg': 'var(--cockpit-bg)',
+        'cp-card': 'var(--cockpit-card)',
+        'cp-text': 'var(--cockpit-text)',
+        'cp-text-secondary': 'var(--cockpit-text-secondary)',
+        'cp-text-muted': 'var(--cockpit-text-muted)',
+        'cp-border': 'var(--cockpit-card-border)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
