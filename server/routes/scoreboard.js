@@ -100,13 +100,14 @@ router.post('/aggregate', apiKeyAuth, async (req, res) => {
 });
 
 async function checkMilestones() {
-  // Load already-sent milestones
-  const { rows: sentRows } = await pool.query(
-    `SELECT metadata FROM ucil_sync_state WHERE sync_key = 'milestones_sent'`
-  );
-  const sent = new Set(sentRows[0]?.metadata?.keys || []);
+  // Ensure tracking row exists
+  await pool.query(`
+    INSERT INTO ucil_sync_state (sync_key, last_sync_at, metadata)
+    VALUES ('milestones_sent', NOW(), '{"keys":[]}')
+    ON CONFLICT (sync_key) DO NOTHING
+  `);
 
-  const newMilestones = [];
+  const candidates = [];
 
   // First qualified lead ever
   const { rows: firstQual } = await pool.query(`
@@ -115,13 +116,12 @@ async function checkMilestones() {
     GROUP BY agent_name
     HAVING SUM(leads_qualified) = 1
   `);
-
   for (const row of firstQual) {
-    const key = `first_qual_${row.agent_name}`;
-    if (sent.has(key)) continue;
-    const name = nameMap[row.agent_name] || row.agent_name;
-    await sendSlackAlert(formatMilestoneAlert(name, 'First qualified lead! 🎯'));
-    newMilestones.push(key);
+    candidates.push({
+      key: `first_qual_${row.agent_name}`,
+      agent: row.agent_name,
+      msg: 'First qualified lead! 🎯',
+    });
   }
 
   // 3+ day streak (consecutive days with calls) — only alert for current active streaks
@@ -138,24 +138,70 @@ async function checkMilestones() {
     HAVING COUNT(*) >= 3
     ORDER BY streak_days DESC
   `);
-
   for (const row of streaks) {
-    const key = `streak_${row.agent_name}_${row.streak_end}_${row.streak_days}`;
-    if (sent.has(key)) continue;
-    const name = nameMap[row.agent_name] || row.agent_name;
-    await sendSlackAlert(formatMilestoneAlert(name, `${row.streak_days}-day calling streak! 🔥`));
-    newMilestones.push(key);
+    candidates.push({
+      key: `streak_${row.agent_name}_${row.streak_end}_${row.streak_days}`,
+      agent: row.agent_name,
+      msg: `${row.streak_days}-day calling streak! 🔥`,
+    });
   }
 
-  // Persist newly sent milestones (cap at 200 most recent to prevent unbounded growth)
-  if (newMilestones.length) {
-    const allKeys = [...sent, ...newMilestones].slice(-200);
-    await pool.query(`
-      INSERT INTO ucil_sync_state (sync_key, last_sync_at, metadata)
-      VALUES ('milestones_sent', NOW(), $1::jsonb)
-      ON CONFLICT (sync_key) DO UPDATE SET metadata = $1::jsonb, updated_at = NOW()
-    `, [JSON.stringify({ keys: allKeys })]);
+  // Claim-then-notify: atomic DB write per milestone prevents race-condition duplicates
+  let claimed = 0;
+  for (const { key, agent, msg } of candidates) {
+    const won = await claimMilestone(key);
+    if (!won) continue;
+    claimed++;
+    const name = nameMap[agent] || agent;
+    try {
+      await sendSlackAlert(formatMilestoneAlert(name, msg));
+    } catch (err) {
+      console.error(`Milestone Slack alert failed for ${key}:`, err.message);
+    }
   }
+
+  // Cap stored keys at 200 to prevent unbounded JSONB growth
+  if (claimed) {
+    await pruneMilestoneKeys(200).catch(err =>
+      console.error('Milestone key pruning failed:', err.message)
+    );
+  }
+}
+
+/**
+ * Atomically claim a milestone key. Returns true if newly claimed (key was not
+ * already present). PostgreSQL row-level locking prevents TOCTOU races — if two
+ * callers race on the same key, only one UPDATE will match the WHERE clause.
+ */
+async function claimMilestone(key) {
+  // $1 is a JSONB scalar string (e.g. '"first_qual_eryn"'). PG's || appends
+  // scalars to arrays, and @> checks scalar containment — both work correctly.
+  const { rowCount } = await pool.query(`
+    UPDATE ucil_sync_state
+    SET metadata = jsonb_set(metadata, '{keys}', metadata->'keys' || $1::jsonb),
+        updated_at = NOW()
+    WHERE sync_key = 'milestones_sent'
+      AND NOT metadata->'keys' @> $1::jsonb
+  `, [JSON.stringify(key)]);
+  return rowCount > 0;
+}
+
+/**
+ * Prune milestone keys to the most recent `cap` entries.
+ * Newer keys are appended last, so we keep the tail of the array.
+ */
+async function pruneMilestoneKeys(cap) {
+  // metadata in the subquery refers to the single matched row (WHERE filters to one)
+  await pool.query(`
+    UPDATE ucil_sync_state
+    SET metadata = jsonb_build_object('keys', (
+      SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+      FROM (SELECT elem FROM jsonb_array_elements(metadata->'keys') AS elem
+            OFFSET GREATEST(jsonb_array_length(metadata->'keys') - $1, 0)) sub
+    )), updated_at = NOW()
+    WHERE sync_key = 'milestones_sent'
+      AND jsonb_array_length(metadata->'keys') > $1
+  `, [cap]);
 }
 
 function formatMilestoneAlert(agentName, milestone) {
