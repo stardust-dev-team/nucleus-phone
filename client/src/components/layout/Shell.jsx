@@ -16,6 +16,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, children
     { path: '/', label: 'Contacts', icon: '👤' },
     ...(role === 'admin' ? [{ path: '/active', label: 'Live', icon: '📡' }] : []),
     { path: '/history', label: 'History', icon: '📋' },
+    { path: '/scoreboard', label: 'Score', icon: '🏆' },
   ];
 
   return (

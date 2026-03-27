@@ -95,3 +95,7 @@ export function getCockpit(identifier, signal) {
 export function refreshCockpit(identifier, signal) {
   return apiFetch(`/cockpit/${encodeURIComponent(identifier)}?refresh=true`, { signal });
 }
+
+export function getScoreboard(signal) {
+  return apiFetch('/scoreboard', { signal });
+}
