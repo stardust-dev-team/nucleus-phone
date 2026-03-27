@@ -10,27 +10,25 @@ export default function useCallState(twilioHook) {
 
   const startTimeRef = useRef(null);
 
-  // Timer for call duration — start on connected, stop on disconnect
+  // Timer for call duration — start on connected, stop otherwise
   useEffect(() => {
     if (status === 'connected') {
       if (!startTimeRef.current) startTimeRef.current = Date.now();
       timerRef.current = setInterval(() => {
         setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 1000);
-
-      return () => {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      };
     }
 
     if (status === 'disconnected' || status === 'ready') {
       startTimeRef.current = null;
+    }
+
+    return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-    }
+    };
   }, [status]);
 
   const startCall = useCallback(async (contact, identity) => {

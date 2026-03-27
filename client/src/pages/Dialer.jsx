@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatTime } from '../lib/format';
 
@@ -14,6 +14,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
   const { status, muted, toggleMute, sendDigits, call } = twilioHook;
   const { callData, elapsed, endCurrentCall } = callState;
   const [showKeypad, setShowKeypad] = useState(false);
+  const barHeights = useMemo(() => [0, 1, 2, 3, 4].map(() => 12 + Math.random() * 20), []);
 
   // Navigate to Call Complete when disconnected
   useEffect(() => {
@@ -73,12 +74,12 @@ export default function Dialer({ identity, twilioHook, callState }) {
         {/* Pulsing indicator */}
         {status === 'connected' && (
           <div className="flex justify-center gap-1 mt-4">
-            {[0, 1, 2, 3, 4].map((i) => (
+            {barHeights.map((h, i) => (
               <div
                 key={i}
                 className="w-1 bg-jv-green rounded-full animate-pulse"
                 style={{
-                  height: `${12 + Math.random() * 20}px`,
+                  height: `${h}px`,
                   animationDelay: `${i * 0.15}s`,
                 }}
               />

@@ -63,8 +63,13 @@ router.get('/', apiKeyAuth, async (req, res) => {
 
 // GET /api/contacts/:id — single contact detail
 router.get('/:id', apiKeyAuth, async (req, res) => {
+  const id = req.params.id;
+  if (!/^\d+$/.test(id)) {
+    return res.status(400).json({ error: 'id must be numeric' });
+  }
+
   try {
-    const contact = await getContact(req.params.id);
+    const contact = await getContact(id);
 
     // Get full call history for this contact
     const calls = await pool.query(
@@ -73,7 +78,7 @@ router.get('/:id', apiKeyAuth, async (req, res) => {
        FROM nucleus_phone_calls
        WHERE hubspot_contact_id = $1 OR lead_phone = $2
        ORDER BY created_at DESC LIMIT 20`,
-      [req.params.id, contact.properties.phone || '']
+      [id, contact.properties.phone || '']
     );
 
     contact.callHistory = calls.rows;

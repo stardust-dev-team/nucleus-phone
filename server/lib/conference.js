@@ -39,6 +39,18 @@ function listActiveConferences() {
   return result;
 }
 
+// Sweep stale conferences every 10 minutes (e.g. if conference-end webhook never fires)
+const STALE_MS = 4 * 60 * 60 * 1000; // 4 hours
+setInterval(() => {
+  const now = Date.now();
+  for (const [name, conf] of activeConferences) {
+    if (now - conf.startedAt.getTime() > STALE_MS) {
+      console.warn(`Removing stale conference: ${name} (started ${conf.startedAt.toISOString()})`);
+      activeConferences.delete(name);
+    }
+  }
+}, 10 * 60 * 1000);
+
 module.exports = {
   createConference,
   getConference,
