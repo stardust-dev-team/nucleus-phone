@@ -11,8 +11,11 @@ import useTwilioDevice from './hooks/useTwilioDevice';
 import useCallState from './hooks/useCallState';
 
 const ROLES = {
-  ryann: 'caller',
   tom: 'admin',
+  paul: 'caller',
+  kate: 'caller',
+  britt: 'caller',
+  ryann: 'caller',
   alex: 'caller',
 };
 

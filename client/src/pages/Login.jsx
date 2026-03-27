@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const IDENTITIES = ['ryann', 'tom', 'alex'];
+const IDENTITIES = ['tom', 'paul', 'kate', 'britt', 'ryann', 'alex'];
 
 export default function Login({ onLogin }) {
   const [identity, setIdentity] = useState('');
@@ -28,13 +28,13 @@ export default function Login({ onLogin }) {
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
         <div>
           <label className="block text-sm text-jv-muted mb-2">Who are you?</label>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {IDENTITIES.map((name) => (
               <button
                 key={name}
                 type="button"
                 onClick={() => setIdentity(name)}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium capitalize transition-colors ${
+                className={`py-2.5 rounded-lg text-sm font-medium capitalize transition-colors ${
                   identity === name
                     ? 'bg-jv-blue text-white'
                     : 'bg-jv-card border border-jv-border text-jv-muted hover:text-white'
