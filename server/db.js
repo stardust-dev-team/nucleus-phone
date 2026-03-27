@@ -69,9 +69,6 @@ async function initSchema() {
         PRIMARY KEY (agent_name, stat_date)
       );
 
-      CREATE INDEX IF NOT EXISTS idx_uas_agent_date
-        ON ucil_agent_stats(agent_name, stat_date DESC);
-
       CREATE TABLE IF NOT EXISTS ucil_sync_state (
         sync_key VARCHAR(100) PRIMARY KEY,
         last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -79,6 +76,17 @@ async function initSchema() {
         metadata JSONB DEFAULT '{}',
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      -- updated_at trigger for ucil_sync_state
+      CREATE OR REPLACE FUNCTION update_ucil_sync_state_ts()
+      RETURNS TRIGGER AS $$
+      BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_ucil_sync_state_ts ON ucil_sync_state;
+      CREATE TRIGGER trg_ucil_sync_state_ts
+        BEFORE UPDATE ON ucil_sync_state
+        FOR EACH ROW EXECUTE FUNCTION update_ucil_sync_state_ts();
     `);
     console.log('cockpit tables ready');
   } finally {

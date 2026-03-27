@@ -83,11 +83,14 @@ async function resolve(identifier) {
  * Classify identifier as phone, email, or HubSpot contact ID.
  */
 function classifyIdentifier(id) {
-  if (/^\d+$/.test(id) && id.length > 10) return 'hubspot_id';
   if (id.includes('@')) return 'email';
-  // Anything with digits and optional +/()-/spaces is a phone
-  if (/[\d+()-]/.test(id)) return 'phone';
-  return 'hubspot_id'; // fallback: treat as HubSpot ID
+  // Pure digits with no formatting → HubSpot contact ID (they're numeric strings like "357584127732")
+  // Phone numbers from the dialer always have formatting: +1, parens, dashes, or spaces
+  if (/^\d+$/.test(id)) return 'hubspot_id';
+  // Has phone formatting characters (+, parens, dashes, dots, spaces) with 7+ digits
+  const digits = id.replace(/\D/g, '');
+  if (/^[+\d().\s-]+$/.test(id) && digits.length >= 7) return 'phone';
+  return 'hubspot_id';
 }
 
 /**
