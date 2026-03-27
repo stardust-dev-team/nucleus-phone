@@ -7,7 +7,7 @@ Nucleus Phone is Joruva's outbound sales dialer. It runs in your browser — no 
 - **Chrome or Edge** (desktop or laptop — Safari has audio issues)
 - **A headset** (strongly recommended — laptop speakers cause echo)
 - **Microphone permission** (browser will ask on first use)
-- Your login credentials (Tom will provide these)
+- A **@joruva.com** Microsoft account (Tom will add you to the system)
 
 ## Getting Started
 
@@ -17,9 +17,9 @@ Go to **https://nucleus-phone.onrender.com**
 
 ### 2. Log In
 
-- Click your name on the login screen
-- Paste the API key Tom gave you
-- Click **Connect**
+- Click **Sign in with Microsoft**
+- Sign in with your @joruva.com Microsoft account
+- You'll be redirected back to the app automatically
 
 ### 3. Wait for "Ready"
 
@@ -31,7 +31,7 @@ The top bar shows your connection status:
 | **Ready** (green) | You're good to go — you can make calls |
 | **Error** (red) | Something went wrong — try refreshing the page |
 
-If it stays on "Initializing" for more than 10 seconds, refresh the page. If "Error" persists, check that your API key is correct (log out and back in).
+If it stays on "Initializing" for more than 10 seconds, refresh the page. If "Error" persists, try logging out and back in.
 
 ## Making a Call
 
@@ -104,7 +104,7 @@ You don't need to worry about any of this — it just works:
 **"Error" status after login**
 - Refresh the page
 - Make sure you're using Chrome or Edge (not Safari)
-- Check that your API key is correct — log out and log back in
+- Try logging out and back in
 
 **Can't hear anything / they can't hear me**
 - Check that your browser has microphone permission (look for the mic icon in the address bar)

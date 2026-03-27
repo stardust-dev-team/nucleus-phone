@@ -15,6 +15,9 @@ const USER_MAP = {
   'alex@joruva.com': { identity: 'alex', role: 'caller' },
 };
 
+// Valid Twilio identities — used by token endpoint to reject arbitrary strings.
+const VALID_IDENTITIES = new Set(Object.values(USER_MAP).map(u => u.identity));
+
 const SCOPES = ['User.Read', 'openid', 'profile', 'email'];
 
 let msalApp;
@@ -118,4 +121,4 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-module.exports = router;
+module.exports = Object.assign(router, { VALID_IDENTITIES });
