@@ -12,7 +12,7 @@ import useCallState from './hooks/useCallState';
 
 const ROLES = {
   tom: 'admin',
-  paul: 'caller',
+  paul: 'admin',
   kate: 'caller',
   britt: 'caller',
   ryann: 'caller',
