@@ -7,13 +7,13 @@ const FILTERS = ['All', 'Never Called', 'Callback Pending', 'Hot'];
 const TEST_CONTACT = {
   id: 'test-call',
   properties: {
-    firstname: 'Test',
-    lastname: 'Line',
+    firstname: 'Mike',
+    lastname: 'Garza',
     phone: '+16026419729',
-    company: 'Nucleus Phone (AI test agent)',
-    jobtitle: 'Dial to verify audio — AI answers and runs a checklist',
+    company: 'Garza Precision Machine',
+    jobtitle: 'Owner / Shop Manager',
   },
-  callHistory: null,
+  callHistory: { callCount: 2, lastCall: new Date(Date.now() - 8 * 86400000).toISOString(), lastDisposition: 'callback_requested' },
   _isTest: true,
 };
 
@@ -139,7 +139,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
           <p className="text-center text-jv-muted py-8">No contacts found</p>
         )}
 
-        {[...(filter === 'All' || filter === 'Never Called' ? [TEST_CONTACT] : []), ...filtered].map((contact) => {
+        {[...(filter === 'All' || filter === 'Callback Pending' ? [TEST_CONTACT] : []), ...filtered].map((contact) => {
           const props = contact.properties || {};
           const name = `${props.firstname || ''} ${props.lastname || ''}`.trim() || 'Unknown';
           const phone = props.phone || props.mobilephone || '';
@@ -156,7 +156,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
             >
               <div
                 className="flex items-center justify-between p-4 cursor-pointer"
-                onClick={() => !contact._isTest && handleCockpit(contact)}
+                onClick={() => handleCockpit(contact)}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${dispositionDot(contact.callHistory)}`} />
@@ -183,9 +183,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
                       </svg>
                     </button>
                   )}
-                  {!contact._isTest && (
-                    <span className="text-jv-muted text-xs">&#8250;</span>
-                  )}
+                  <span className="text-jv-muted text-xs">&#8250;</span>
                 </div>
               </div>
             </div>

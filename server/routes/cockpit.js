@@ -6,6 +6,7 @@ const { lookupCustomer } = require('../lib/customer-lookup');
 const { getCompany } = require('../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../lib/claude');
 const { normalizePhone } = require('../lib/phone');
+const { TEST_COCKPIT_DATA } = require('../lib/test-cockpit-data');
 
 const router = Router();
 
@@ -13,6 +14,11 @@ const router = Router();
 router.get('/:identifier', apiKeyAuth, async (req, res) => {
   const { identifier } = req.params;
   const refresh = req.query.refresh === 'true';
+
+  // Test caller — return rich mock data, no API calls
+  if (identifier === 'test-call') {
+    return res.json(TEST_COCKPIT_DATA);
+  }
 
   try {
     // Step 1: Identity resolution
