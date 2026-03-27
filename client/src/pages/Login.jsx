@@ -1,21 +1,4 @@
-import { useState } from 'react';
-
-const IDENTITIES = ['tom', 'paul', 'kate', 'britt', 'ryann', 'alex'];
-
-export default function Login({ onLogin }) {
-  const [identity, setIdentity] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [error, setError] = useState('');
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!identity || !apiKey) {
-      setError('Both fields required');
-      return;
-    }
-    onLogin(identity.toLowerCase(), apiKey);
-  }
-
+export default function Login() {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6">
       <img
@@ -25,49 +8,20 @@ export default function Login({ onLogin }) {
       />
       <h1 className="text-xl font-semibold mb-8">Nucleus Phone</h1>
 
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <div>
-          <label className="block text-sm text-jv-muted mb-2">Who are you?</label>
-          <div className="grid grid-cols-3 gap-2">
-            {IDENTITIES.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => setIdentity(name)}
-                className={`py-2.5 rounded-lg text-sm font-medium capitalize transition-colors ${
-                  identity === name
-                    ? 'bg-jv-blue text-white'
-                    : 'bg-jv-card border border-jv-border text-jv-muted hover:text-white'
-                }`}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </div>
+      <a
+        href="/api/auth/login"
+        className="w-full max-w-sm flex items-center justify-center gap-3 py-3 rounded-lg bg-jv-blue text-white font-semibold hover:bg-blue-700 transition-colors"
+      >
+        <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none">
+          <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+          <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+          <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+        </svg>
+        Sign in with Microsoft
+      </a>
 
-        <div>
-          <label className="block text-sm text-jv-muted mb-2">API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Paste your API key"
-            className="w-full px-4 py-3 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-blue"
-          />
-        </div>
-
-        {error && <p className="text-jv-red text-sm">{error}</p>}
-
-        <button
-          type="submit"
-          className="w-full py-3 rounded-lg bg-jv-blue text-white font-semibold hover:bg-blue-700 transition-colors"
-        >
-          Connect
-        </button>
-      </form>
-
-      <p className="text-xs text-jv-muted mt-8">Keep this screen active during calls</p>
+      <p className="text-xs text-jv-muted mt-8">Use your @joruva.com account</p>
     </div>
   );
 }

@@ -10,39 +10,44 @@ import History from './pages/History';
 import useTwilioDevice from './hooks/useTwilioDevice';
 import useCallState from './hooks/useCallState';
 
-const ROLES = {
-  tom: 'admin',
-  paul: 'admin',
-  kate: 'caller',
-  britt: 'caller',
-  ryann: 'caller',
-  alex: 'caller',
-};
-
 export default function App() {
-  const [identity, setIdentity] = useState(() => localStorage.getItem('nucleus_identity') || '');
-  const [authenticated, setAuthenticated] = useState(() => !!localStorage.getItem('nucleus_api_key'));
+  const [user, setUser] = useState(null); // { identity, role, email }
+  const [loading, setLoading] = useState(true);
 
-  const role = ROLES[identity] || 'caller';
-  const twilioHook = useTwilioDevice(authenticated ? identity : null);
+  // Check session on mount
+  useEffect(() => {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setUser(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const identity = user?.identity || '';
+  const role = user?.role || 'caller';
+
+  const twilioHook = useTwilioDevice(user ? identity : null);
   const callState = useCallState(twilioHook);
 
-  function handleLogin(name, apiKey) {
-    localStorage.setItem('nucleus_identity', name);
-    localStorage.setItem('nucleus_api_key', apiKey);
-    setIdentity(name);
-    setAuthenticated(true);
-  }
-
   function handleLogout() {
-    localStorage.removeItem('nucleus_identity');
-    localStorage.removeItem('nucleus_api_key');
-    setIdentity('');
-    setAuthenticated(false);
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      .then(() => {
+        setUser(null);
+      });
   }
 
-  if (!authenticated) {
-    return <Login onLogin={handleLogin} />;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-jv-muted">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
   }
 
   return (

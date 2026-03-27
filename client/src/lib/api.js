@@ -1,19 +1,11 @@
 const API_BASE = '/api';
 
-function getAuth() {
-  return {
-    apiKey: localStorage.getItem('nucleus_api_key') || '',
-    identity: localStorage.getItem('nucleus_identity') || '',
-  };
-}
-
 async function apiFetch(path, options = {}) {
-  const { apiKey } = getAuth();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
       ...options.headers,
     },
   });
@@ -92,5 +84,3 @@ export function saveDisposition(callId, data) {
     body: JSON.stringify(data),
   });
 }
-
-export { getAuth };

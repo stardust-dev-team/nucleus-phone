@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const path = require('path');
 const { initSchema } = require('./db');
 const { errorHandler } = require('./middleware/error');
@@ -20,14 +21,19 @@ app.use(cors({
   origin: process.env.NODE_ENV === 'production'
     ? 'https://nucleus-phone.onrender.com'
     : true,
+  credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'nucleus-phone', timestamp: new Date().toISOString() });
 });
+
+// Auth routes (no auth middleware — handles its own)
+app.use('/api/auth', require('./routes/auth'));
 
 // Routes
 app.use('/api/token', apiKeyAuth, require('./routes/token'));
