@@ -54,6 +54,33 @@ async function initSchema() {
       process.exit(1);
     }
     console.log('customer_interactions table verified');
+
+    // Cockpit tables
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ucil_agent_stats (
+        agent_name VARCHAR(50) NOT NULL,
+        stat_date DATE NOT NULL,
+        calls_made INTEGER DEFAULT 0,
+        callbacks_done INTEGER DEFAULT 0,
+        leads_qualified INTEGER DEFAULT 0,
+        hot_leads INTEGER DEFAULT 0,
+        avg_call_duration INTEGER,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (agent_name, stat_date)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_uas_agent_date
+        ON ucil_agent_stats(agent_name, stat_date DESC);
+
+      CREATE TABLE IF NOT EXISTS ucil_sync_state (
+        sync_key VARCHAR(100) PRIMARY KEY,
+        last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_record_id TEXT,
+        metadata JSONB DEFAULT '{}',
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    console.log('cockpit tables ready');
   } finally {
     client.release();
   }
