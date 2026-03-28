@@ -12,17 +12,17 @@ export default function ProductReference({ productReference }) {
     <div>
       <div
         className="flex justify-between items-center cursor-pointer"
-        style={{ marginBottom: open ? 8 : 0 }}
+        style={{ marginBottom: open ? 4 : 0 }}
         onClick={() => setOpen(!open)}
       >
-        <div className="text-[11px] font-semibold text-cp-text-muted uppercase tracking-wider">
+        <div className="text-[10px] font-semibold text-cp-text-muted uppercase tracking-wider">
           Recommended product
         </div>
-        <span className="text-xs text-cp-text-muted">{open ? '▾' : '▸'}</span>
+        <span className="text-[10px] text-cp-text-muted">{open ? '▾' : '▸'}</span>
       </div>
       {open && (
         <div
-          className="rounded-[10px] py-3.5 px-4 transition-colors duration-300 bg-cp-card border border-cp-border"
+          className="rounded-lg py-2 px-3 transition-colors duration-300 bg-cp-card border border-cp-border"
         >
           {products.map((product, i) => (
             <div key={i}>

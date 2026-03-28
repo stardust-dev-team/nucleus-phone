@@ -2,7 +2,7 @@ export default function RapportTags({ tags }) {
   if (!tags?.length) return null;
 
   return (
-    <div className="flex flex-wrap gap-1.5 mb-5">
+    <div className="flex flex-wrap gap-1 mb-2">
       {tags.map((tag, i) => {
         const text = typeof tag === 'string' ? tag : tag.text || tag;
         const icon = typeof tag === 'object' ? tag.icon : null;

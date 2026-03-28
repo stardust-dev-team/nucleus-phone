@@ -3,23 +3,23 @@ export default function RapportOpener({ openingLine }) {
 
   return (
     <div
-      className="rounded-r-lg py-3.5 px-4 mb-4 transition-colors duration-300"
+      className="rounded-r-lg py-2.5 px-3 mb-2 transition-colors duration-300"
       style={{
         background: 'var(--cockpit-amber-50)',
-        borderLeft: '4px solid var(--cockpit-amber-600)',
+        borderLeft: '3px solid var(--cockpit-amber-600)',
       }}
     >
-      <div className="flex items-start gap-2.5">
-        <span className="text-lg shrink-0 mt-0.5">🎯</span>
+      <div className="flex items-start gap-2">
+        <span className="text-base shrink-0">🎯</span>
         <div>
           <div
-            className="text-[11px] font-semibold uppercase tracking-wider mb-1"
+            className="text-[10px] font-semibold uppercase tracking-wider mb-0.5"
             style={{ color: 'var(--cockpit-amber-600)' }}
           >
             Suggested opener
           </div>
           <div
-            className="text-base font-medium leading-[1.45]"
+            className="text-[14px] font-medium leading-[1.35]"
             style={{ color: 'var(--cockpit-amber-900)' }}
           >
             {openingLine}

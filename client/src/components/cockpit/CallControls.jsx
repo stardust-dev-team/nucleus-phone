@@ -3,7 +3,7 @@ import { formatTime } from '../../lib/format';
 export default function CallControls({ callPhase, timer, onCallNow, onEndCall, onSaveNext, disabled }) {
   return (
     <div
-      className="sticky bottom-0 z-10 flex items-center justify-center gap-3 px-5 py-2.5 transition-colors duration-300"
+      className="sticky bottom-0 z-10 flex items-center justify-center gap-3 px-4 py-2 shrink-0 transition-colors duration-300"
       style={{
         background: 'var(--cockpit-footer-bg)',
         borderTop: '1px solid var(--cockpit-card-border)',

@@ -3,7 +3,6 @@ import useCockpit from '../hooks/useCockpit';
 import useCockpitTheme from '../hooks/useCockpitTheme';
 import useScoreboard from '../hooks/useScoreboard';
 import CockpitHeader from '../components/cockpit/CockpitHeader';
-import GamificationBar from '../components/cockpit/GamificationBar';
 import ContactIdentity from '../components/cockpit/ContactIdentity';
 import RapportOpener from '../components/cockpit/RapportOpener';
 import RapportTags from '../components/cockpit/RapportTags';
@@ -17,7 +16,6 @@ import CallControls from '../components/cockpit/CallControls';
 function deriveCallPhase(twilioStatus, callData) {
   if (twilioStatus === 'connecting' || twilioStatus === 'ringing' || twilioStatus === 'connected')
     return 'active';
-  // Stay in post-call until callData is cleared (covers disconnected→ready race)
   if (callData && (twilioStatus === 'disconnected' || twilioStatus === 'ready'))
     return 'post';
   return 'pre';
@@ -25,12 +23,12 @@ function deriveCallPhase(twilioStatus, callData) {
 
 function Skeleton() {
   return (
-    <div className="space-y-4 p-5 animate-pulse">
-      <div className="h-14 rounded-xl bg-cp-card" />
-      <div className="h-24 rounded-lg" style={{ background: 'var(--cockpit-amber-50)' }} />
-      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6">
-        <div className="h-48 rounded-xl bg-cp-card min-w-0" />
-        <div className="h-48 rounded-xl bg-cp-card min-w-0" />
+    <div className="space-y-2 p-4 animate-pulse">
+      <div className="h-10 rounded-lg bg-cp-card" />
+      <div className="h-16 rounded-lg" style={{ background: 'var(--cockpit-amber-50)' }} />
+      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3">
+        <div className="h-40 rounded-lg bg-cp-card min-w-0" />
+        <div className="h-40 rounded-lg bg-cp-card min-w-0" />
       </div>
     </div>
   );
@@ -90,9 +88,6 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
         onBack={handleBack}
         onRefresh={refresh}
         refreshing={refreshing}
-      />
-
-      <GamificationBar
         leaderboard={scoreboard.data?.leaderboard}
         currentUser={identity}
       />
@@ -100,7 +95,7 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
       {loading ? (
         <Skeleton />
       ) : error ? (
-        <div className="flex flex-col items-center justify-center flex-1 gap-4 p-4">
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 p-4">
           <p style={{ color: 'var(--cockpit-red-text)' }}>{error}</p>
           <button onClick={handleBack} style={{ color: 'var(--cockpit-blue-500)' }}>
             &larr; Back to contacts
@@ -108,8 +103,8 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
         </div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto scroll-container">
-            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6 px-5 py-5 max-w-[1100px] mx-auto pb-20">
+          <div className="flex-1 min-h-0">
+            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3 px-4 py-3 max-w-[1100px] mx-auto">
               {/* Left column — Rapport */}
               <div className="min-w-0">
                 <ContactIdentity identity={d.identity} />

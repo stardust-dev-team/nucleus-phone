@@ -54,12 +54,12 @@ export default function IntelNuggets({ nuggets, watchOuts }) {
   if (!items.length) return null;
 
   return (
-    <div className="mb-5 min-w-0">
-      <div className="text-[11px] font-semibold text-cp-text-muted uppercase tracking-wider mb-2">
+    <div className="mb-2 min-w-0">
+      <div className="text-[10px] font-semibold text-cp-text-muted uppercase tracking-wider mb-1">
         Intelligence nuggets
       </div>
       <div
-        className="flex gap-2.5 overflow-x-auto pb-1"
+        className="flex gap-1.5 overflow-x-auto pb-1"
         style={{
           maskImage: 'linear-gradient(to right, black 85%, transparent)',
           WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent)',
@@ -70,24 +70,21 @@ export default function IntelNuggets({ nuggets, watchOuts }) {
           return (
             <div
               key={i}
-              className="min-w-[200px] flex-[1_0_200px] rounded-lg py-3 px-3.5 transition-colors duration-300"
+              className="min-w-[160px] flex-[1_0_160px] rounded-md py-2 px-2.5 transition-colors duration-300"
               style={{
                 background: c.bg,
-                borderTop: `3px solid ${c.accent}`,
+                borderTop: `2px solid ${c.accent}`,
               }}
             >
               <div
-                className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
+                className="text-[9px] font-semibold uppercase tracking-wider mb-0.5"
                 style={{ color: c.accent }}
               >
                 {n.category}
               </div>
-              <div className="text-[13px] font-medium leading-[1.3] mb-1" style={{ color: c.text }}>
+              <div className="text-[12px] font-medium leading-[1.25]" style={{ color: c.text }}>
                 {n.headline}
               </div>
-              {n.body && (
-                <div className="text-xs text-cp-text-secondary leading-[1.4]">{n.body}</div>
-              )}
             </div>
           );
         })}
