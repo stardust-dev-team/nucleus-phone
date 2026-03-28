@@ -104,7 +104,7 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
       ) : (
         <>
           <div className="flex-1 min-h-0">
-            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-4 px-5 py-4 max-w-[1100px] mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-4 px-5 py-4">
               {/* Left column — Rapport */}
               <div className="min-w-0">
                 <ContactIdentity identity={d.identity} />
