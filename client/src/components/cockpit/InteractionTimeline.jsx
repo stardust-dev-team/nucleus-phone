@@ -26,7 +26,7 @@ function getOutcome(entry) {
 const MAX_VISIBLE = 4;
 
 export default function InteractionTimeline({ interactionHistory, priorCalls }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const interactions = interactionHistory?.interactions || [];
   const calls = priorCalls || [];
 

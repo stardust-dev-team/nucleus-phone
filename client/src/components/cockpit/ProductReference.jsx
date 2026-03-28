@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 export default function ProductReference({ productReference }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   if (!productReference?.length) return null;
 
