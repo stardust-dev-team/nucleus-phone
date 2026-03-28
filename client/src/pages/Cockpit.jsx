@@ -111,7 +111,7 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
           <div className="flex-1 overflow-y-auto scroll-container">
             <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6 px-5 py-5 max-w-[1100px] mx-auto pb-20">
               {/* Left column — Rapport */}
-              <div>
+              <div className="min-w-0">
                 <ContactIdentity identity={d.identity} />
                 <RapportOpener openingLine={d.rapport?.opening_line} />
                 <RapportTags tags={d.rapport?.rapport_starters} />

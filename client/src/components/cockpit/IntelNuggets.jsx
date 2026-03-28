@@ -54,7 +54,7 @@ export default function IntelNuggets({ nuggets, watchOuts }) {
   if (!items.length) return null;
 
   return (
-    <div className="mb-5">
+    <div className="mb-5 min-w-0">
       <div className="text-[11px] font-semibold text-cp-text-muted uppercase tracking-wider mb-2">
         Intelligence nuggets
       </div>
