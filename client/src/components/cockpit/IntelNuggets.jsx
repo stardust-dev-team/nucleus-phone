@@ -58,7 +58,13 @@ export default function IntelNuggets({ nuggets, watchOuts }) {
       <div className="text-[11px] font-semibold text-cp-text-muted uppercase tracking-wider mb-2">
         Intelligence nuggets
       </div>
-      <div className="flex gap-2.5 overflow-x-auto pb-1">
+      <div
+        className="flex gap-2.5 overflow-x-auto pb-1"
+        style={{
+          maskImage: 'linear-gradient(to right, black 85%, transparent)',
+          WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent)',
+        }}
+      >
         {items.map((n, i) => {
           const c = CATEGORY_COLORS[n.category] || CATEGORY_COLORS.APPROACH;
           return (

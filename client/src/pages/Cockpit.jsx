@@ -29,8 +29,8 @@ function Skeleton() {
       <div className="h-14 rounded-xl bg-cp-card" />
       <div className="h-24 rounded-lg" style={{ background: 'var(--cockpit-amber-50)' }} />
       <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6">
-        <div className="h-48 rounded-xl bg-cp-card" />
-        <div className="h-48 rounded-xl bg-cp-card" />
+        <div className="h-48 rounded-xl bg-cp-card min-w-0" />
+        <div className="h-48 rounded-xl bg-cp-card min-w-0" />
       </div>
     </div>
   );
@@ -126,7 +126,7 @@ export default function Cockpit({ identity, callState, twilioStatus }) {
               </div>
 
               {/* Right column — Business */}
-              <div>
+              <div className="min-w-0">
                 <QualScript adaptedScript={d.rapport?.adapted_script} />
                 <CompanyIntel
                   companyData={d.companyData}
