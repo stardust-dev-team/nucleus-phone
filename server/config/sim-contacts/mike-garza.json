@@ -1,0 +1,125 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Mike Garza",
+    "email": "mike@garzaprecision.com",
+    "phone": "+14805551234",
+    "company": "Garza Precision Machine",
+    "title": "Owner / Shop Manager",
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": {
+      "summary": "18 years in precision CNC machining. Started at Boeing as a machinist, opened Garza Precision in 2014 with savings and an SBA loan. Runs a 5-machine shop specializing in aerospace brackets and hydraulic manifolds. Active NTMA chapter member.",
+      "durationInRole": "12 years",
+      "durationInCompany": "12 years",
+      "pastExperience": "Machinist at Boeing (2006-2014)",
+      "connectionDegree": "2nd"
+    },
+    "fitScore": "88",
+    "fitReason": "5-machine CNC shop, aerospace + hydraulic work, high air demand, current compressor undersized",
+    "persona": "Shop Owner",
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "NTMA member — ask about the last chapter meeting",
+      "Aerospace brackets = tight tolerances, mention clean dry air",
+      "18 yrs machining — respect the craft, skip the sales pitch",
+      "Started his own shop in 2014 — self-made, hates corporate fluff",
+      "Hydraulic manifolds = oily environment, filtration matters"
+    ],
+    "intel_nuggets": [
+      "Running 5 CNC machines (Haas VF-2 x3, Mazak QTN-200 x2) — needs 50-75 CFM at 125 PSI. Current 25HP recip is short-cycling.",
+      "Aerospace work — AS9100 environment. Clean dry air is a compliance requirement, not a nice-to-have.",
+      "Shop is in Mesa, AZ (east Phoenix metro) — check local service availability.",
+      "Owner-operator with 15 employees, $2.4M revenue. He makes the decisions.",
+      "Current piston compressor is ~7 years old, having moisture and short-cycling issues. Ripe for upgrade."
+    ],
+    "opening_line": "Hey Mike, I noticed you run some aerospace bracket work — I had a question about how you handle air quality for those tight tolerance jobs.",
+    "adapted_script": "Start with air quality angle (aerospace = clean dry air requirement). DO NOT lead with price or energy savings — shop owners running aerospace work care about quality and uptime first. If he mentions his current compressor, ask about short-cycling and moisture issues. The JRS-10E rotary screw is the natural recommendation for 5 machines with variable demand. Key value props: energy savings vs piston, integrated dryer option, AS9100-grade air quality, 5-year airend warranty. Avoid: sounding scripted or corporate.",
+    "watch_outs": [
+      "He built this shop himself — respect independence, don't be pushy",
+      "Aerospace QMS compliance is sensitive — ask, don't assume which standard",
+      "Metroplex Air Systems has called him before — he knows local competitors exist",
+      "Don't oversell or make claims you can't back up"
+    ],
+    "product_reference": [
+      "JRS-10E — 10HP, 40 CFM @ 150 PSI, $9,495",
+      "Integrated refrigerated dryer option",
+      "Particulate + coalescing filters (aerospace spec)",
+      "5-year airend warranty"
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": [
+      {
+        "channel": "email",
+        "summary": "Opened VSD rotary screw compressor email 3x — strong interest",
+        "disposition": null,
+        "createdAt": "2026-03-25T12:00:00.000Z"
+      },
+      {
+        "channel": "email",
+        "summary": "Clicked link to compressor sizing calculator",
+        "disposition": null,
+        "createdAt": "2026-03-23T12:00:00.000Z"
+      }
+    ]
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "garzaprecision.com",
+      "company_name": "Garza Precision Machine",
+      "segment": "cnc_machining",
+      "status": "enriched",
+      "discovery_source": "phantombuster_salesnav",
+      "created_at": "2026-02-26T12:00:00.000Z",
+      "enriched_at": "2026-02-28T12:00:00.000Z"
+    }
+  ],
+
+  "icpScore": {
+    "domain": "garzaprecision.com",
+    "fit_score": "88",
+    "fit_reason": "5-machine CNC shop, aerospace + hydraulic verticals, high air demand, Mesa AZ metro, owner-operator decision maker",
+    "persona": "Shop Owner",
+    "segment": "cnc_machining"
+  },
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": true,
+      "company": true,
+      "title": true,
+      "linkedin": false
+    },
+    "validation_status": "valid",
+    "validated_at": "2026-03-01T12:00:00.000Z"
+  },
+
+  "emailEngagement": [
+    { "event_type": "open", "created_at": "2026-03-25T14:00:00.000Z", "campaign_name": "CNC Air Quality Series" },
+    { "event_type": "open", "created_at": "2026-03-25T10:00:00.000Z", "campaign_name": "CNC Air Quality Series" },
+    { "event_type": "open", "created_at": "2026-03-24T16:00:00.000Z", "campaign_name": "CNC Air Quality Series" },
+    { "event_type": "click", "created_at": "2026-03-23T11:00:00.000Z", "campaign_name": "CNC Air Quality Series" }
+  ],
+
+  "companyData": {
+    "name": "Garza Precision Machine",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Mesa",
+    "state": "AZ",
+    "numberofemployees": "15",
+    "annualrevenue": "$2.4M",
+    "company_vernacular": "5-machine CNC shop (Haas VF-2 x3, Mazak QTN-200 x2), aerospace brackets + hydraulic manifolds. Owner-operator. 25HP piston compressor (~7yr old) with moisture and short-cycling problems."
+  }
+}
