@@ -17,6 +17,7 @@ const team = require('../config/team.json');
 const router = Router();
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
+const ID_RE = /^\d+$/;
 
 const DIFFICULTY_TO_ASSISTANT = {
   easy: 'VAPI_SIM_EASY_ID',
@@ -24,28 +25,47 @@ const DIFFICULTY_TO_ASSISTANT = {
   hard: 'VAPI_SIM_HARD_ID',
 };
 
+// Load phone numbers from gitignored secrets file, fall back to env vars (PHONE_TOM, etc.)
+let phoneSecrets = {};
+try {
+  phoneSecrets = require('../config/team-phones.json');
+} catch {
+  console.warn('SIM: team-phones.json not found — falling back to PHONE_* env vars');
+}
+
+function lookupPhone(identity) {
+  // 1. Secrets file (gitignored)
+  if (phoneSecrets[identity]) return phoneSecrets[identity];
+  // 2. Env var fallback (e.g. PHONE_TOM)
+  const envKey = `PHONE_${identity.toUpperCase()}`;
+  return process.env[envKey] || null;
+}
+
+function validateId(req, res) {
+  if (!ID_RE.test(req.params.id)) {
+    res.status(400).json({ error: 'Invalid ID' });
+    return false;
+  }
+  return true;
+}
+
 // Compute prompt version hash (first 8 chars of MD5).
 // Cached for process lifetime — invalidated on deploy (Render restarts the process).
+const PERSONAS_DIR = path.join(__dirname, '..', '..', 'config', 'sim-personas');
 const promptVersionCache = {};
 function getPromptVersion(difficulty) {
   if (promptVersionCache[difficulty]) return promptVersionCache[difficulty];
+  const filePath = path.join(PERSONAS_DIR, `mike-garza-${difficulty}.txt`);
   try {
-    const filePath = path.join(__dirname, '..', '..', 'config', 'sim-personas', `mike-garza-${difficulty}.txt`);
     const content = fs.readFileSync(filePath, 'utf-8');
     const hash = crypto.createHash('md5').update(content).digest('hex').substring(0, 8);
     promptVersionCache[difficulty] = hash;
     return hash;
-  } catch {
+  } catch (err) {
+    console.error(`SIM: failed to read persona file ${filePath}: ${err.message}`);
     return 'unknown';
   }
 }
-
-function lookupPhone(identity) {
-  const member = team.members.find(m => m.identity === identity);
-  return member?.phone || null;
-}
-
-const ID_RE = /^\d+$/;
 
 // Startup checks
 if (!process.env.SLACK_SALES_WEBHOOK_URL) {
@@ -94,7 +114,7 @@ router.post('/call', sessionAuth, async (req, res) => {
   // Look up phone
   const phone = lookupPhone(identity);
   if (!phone) {
-    return res.status(400).json({ error: `No phone configured for ${identity} in team.json` });
+    return res.status(400).json({ error: `No phone configured for ${identity}` });
   }
   if (!E164_RE.test(phone)) {
     return res.status(400).json({ error: `Invalid phone format for ${identity}: ${phone}` });
@@ -154,8 +174,11 @@ router.post('/call', sessionAuth, async (req, res) => {
 });
 
 // ─── GET /call/:id/status — Poll call status ──────────────────────
+// Intentionally team-visible (any authenticated user can poll any call).
+// The frontend polls its own call, but allowing cross-user visibility lets
+// admins monitor and debug practice calls. Same policy as score history (#17).
 router.get('/call/:id/status', sessionAuth, async (req, res) => {
-  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  if (!validateId(req, res)) return;
   const { rows } = await pool.query(
     `SELECT status, score_overall, call_grade, duration_seconds,
             top_strength, top_improvement
@@ -224,7 +247,7 @@ router.get('/scoreboard', sessionAuth, async (req, res) => {
 
 // ─── POST /call/:id/cancel — Cancel in-progress call ──────────────
 router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
-  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  if (!validateId(req, res)) return;
   const { rows } = await pool.query(
     "SELECT id, vapi_call_id, status FROM sim_call_scores WHERE id = $1",
     [req.params.id]
@@ -249,7 +272,7 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
 
 // ─── POST /call/:id/rescore — Re-score a failed row (admin only) ──
 router.post('/call/:id/rescore', sessionAuth, async (req, res) => {
-  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  if (!validateId(req, res)) return;
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin only' });
   }
@@ -308,77 +331,64 @@ router.post('/webhook', async (req, res) => {
   const duration = typeof call?.duration === 'number' ? Math.round(call.duration) : null;
   const costCents = typeof call?.cost === 'number' ? Math.round(call.cost * 100) : null;
 
-  // Update the existing row (created by POST /call).
-  async function tryUpdate() {
-    const { rows } = await pool.query(
-      `UPDATE sim_call_scores SET
-         transcript = $2,
-         recording_url = $3,
-         duration_seconds = $4,
-         cost_cents = $5,
-         status = 'scoring'
-       WHERE vapi_call_id = $1
-       RETURNING id, caller_identity, difficulty`,
-      [vapiCallId, transcript, recording, duration, costCents]
-    );
-    return rows;
-  }
-
-  let rows = await tryUpdate();
-
-  // If no row found, webhook may have beaten POST /call's INSERT.
-  // Retry once after 2s to close the narrow race window.
-  if (!rows.length) {
-    await new Promise(r => setTimeout(r, 2000));
-    rows = await tryUpdate();
-  }
+  // Update the existing row (created by POST /call, which calls Vapi first then INSERTs).
+  // The call-first pattern means the row always exists before the webhook fires,
+  // so a simple UPDATE is sufficient — no upsert or retry needed.
+  const { rows } = await pool.query(
+    `UPDATE sim_call_scores SET
+       transcript = $2,
+       recording_url = $3,
+       duration_seconds = $4,
+       cost_cents = $5,
+       status = 'scoring'
+     WHERE vapi_call_id = $1
+     RETURNING id, caller_identity, difficulty`,
+    [vapiCallId, transcript, recording, duration, costCents]
+  );
 
   // 200 immediately — Vapi doesn't need to wait for scoring
   res.sendStatus(200);
 
   if (!rows.length) {
-    console.warn(`sim webhook: no row for vapi_call_id ${vapiCallId} after retry`);
+    console.warn(`sim webhook: no row for vapi_call_id ${vapiCallId}`);
     return;
   }
 
-  // Async scoring pipeline — wrapped in error boundary to prevent
-  // unhandled promise rejections from crashing the process
+  // Async scoring pipeline (fire-and-forget after 200 response).
+  // Wrapped with .catch() to prevent unhandled promise rejections.
   const row = rows[0];
-  setImmediate(async () => {
-    try {
-      if (!transcript) {
-        await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
-        console.warn(`sim webhook: no transcript for call ${vapiCallId}`);
-        return;
-      }
-
-      const result = await scoreTranscript(transcript, row.difficulty);
-      if (result.error) {
-        console.error(`sim scoring failed for ${vapiCallId}:`, result.message);
-        await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
-        return;
-      }
-
-      await persistScores(row.id, result);
-
-      // Slack scorecard
-      const { rows: [scored] } = await pool.query(
-        'SELECT * FROM sim_call_scores WHERE id = $1',
-        [row.id]
-      );
-      const slackMsg = formatSimScorecard(scored);
-      const sent = await sendSlackAlert(slackMsg);
-      if (sent) {
-        await pool.query("UPDATE sim_call_scores SET slack_notified = true WHERE id = $1", [row.id]);
-      }
-    } catch (err) {
-      console.error(`sim scoring pipeline error for ${vapiCallId}:`, err.message);
-      try {
-        await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
-      } catch (dbErr) {
-        console.error(`sim: failed to mark score-failed for ${row.id}:`, dbErr.message);
-      }
+  (async () => {
+    if (!transcript) {
+      await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
+      console.warn(`sim webhook: no transcript for call ${vapiCallId}`);
+      return;
     }
+
+    const result = await scoreTranscript(transcript, row.difficulty);
+    if (result.error) {
+      console.error(`sim scoring failed for ${vapiCallId}:`, result.message);
+      await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
+      return;
+    }
+
+    await persistScores(row.id, result);
+
+    // Slack scorecard
+    const { rows: [scored] } = await pool.query(
+      'SELECT * FROM sim_call_scores WHERE id = $1',
+      [row.id]
+    );
+    const slackMsg = formatSimScorecard(scored);
+    const sent = await sendSlackAlert(slackMsg);
+    if (sent) {
+      await pool.query("UPDATE sim_call_scores SET slack_notified = true WHERE id = $1", [row.id]);
+    } else {
+      console.warn(`sim: Slack scorecard failed to post for call ${vapiCallId}`);
+    }
+  })().catch(err => {
+    console.error(`sim scoring pipeline error for ${vapiCallId}:`, err.message);
+    pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id])
+      .catch(dbErr => console.error(`sim: failed to mark score-failed for ${row.id}:`, dbErr.message));
   });
 });
 

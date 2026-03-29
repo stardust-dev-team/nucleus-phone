@@ -58,8 +58,11 @@ function formatCallAlert(callData) {
 const GRADE_EMOJI = { A: '🏆', B: '👍', C: '📝', D: '⚠️', F: '❌' };
 
 function scoreBar(score) {
-  const filled = Math.min(10, Math.max(0, Math.round(Number(score) || 0)));
-  return '█'.repeat(filled) + '░'.repeat(10 - filled);
+  const n = Math.min(10, Math.max(0, Number(score) || 0));
+  const full = Math.floor(n);
+  const half = (n - full >= 0.5) ? 1 : 0;
+  const empty = 10 - full - half;
+  return '█'.repeat(full) + (half ? '▓' : '') + '░'.repeat(empty);
 }
 
 function formatSimScorecard(data) {
