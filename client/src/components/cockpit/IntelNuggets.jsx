@@ -70,7 +70,7 @@ export default function IntelNuggets({ nuggets, watchOuts }) {
           return (
             <div
               key={i}
-              className="min-w-[180px] flex-[1_0_180px] rounded-lg py-2.5 px-3 transition-colors duration-300"
+              className="w-[180px] max-w-[45vw] flex-none rounded-lg py-2.5 px-3 transition-colors duration-300"
               style={{
                 background: c.bg,
                 borderTop: `3px solid ${c.accent}`,
