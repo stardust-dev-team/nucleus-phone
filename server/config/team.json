@@ -1,11 +1,11 @@
 {
-  "_note": "phone: E.164 format (e.g. +16025551234). Required for practice sim calls — Vapi dials the rep's cell.",
+  "_note": "phone numbers are in team-phones.json (gitignored). This file is safe to commit.",
   "members": [
-    { "name": "Tom", "email": "tom@joruva.com", "identity": "tom", "role": "admin", "phone": null },
-    { "name": "Paul", "email": "paul@joruva.com", "identity": "paul", "role": "admin", "phone": null },
-    { "name": "Kate", "email": "kate@joruva.com", "identity": "kate", "role": "caller", "phone": null },
-    { "name": "Britt", "email": "britt@joruva.com", "identity": "britt", "role": "caller", "phone": null },
-    { "name": "Ryann", "email": "ryann@joruva.com", "identity": "ryann", "role": "caller", "phone": null },
-    { "name": "Alex", "email": "alex@joruva.com", "identity": "alex", "role": "caller", "phone": null }
+    { "name": "Tom", "email": "tom@joruva.com", "identity": "tom", "role": "admin" },
+    { "name": "Paul", "email": "paul@joruva.com", "identity": "paul", "role": "admin" },
+    { "name": "Kate", "email": "kate@joruva.com", "identity": "kate", "role": "caller" },
+    { "name": "Britt", "email": "britt@joruva.com", "identity": "britt", "role": "caller" },
+    { "name": "Ryann", "email": "ryann@joruva.com", "identity": "ryann", "role": "caller" },
+    { "name": "Alex", "email": "alex@joruva.com", "identity": "alex", "role": "caller" }
   ]
 }

@@ -89,6 +89,52 @@ async function initSchema() {
         FOR EACH ROW EXECUTE FUNCTION update_ucil_sync_state_ts();
     `);
     console.log('cockpit tables ready');
+
+    // Simulation scoring table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sim_call_scores (
+        id SERIAL PRIMARY KEY,
+        vapi_call_id TEXT UNIQUE,
+        caller_identity VARCHAR(50) NOT NULL,
+        difficulty VARCHAR(10) NOT NULL CHECK (difficulty IN ('easy','medium','hard')),
+        duration_seconds INTEGER,
+        transcript TEXT,
+        recording_url TEXT,
+        cost_cents INTEGER,
+        score_rapport NUMERIC(3,1),
+        note_rapport TEXT,
+        score_discovery NUMERIC(3,1),
+        note_discovery TEXT,
+        score_objection NUMERIC(3,1),
+        note_objection TEXT,
+        score_product NUMERIC(3,1),
+        note_product TEXT,
+        score_close NUMERIC(3,1),
+        note_close TEXT,
+        score_overall NUMERIC(3,1),
+        call_grade VARCHAR(2),
+        top_strength TEXT,
+        top_improvement TEXT,
+        prompt_version VARCHAR(16),
+        status VARCHAR(20) DEFAULT 'in-progress',
+        slack_notified BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        scored_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_sim_caller ON sim_call_scores(caller_identity);
+      CREATE INDEX IF NOT EXISTS idx_sim_created ON sim_call_scores(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_sim_vapi ON sim_call_scores(vapi_call_id);
+    `);
+
+    // Sweep stuck rows from prior restart (Render deploy, OOM, etc.)
+    const { rowCount } = await client.query(`
+      UPDATE sim_call_scores
+      SET status = 'score-failed'
+      WHERE status IN ('in-progress', 'scoring')
+        AND created_at < NOW() - INTERVAL '10 minutes'
+    `);
+    if (rowCount > 0) console.log(`sim: swept ${rowCount} stuck row(s) to score-failed`);
+    console.log('sim_call_scores table ready');
   } finally {
     client.release();
   }

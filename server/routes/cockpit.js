@@ -7,6 +7,7 @@ const { getCompany } = require('../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../lib/claude');
 const { normalizePhone } = require('../lib/phone');
 const { TEST_COCKPIT_DATA } = require('../lib/test-cockpit-data');
+const SIM_MIKE_GARZA = require('../config/sim-contacts/mike-garza.json');
 
 const router = Router();
 
@@ -16,6 +17,11 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
   const refresh = req.query.refresh === 'true';
 
   try {
+    // Simulation contact — static data, no API calls
+    if (identifier === 'sim-mike-garza') {
+      return res.json(SIM_MIKE_GARZA);
+    }
+
     // Test caller — return rich mock data, no API calls
     if (identifier === 'test-call') {
       return res.json(TEST_COCKPIT_DATA);
