@@ -54,7 +54,7 @@ export default function App() {
 
   return (
     <Routes>
-      {/* Cockpit renders WITHOUT Shell */}
+      {/* Real cockpit renders WITHOUT Shell (full-screen focus) */}
       <Route
         path="/cockpit/:id"
         element={
@@ -111,7 +111,17 @@ export default function App() {
         )}
         <Route path="/history" element={<History identity={identity} role={role} />} />
         <Route path="/scoreboard" element={<Scoreboard />} />
-        <Route path="/practice" element={<Navigate to="/cockpit/sim-mike-garza" replace />} />
+        <Route
+          path="/practice"
+          element={
+            <Cockpit
+              identity={identity}
+              callState={callState}
+              twilioStatus={twilioHook.status}
+              forcedId="sim-mike-garza"
+            />
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

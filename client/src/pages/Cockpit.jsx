@@ -39,8 +39,9 @@ function Skeleton() {
   );
 }
 
-export default function Cockpit({ identity, callState, twilioStatus }) {
-  const { id } = useParams();
+export default function Cockpit({ identity, callState, twilioStatus, forcedId }) {
+  const params = useParams();
+  const id = forcedId || params.id;
   const navigate = useNavigate();
   const isPractice = id?.startsWith(SIM_ID_PREFIX);
   const { data, loading, error, refreshing, refresh } = useCockpit(id);
