@@ -168,12 +168,14 @@ router.post('/call', sessionAuth, async (req, res) => {
   }
 
   const promptVersion = getPromptVersion(difficulty);
+  const listenUrl = call.monitor?.listenUrl || null;
+  const controlUrl = call.monitor?.controlUrl || null;
   try {
     const { rows: [row] } = await pool.query(
-      `INSERT INTO sim_call_scores (vapi_call_id, caller_identity, difficulty, prompt_version, status)
-       VALUES ($1, $2, $3, $4, 'in-progress')
+      `INSERT INTO sim_call_scores (vapi_call_id, caller_identity, difficulty, prompt_version, status, monitor_listen_url, monitor_control_url)
+       VALUES ($1, $2, $3, $4, 'in-progress', $5, $6)
        RETURNING id`,
-      [call.id, identity, difficulty, promptVersion]
+      [call.id, identity, difficulty, promptVersion, listenUrl, controlUrl]
     );
     res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
@@ -207,6 +209,27 @@ router.get('/call/:id/status', sessionAuth, async (req, res) => {
     top_improvement: r.top_improvement,
     caller_debrief: r.caller_debrief,
   });
+});
+
+// ─── GET /call/:id/listen — Admin-only: get listen URL for active sim call ──
+router.get('/call/:id/listen', sessionAuth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  if (!validateId(req, res)) return;
+  const { rows } = await pool.query(
+    `SELECT monitor_listen_url, status FROM sim_call_scores WHERE id = $1`,
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Not found' });
+  const r = rows[0];
+  if (r.status !== 'in-progress') {
+    return res.status(410).json({ error: 'Call no longer active' });
+  }
+  if (!r.monitor_listen_url) {
+    return res.status(404).json({ error: 'No listen URL available for this call' });
+  }
+  res.json({ listenUrl: r.monitor_listen_url });
 });
 
 // ─── GET /scores/:identity — Score history ─────────────────────────

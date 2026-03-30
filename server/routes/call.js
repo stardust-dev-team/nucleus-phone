@@ -189,7 +189,7 @@ router.get('/active', apiKeyAuth, async (req, res) => {
   if (req.user?.role === 'admin') {
     try {
       const { rows } = await pool.query(`
-        SELECT id, caller_identity, difficulty, created_at, status
+        SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
         FROM sim_call_scores
         WHERE status IN ('in-progress', 'scoring')
         ORDER BY created_at DESC
@@ -197,6 +197,7 @@ router.get('/active', apiKeyAuth, async (req, res) => {
       for (const row of rows) {
         enriched.push({
           type: 'sim',
+          simCallId: row.id,
           conferenceName: `sim-${row.id}`,
           startedAt: row.created_at,
           startedBy: row.caller_identity,
@@ -205,6 +206,7 @@ router.get('/active', apiKeyAuth, async (req, res) => {
           participants: [],
           duration: Math.floor((Date.now() - new Date(row.created_at).getTime()) / 1000),
           simStatus: row.status,
+          hasListenUrl: !!row.monitor_listen_url,
         });
       }
     } catch (err) {

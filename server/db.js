@@ -132,6 +132,8 @@ async function initSchema() {
     await client.query(`
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS caller_debrief TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS admin_report TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_listen_url TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_control_url TEXT;
     `);
 
     // Sweep stuck rows from prior restart (Render deploy, OOM, etc.)

@@ -1,10 +1,15 @@
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useActiveCalls from '../hooks/useActiveCalls';
 import { formatDuration } from '../lib/format';
+import { getSimListenUrl } from '../lib/api';
 
 export default function ActiveCalls({ identity, callState, twilioHook }) {
   const calls = useActiveCalls(true);
   const navigate = useNavigate();
+  const [listenId, setListenId] = useState(null);
+  const wsRef = useRef(null);
+  const ctxRef = useRef(null);
 
   async function handleJoin(call, muted) {
     try {
@@ -14,6 +19,55 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
       alert('Join failed: ' + err.message);
     }
   }
+
+  const stopListening = useCallback(() => {
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    if (ctxRef.current) { ctxRef.current.close(); ctxRef.current = null; }
+    setListenId(null);
+  }, []);
+
+  const handleListen = useCallback(async (call) => {
+    if (listenId === call.simCallId) { stopListening(); return; }
+    stopListening();
+
+    try {
+      const { listenUrl } = await getSimListenUrl(call.simCallId);
+      const ctx = new AudioContext({ sampleRate: 16000 });
+      ctxRef.current = ctx;
+
+      const ws = new WebSocket(listenUrl);
+      ws.binaryType = 'arraybuffer';
+      wsRef.current = ws;
+      setListenId(call.simCallId);
+
+      // Buffer ~200ms of audio before scheduling to reduce choppiness
+      let nextTime = ctx.currentTime + 0.2;
+
+      ws.onmessage = (e) => {
+        if (!(e.data instanceof ArrayBuffer)) return;
+        const pcm16 = new Int16Array(e.data);
+        const float32 = new Float32Array(pcm16.length);
+        for (let i = 0; i < pcm16.length; i++) {
+          float32[i] = pcm16[i] / 32768;
+        }
+        const buf = ctx.createBuffer(1, float32.length, 16000);
+        buf.getChannelData(0).set(float32);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        const now = ctx.currentTime;
+        if (nextTime < now) nextTime = now + 0.05;
+        src.start(nextTime);
+        nextTime += buf.duration;
+      };
+
+      ws.onclose = () => { setListenId(null); };
+      ws.onerror = () => { stopListening(); };
+    } catch (err) {
+      alert('Listen failed: ' + err.message);
+      stopListening();
+    }
+  }, [listenId, stopListening]);
 
   return (
     <div className="h-full overflow-y-auto scroll-container p-4">
@@ -59,7 +113,20 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
               </span>
             </div>
 
-            {call.type !== 'sim' && (
+            {call.type === 'sim' ? (
+              call.hasListenUrl && call.simStatus === 'in-progress' && (
+                <button
+                  onClick={() => handleListen(call)}
+                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    listenId === call.simCallId
+                      ? 'bg-purple-600 text-white hover:bg-purple-700'
+                      : 'bg-jv-elevated border border-jv-border hover:bg-jv-card'
+                  }`}
+                >
+                  {listenId === call.simCallId ? '🔊 Listening — tap to stop' : '🎧 Listen In'}
+                </button>
+              )
+            ) : (
               <div className="flex gap-2">
                 <button
                   onClick={() => handleJoin(call, true)}

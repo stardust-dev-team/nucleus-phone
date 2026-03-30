@@ -115,6 +115,10 @@ export function cancelPracticeCall(id) {
   return apiFetch(`/sim/call/${id}/cancel`, { method: 'POST' });
 }
 
+export function getSimListenUrl(simCallId) {
+  return apiFetch(`/sim/call/${simCallId}/listen`);
+}
+
 export function getPracticeScores(identity) {
   return apiFetch(`/sim/scores/${encodeURIComponent(identity)}`);
 }
