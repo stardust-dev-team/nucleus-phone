@@ -12,6 +12,7 @@ export default function useTwilioDevice(identity) {
     if (!identity) return;
 
     let destroyed = false;
+    let gestureHandler = null;
 
     async function init() {
       try {
@@ -42,9 +43,27 @@ export default function useTwilioDevice(identity) {
           }
         });
 
-        await dev.register();
         deviceRef.current = dev;
         if (!destroyed) setDevice(dev);
+
+        // Browsers block AudioContext until a user gesture. Register
+        // immediately if a gesture has already occurred, otherwise
+        // wait for the first click/tap before calling register().
+        async function doRegister() {
+          try {
+            await dev.register();
+          } catch (err) {
+            console.error('Device register failed:', err);
+            if (!destroyed) setStatus('error');
+          }
+        }
+
+        if (navigator.userActivation?.hasBeenActive) {
+          await doRegister();
+        } else {
+          gestureHandler = () => doRegister();
+          document.addEventListener('click', gestureHandler, { once: true });
+        }
       } catch (err) {
         console.error('Device init failed:', err);
         if (!destroyed) setStatus('error');
@@ -55,6 +74,9 @@ export default function useTwilioDevice(identity) {
 
     return () => {
       destroyed = true;
+      if (gestureHandler) {
+        document.removeEventListener('click', gestureHandler);
+      }
       if (deviceRef.current) {
         deviceRef.current.destroy();
         deviceRef.current = null;
