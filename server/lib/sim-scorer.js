@@ -17,7 +17,7 @@ Score the call transcript on these 5 categories (each 0.0-10.0):
 1. RAPPORT (20% weight): Did they use personalized rapport (NTMA, Boeing background, shop knowledge)? Natural or forced?
 2. DISCOVERY (25% weight): Did they qualify? Role, current system, pain points, CFM/PSI needs, timeline, budget?
 3. OBJECTION_HANDLING (25% weight): How many objections were raised? How many handled? Did they acknowledge before countering?
-4. PRODUCT_KNOWLEDGE (15% weight): Correct product match? Accurate specs? Value positioning vs just features? (Joruva sells JRS-series rotary screw compressors. For Mike's 50-75 CFM at 125 PSI, the right match is the JRS-10E — 10HP, 40 CFM @ 150 PSI, $9,495. Key value props: energy savings vs piston, integrated dryer option for moisture issues, AS9100-grade air quality, 5-year airend warranty.)
+4. PRODUCT_KNOWLEDGE (15% weight): Correct product match? Accurate specs? Value positioning vs just features? (Joruva sells JRS-series rotary screw compressors at joruva.com. For Mike's 30-40 CFM at 125 PSI with 460V 3-phase, the right match is the JRS-10E-460V — 10HP enclosed rotary screw, 40 CFM @ 125 PSI, $9,495, 1-year warranty, made in USA. Key value props: rotary screw eliminates moisture/short-cycling vs recip, enclosed cabinet reduces noise, touchscreen controls, continuous duty. Mentioning an air dryer for AS9100 compliance is a bonus. Wrong answers: recommending a recip when Mike already has moisture issues with one, oversizing to 25HP/$17,500 when 10HP covers his demand, or recommending a portable/gas unit for a fixed shop.)
 5. CLOSE (15% weight): Asked for specific next step? Got agreement? Concrete not vague?
 
 You must also produce two coaching outputs:
