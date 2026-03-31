@@ -221,7 +221,7 @@ router.post('/call', sessionAuth, async (req, res) => {
 // ─── POST /call/:id/link-vapi — Link a browser-initiated Vapi call to the DB row
 // Called by the client after Vapi Web SDK creates the call. Must complete before
 // webhooks arrive — Vapi sends transcript events within milliseconds of call start.
-const VAPI_CALL_ID_RE = /^[0-9a-f-]{36}$/;
+const VAPI_CALL_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 router.post('/call/:id/link-vapi', sessionAuth, async (req, res) => {
   if (!validateId(req, res)) return;
@@ -502,32 +502,37 @@ router.post('/webhook', async (req, res) => {
   const duration = typeof call?.duration === 'number' ? Math.round(call.duration) : null;
   const costCents = typeof call?.cost === 'number' ? Math.round(call.cost * 100) : null;
 
-  // Update the existing row (created by POST /call, which calls Vapi first then INSERTs).
-  // The call-first pattern means the row always exists before the webhook fires,
-  // so a simple UPDATE is sufficient — no upsert or retry needed.
+  // Update the existing row. For browser-mode calls, vapi_call_id is set via
+  // link-vapi (client-side) and may not be written yet. Retry once after 2s.
   let rows;
-  try {
-    ({ rows } = await pool.query(
-      `UPDATE sim_call_scores SET
-         transcript = $2,
-         recording_url = $3,
-         duration_seconds = $4,
-         cost_cents = $5,
-         status = 'scoring'
-       WHERE vapi_call_id = $1
-       RETURNING id, caller_identity, difficulty`,
-      [vapiCallId, transcript, recording, duration, costCents]
-    ));
-  } catch (err) {
-    console.error(`sim webhook: UPDATE failed for ${vapiCallId}:`, err.message);
-    return res.sendStatus(500);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      ({ rows } = await pool.query(
+        `UPDATE sim_call_scores SET
+           transcript = $2,
+           recording_url = $3,
+           duration_seconds = $4,
+           cost_cents = $5,
+           status = 'scoring'
+         WHERE vapi_call_id = $1
+         RETURNING id, caller_identity, difficulty`,
+        [vapiCallId, transcript, recording, duration, costCents]
+      ));
+    } catch (err) {
+      console.error(`sim webhook: UPDATE failed for ${vapiCallId}:`, err.message);
+      return res.sendStatus(500);
+    }
+    if (rows.length) break;
+    if (attempt === 0) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
 
   // 200 — Vapi doesn't need to wait for scoring (500 returned above on DB failure)
   res.sendStatus(200);
 
   if (!rows.length) {
-    console.warn(`sim webhook: no row for vapi_call_id ${vapiCallId}`);
+    console.warn(`sim webhook: no row for vapi_call_id ${vapiCallId} after retry`);
     return;
   }
 
