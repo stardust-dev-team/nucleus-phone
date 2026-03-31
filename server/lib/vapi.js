@@ -4,9 +4,10 @@
 
 const VAPI_BASE = 'https://api.vapi.ai';
 
-async function vapiRequest(method, endpoint, body) {
-  const apiKey = process.env.VAPI_API_KEY;
-  if (!apiKey) throw new Error('VAPI_API_KEY not set');
+async function vapiRequest(method, endpoint, body, { usePublicKey } = {}) {
+  const keyName = usePublicKey ? 'VAPI_PUBLIC_KEY' : 'VAPI_API_KEY';
+  const apiKey = process.env[keyName];
+  if (!apiKey) throw new Error(`${keyName} not set`);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
@@ -52,9 +53,7 @@ async function createOutboundCall({ assistantId, customerNumber, phoneNumberId }
  * Returns call object with webCallUrl for Daily.co WebRTC join.
  */
 async function createWebCall({ assistantId }) {
-  return vapiRequest('POST', 'call/web', {
-    assistantId,
-  });
+  return vapiRequest('POST', 'call/web', { assistantId }, { usePublicKey: true });
 }
 
 /**
