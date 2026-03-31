@@ -14,9 +14,11 @@ import InteractionTimeline from '../components/cockpit/InteractionTimeline';
 import QualScript from '../components/cockpit/QualScript';
 import CompanyIntel from '../components/cockpit/CompanyIntel';
 import ProductReference from '../components/cockpit/ProductReference';
+import LiveAnalysis from '../components/cockpit/LiveAnalysis';
 import CallControls from '../components/cockpit/CallControls';
 import PracticeCallButton from '../components/cockpit/PracticeCallButton';
 import PracticeHistory from '../components/cockpit/PracticeHistory';
+import useLiveAnalysis from '../hooks/useLiveAnalysis';
 
 function deriveCallPhase(twilioStatus, callData) {
   if (twilioStatus === 'connecting' || twilioStatus === 'ringing' || twilioStatus === 'connected')
@@ -49,8 +51,15 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
   const scoreboard = useScoreboard();
   const practiceBoard = usePracticeScoreboard(isPractice);
   const [historyKey, setHistoryKey] = useState(0);
+  const [activeSimCallId, setActiveSimCallId] = useState(null);
 
   const callPhase = deriveCallPhase(twilioStatus, callState.callData);
+
+  // Live analysis: subscribe by practice sim ID or real call conference name
+  const liveCallId = isPractice
+    ? (activeSimCallId ? `sim-${activeSimCallId}` : null)
+    : callState.callData?.conferenceName || null;
+  const liveAnalysis = useLiveAnalysis(liveCallId, callPhase === 'active' || !!activeSimCallId);
 
   // Find current user's practice stats from the leaderboard
   const myPracticeStats = practiceBoard.data?.leaderboard?.find(e => e.identity === identity);
@@ -134,6 +143,7 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                   watchOuts={d.rapport?.watch_outs}
                 />
                 <ProductReference productReference={d.rapport?.product_reference} />
+                <LiveAnalysis data={liveAnalysis} active={callPhase === 'active' || !!activeSimCallId} />
               </div>
 
               {/* Right column — Timeline + Business */}
@@ -166,7 +176,12 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                 borderTop: '1px solid var(--cockpit-card-border)',
               }}
             >
-              <PracticeCallButton identity={identity} onScoreComplete={handleScoreComplete} />
+              <PracticeCallButton
+                identity={identity}
+                onScoreComplete={handleScoreComplete}
+                onCallStart={(simId) => setActiveSimCallId(simId)}
+                onCallEnd={() => setActiveSimCallId(null)}
+              />
             </div>
           ) : (
             <CallControls

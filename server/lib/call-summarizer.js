@@ -6,7 +6,7 @@
  */
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-6-20250514';
+const MODEL = 'claude-sonnet-4-6';
 const TIMEOUT = 45000;
 const MIN_TRANSCRIPT_LENGTH = 50;
 // ~100K chars ≈ ~25K tokens. Keeps Claude costs bounded on long calls.

@@ -4,7 +4,7 @@
  */
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-6-20250514';
+const MODEL = 'claude-sonnet-4-6';
 const SCORE_TIMEOUT = 60000;
 
 // Weights must sum to 1.0: 0.20 + 0.25 + 0.25 + 0.15 + 0.15 = 1.00

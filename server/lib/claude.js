@@ -4,7 +4,7 @@
  */
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-6-20250514';
+const MODEL = 'claude-sonnet-4-6';
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const FETCH_TIMEOUT = 6000; // 6 seconds
 

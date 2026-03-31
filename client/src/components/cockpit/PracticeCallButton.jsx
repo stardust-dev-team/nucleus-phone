@@ -15,7 +15,7 @@ const POLL_CALL_MS = 5000;
 const POLL_SCORE_MS = 3000;
 const SCORE_TIMEOUT_MS = 60000;
 
-export default function PracticeCallButton({ identity, onScoreComplete }) {
+export default function PracticeCallButton({ identity, onScoreComplete, onCallStart, onCallEnd }) {
   const [phase, setPhase] = useState('idle'); // idle | selecting | connecting | in-progress | scoring | complete | error
   const [difficulty, setDifficulty] = useState(null);
   const [callMode, setCallMode] = useState('browser'); // 'phone' | 'browser'
@@ -28,6 +28,10 @@ export default function PracticeCallButton({ identity, onScoreComplete }) {
   const dailyRef = useRef(null);
   const onScoreCompleteRef = useRef(onScoreComplete);
   onScoreCompleteRef.current = onScoreComplete;
+  const onCallStartRef = useRef(onCallStart);
+  onCallStartRef.current = onCallStart;
+  const onCallEndRef = useRef(onCallEnd);
+  onCallEndRef.current = onCallEnd;
 
   const cleanupDaily = useCallback(() => {
     if (dailyRef.current) {
@@ -62,6 +66,7 @@ export default function PracticeCallButton({ identity, onScoreComplete }) {
 
         if (expectedPhase === 'in-progress' && data.status !== 'in-progress') {
           cleanup();
+          onCallEndRef.current?.();
           if (data.status === 'scoring') {
             setPhase('scoring');
             startTimeRef.current = Date.now();
@@ -128,9 +133,11 @@ export default function PracticeCallButton({ identity, onScoreComplete }) {
 
       setPhase('in-progress');
       startTimeRef.current = Date.now();
+      onCallStartRef.current?.(data.simCallId);
       startPolling(data.simCallId, 'in-progress');
     } catch (err) {
       cleanupDaily();
+      onCallEndRef.current?.();
       setPhase('error');
       setErrorMsg(err.message);
     }
@@ -138,6 +145,7 @@ export default function PracticeCallButton({ identity, onScoreComplete }) {
 
   async function handleCancel() {
     cleanup();
+    onCallEndRef.current?.();
     if (simCallId) {
       try { await cancelPracticeCall(simCallId); } catch (err) { console.debug('sim cancel (best-effort):', err.message); }
     }

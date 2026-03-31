@@ -16,7 +16,7 @@ const {
 } = require('./equipment-db');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-6-20250514';
+const MODEL = 'claude-sonnet-4-6';
 const WEB_SEARCH_TIMEOUT = 15000;
 
 // In-flight dedup: prevents concurrent web searches for the same equipment.
