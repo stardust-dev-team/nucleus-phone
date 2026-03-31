@@ -133,21 +133,21 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                   nuggets={d.rapport?.intel_nuggets}
                   watchOuts={d.rapport?.watch_outs}
                 />
+                <ProductReference productReference={d.rapport?.product_reference} />
+              </div>
+
+              {/* Right column — Timeline + Business */}
+              <div className="min-w-0">
                 <InteractionTimeline
                   interactionHistory={d.interactionHistory}
                   priorCalls={d.priorCalls}
                 />
-              </div>
-
-              {/* Right column — Business */}
-              <div className="min-w-0">
                 <QualScript adaptedScript={d.rapport?.adapted_script} />
                 <CompanyIntel
                   companyData={d.companyData}
                   icpScore={d.icpScore}
                   pipelineData={d.pipelineData}
                 />
-                <ProductReference productReference={d.rapport?.product_reference} />
               </div>
             </div>
 
