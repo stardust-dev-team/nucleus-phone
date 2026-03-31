@@ -9,7 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { sessionAuth } = require('../middleware/auth');
 const { pool } = require('../db');
-const { createOutboundCall, createWebCall, stopCall } = require('../lib/vapi');
+const { createOutboundCall, stopCall } = require('../lib/vapi');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
@@ -219,22 +219,30 @@ router.post('/call', sessionAuth, async (req, res) => {
 });
 
 // ─── POST /call/:id/link-vapi — Link a browser-initiated Vapi call to the DB row
-// Called by the client after Vapi Web SDK creates the call.
+// Called by the client after Vapi Web SDK creates the call. Must complete before
+// webhooks arrive — Vapi sends transcript events within milliseconds of call start.
+const VAPI_CALL_ID_RE = /^[0-9a-f-]{36}$/;
+
 router.post('/call/:id/link-vapi', sessionAuth, async (req, res) => {
   if (!validateId(req, res)) return;
   const { vapiCallId } = req.body;
-  if (!vapiCallId || typeof vapiCallId !== 'string') {
-    return res.status(400).json({ error: 'vapiCallId required' });
+  if (!vapiCallId || typeof vapiCallId !== 'string' || !VAPI_CALL_ID_RE.test(vapiCallId)) {
+    return res.status(400).json({ error: 'vapiCallId must be a valid UUID' });
   }
-  const { rowCount } = await pool.query(
-    `UPDATE sim_call_scores SET vapi_call_id = $1
-     WHERE id = $2 AND caller_identity = $3 AND vapi_call_id IS NULL`,
-    [vapiCallId, req.params.id, req.user.identity]
-  );
-  if (rowCount === 0) {
-    return res.status(404).json({ error: 'Row not found or already linked' });
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE sim_call_scores SET vapi_call_id = $1
+       WHERE id = $2 AND caller_identity = $3 AND vapi_call_id IS NULL`,
+      [vapiCallId, req.params.id, req.user.identity]
+    );
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Row not found or already linked' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`sim link-vapi: DB error for row ${req.params.id}:`, err.message);
+    res.status(500).json({ error: 'Failed to link Vapi call' });
   }
-  res.json({ ok: true });
 });
 
 // ─── GET /call/:id/status — Poll call status ──────────────────────
@@ -412,9 +420,9 @@ async function handleTranscriptEvent(message) {
   const role = (typeof raw === 'object' ? raw?.role : null) || message.role;
   const transcriptType = (typeof raw === 'object' ? raw?.transcriptType : null) || message.transcriptType;
   const text = typeof raw === 'string' ? raw : raw?.text;
-  const callId = message.call?.id;
+  const vapiCallId = message.call?.id;
 
-  if (!callId) {
+  if (!vapiCallId) {
     console.warn('sim transcript: no call.id in message, keys:', Object.keys(message).join(','));
     return;
   }
@@ -424,19 +432,26 @@ async function handleTranscriptEvent(message) {
   if (transcriptType !== 'final') return;
   if (role !== 'assistant') return;
 
-  // Find the sim_call_scores row for this Vapi call
+  // Find the sim_call_scores row for this Vapi call.
+  // Retry once after 2s — link-vapi may still be in flight from the client.
   let rows;
-  try {
-    ({ rows } = await pool.query(
-      'SELECT id FROM sim_call_scores WHERE vapi_call_id = $1',
-      [callId]
-    ));
-  } catch (err) {
-    console.error(`sim transcript: DB lookup failed for vapi call ${callId}:`, err.message);
-    return;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      ({ rows } = await pool.query(
+        'SELECT id FROM sim_call_scores WHERE vapi_call_id = $1',
+        [vapiCallId]
+      ));
+    } catch (err) {
+      console.error(`sim transcript: DB lookup failed for vapi call ${vapiCallId}:`, err.message);
+      return;
+    }
+    if (rows.length) break;
+    if (attempt === 0) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
   if (!rows.length) {
-    console.debug(`sim transcript: no row for vapi_call_id=${callId} (link-vapi may be pending)`);
+    console.warn(`sim transcript: no row for vapi_call_id=${vapiCallId} after retry`);
     return;
   }
 

@@ -128,10 +128,8 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
         const vapi = new Vapi(data.publicKey);
         vapiRef.current = vapi;
         const vapiCall = await vapi.start(data.assistantId);
-        // Link the Vapi call ID to our DB row so webhooks can find it
-        linkVapiCall(data.simCallId, vapiCall.id).catch(err =>
-          console.error('sim: failed to link vapi call:', err.message)
-        );
+        // Link the Vapi call ID BEFORE proceeding — webhooks arrive immediately
+        await linkVapiCall(data.simCallId, vapiCall.id);
       }
 
       setPhase('in-progress');
