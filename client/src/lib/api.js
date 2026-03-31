@@ -115,6 +115,13 @@ export function cancelPracticeCall(id) {
   return apiFetch(`/sim/call/${id}/cancel`, { method: 'POST' });
 }
 
+export function linkVapiCall(simCallId, vapiCallId) {
+  return apiFetch(`/sim/call/${simCallId}/link-vapi`, {
+    method: 'POST',
+    body: JSON.stringify({ vapiCallId }),
+  });
+}
+
 export function getSimListenUrl(simCallId) {
   return apiFetch(`/sim/call/${simCallId}/listen`);
 }

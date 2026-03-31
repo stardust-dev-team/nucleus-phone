@@ -159,15 +159,35 @@ router.post('/call', sessionAuth, async (req, res) => {
     return res.status(500).json({ error: `Missing env var ${DIFFICULTY_TO_ASSISTANT[difficulty]}` });
   }
 
-  // Call Vapi FIRST so we have the call ID before inserting.
+  // Browser mode: client creates the call via Vapi Web SDK, server just
+  // reserves the DB row and returns the assistantId + publicKey.
+  // Phone mode: server creates the call via Vapi API as before.
+  if (mode === 'browser') {
+    const publicKey = process.env.VAPI_PUBLIC_KEY;
+    if (!publicKey) {
+      return res.status(500).json({ error: 'VAPI_PUBLIC_KEY not set' });
+    }
+    const promptVersion = getPromptVersion(difficulty);
+    try {
+      const { rows: [row] } = await pool.query(
+        `INSERT INTO sim_call_scores (caller_identity, difficulty, prompt_version, status)
+         VALUES ($1, $2, $3, 'in-progress')
+         RETURNING id`,
+        [identity, difficulty, promptVersion]
+      );
+      res.json({ simCallId: row.id, assistantId, publicKey });
+    } catch (err) {
+      console.error('sim: INSERT failed:', err.message);
+      res.status(500).json({ error: 'Failed to record practice call' });
+    }
+    return;
+  }
+
+  // Phone mode: server creates the Vapi call
   let call;
   try {
-    if (mode === 'browser') {
-      call = await createWebCall({ assistantId });
-    } else {
-      const phone = lookupPhone(identity);
-      call = await createOutboundCall({ assistantId, customerNumber: phone });
-    }
+    const phone = lookupPhone(identity);
+    call = await createOutboundCall({ assistantId, customerNumber: phone });
   } catch (err) {
     console.error('Vapi call initiation failed:', err.message);
     sendSystemAlert(
@@ -190,16 +210,31 @@ router.post('/call', sessionAuth, async (req, res) => {
        RETURNING id`,
       [call.id, identity, difficulty, promptVersion, listenUrl, controlUrl]
     );
-    const response = { simCallId: row.id, vapiCallId: call.id };
-    if (mode === 'browser' && call.webCallUrl) {
-      response.webCallUrl = call.webCallUrl;
-    }
-    res.json(response);
+    res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
     console.error('sim: INSERT failed after Vapi call initiated, stopping orphan:', err.message);
     stopCall(call.id).catch(e => console.warn('sim: failed to stop orphan:', e.message));
     res.status(500).json({ error: 'Failed to record practice call' });
   }
+});
+
+// ─── POST /call/:id/link-vapi — Link a browser-initiated Vapi call to the DB row
+// Called by the client after Vapi Web SDK creates the call.
+router.post('/call/:id/link-vapi', sessionAuth, async (req, res) => {
+  if (!validateId(req, res)) return;
+  const { vapiCallId } = req.body;
+  if (!vapiCallId || typeof vapiCallId !== 'string') {
+    return res.status(400).json({ error: 'vapiCallId required' });
+  }
+  const { rowCount } = await pool.query(
+    `UPDATE sim_call_scores SET vapi_call_id = $1
+     WHERE id = $2 AND caller_identity = $3 AND vapi_call_id IS NULL`,
+    [vapiCallId, req.params.id, req.user.identity]
+  );
+  if (rowCount === 0) {
+    return res.status(404).json({ error: 'Row not found or already linked' });
+  }
+  res.json({ ok: true });
 });
 
 // ─── GET /call/:id/status — Poll call status ──────────────────────

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import DailyIframe from '@daily-co/daily-js';
-import { startPracticeCall, getPracticeCallStatus, cancelPracticeCall } from '../../lib/api';
+import Vapi from '@vapi-ai/web';
+import { startPracticeCall, getPracticeCallStatus, cancelPracticeCall, linkVapiCall } from '../../lib/api';
 import { GRADE_EMOJI } from '../../lib/constants';
 
 const DIFFICULTIES = [
@@ -25,7 +25,7 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
   const pollRef = useRef(null);
   const abortRef = useRef(null);
   const startTimeRef = useRef(null);
-  const dailyRef = useRef(null);
+  const vapiRef = useRef(null);
   const onScoreCompleteRef = useRef(onScoreComplete);
   onScoreCompleteRef.current = onScoreComplete;
   const onCallStartRef = useRef(onCallStart);
@@ -33,11 +33,10 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
   const onCallEndRef = useRef(onCallEnd);
   onCallEndRef.current = onCallEnd;
 
-  const cleanupDaily = useCallback(() => {
-    if (dailyRef.current) {
-      dailyRef.current.leave().catch(() => {});
-      dailyRef.current.destroy();
-      dailyRef.current = null;
+  const cleanupVapi = useCallback(() => {
+    if (vapiRef.current) {
+      vapiRef.current.stop();
+      vapiRef.current = null;
     }
   }, []);
 
@@ -50,8 +49,8 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
       abortRef.current.abort();
       abortRef.current = null;
     }
-    cleanupDaily();
-  }, [cleanupDaily]);
+    cleanupVapi();
+  }, [cleanupVapi]);
 
   useEffect(() => cleanup, [cleanup]);
 
@@ -120,15 +119,14 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
       const data = await startPracticeCall(diff, callMode);
       setSimCallId(data.simCallId);
 
-      if (callMode === 'browser' && data.webCallUrl) {
-        const callObject = DailyIframe.createCallObject({ audioSource: true, videoSource: false });
-        dailyRef.current = callObject;
-
-        callObject.on('left-meeting', () => {
-          cleanupDaily();
-        });
-
-        await callObject.join({ url: data.webCallUrl, startAudioOff: false, startVideoOff: true });
+      if (callMode === 'browser' && data.assistantId && data.publicKey) {
+        const vapi = new Vapi(data.publicKey);
+        vapiRef.current = vapi;
+        const vapiCall = await vapi.start(data.assistantId);
+        // Link the Vapi call ID to our DB row so webhooks can find it
+        linkVapiCall(data.simCallId, vapiCall.id).catch(err =>
+          console.error('sim: failed to link vapi call:', err.message)
+        );
       }
 
       setPhase('in-progress');
@@ -136,7 +134,7 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
       onCallStartRef.current?.(data.simCallId);
       startPolling(data.simCallId, 'in-progress');
     } catch (err) {
-      cleanupDaily();
+      cleanupVapi();
       setPhase('error');
       setErrorMsg(err.message);
     }
