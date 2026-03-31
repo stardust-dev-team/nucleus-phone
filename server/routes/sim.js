@@ -12,6 +12,8 @@ const { pool } = require('../db');
 const { createOutboundCall, createWebCall, stopCall } = require('../lib/vapi');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
+const { broadcast } = require('../lib/live-analysis');
+const { processEquipmentChunk } = require('../lib/equipment-pipeline');
 const team = require('../config/team.json');
 
 const router = Router();
@@ -360,7 +362,51 @@ router.post('/call/:id/rescore', sessionAuth, async (req, res) => {
   res.json({ rescored: true, grade: result.grade, overall: result.overall });
 });
 
-// ─── POST /webhook — Vapi end-of-call-report ──────────────────────
+/**
+ * Handle Vapi transcript server events for live equipment analysis.
+ *
+ * Vapi labels speakers as role:'assistant' (Mike Garza AI) and role:'user'
+ * (the sales rep). Equipment mentions come from the assistant (prospect
+ * simulator), so we extract from role==='assistant' transcripts only.
+ */
+async function handleTranscriptEvent(message) {
+  const { transcript, call } = message;
+  if (!transcript || !call?.id) return;
+
+  // Only process final transcripts from the assistant (the simulated prospect)
+  if (transcript.transcriptType !== 'final') return;
+  if (transcript.role !== 'assistant') return;
+
+  const text = transcript.text;
+  if (!text) return;
+
+  // Find the sim_call_scores row for this Vapi call
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      'SELECT id FROM sim_call_scores WHERE vapi_call_id = $1',
+      [call.id]
+    ));
+  } catch (err) {
+    console.error(`sim transcript: DB lookup failed for vapi call ${call.id}:`, err.message);
+    return;
+  }
+  if (!rows.length) return;
+
+  const simId = rows[0].id;
+  const callId = `sim-${simId}`;
+
+  // Broadcast raw transcript chunk
+  broadcast(callId, {
+    type: 'transcript_chunk',
+    data: { text, speaker: transcript.role },
+  });
+
+  // Run entity extraction → lookup → sizing → broadcast pipeline
+  await processEquipmentChunk(callId, 'practice', String(simId), text);
+}
+
+// ─── POST /webhook — Vapi server events (transcript + end-of-call-report) ───
 // No auth middleware — validates x-vapi-secret header manually.
 router.post('/webhook', async (req, res) => {
   // Hard-require webhook secret
@@ -370,8 +416,19 @@ router.post('/webhook', async (req, res) => {
   }
 
   const { message } = req.body || {};
-  if (!message || message.type !== 'end-of-call-report') {
-    return res.sendStatus(200); // Ignore non-end-of-call events
+  if (!message) return res.sendStatus(200);
+
+  // ── Handle real-time transcript events (practice call live analysis) ──
+  if (message.type === 'transcript') {
+    res.sendStatus(200);
+    handleTranscriptEvent(message).catch(err => {
+      console.error('sim webhook: transcript handler error:', err.message);
+    });
+    return;
+  }
+
+  if (message.type !== 'end-of-call-report') {
+    return res.sendStatus(200);
   }
 
   const { artifact, call } = message;

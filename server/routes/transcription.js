@@ -17,11 +17,8 @@
 const { Router } = require('express');
 const twilio = require('twilio');
 const { pool } = require('../db');
-const { extractEquipment } = require('../lib/entity-extractor');
-const { lookupEquipment } = require('../lib/equipment-lookup');
-const { calculateDemand, recommendSystem } = require('../lib/sizing-engine');
-const { logSighting } = require('../lib/equipment-db');
-const { broadcast, getCallEquipment } = require('../lib/live-analysis');
+const { broadcast } = require('../lib/live-analysis');
+const { processEquipmentChunk } = require('../lib/equipment-pipeline');
 
 const router = Router();
 
@@ -79,78 +76,9 @@ router.post('/', twilioWebhook, async (req, res) => {
   });
 
   // Run entity extraction pipeline (fire-and-forget, don't block)
-  processTranscriptChunk(call, callId, TranscriptionText).catch((err) => {
+  processEquipmentChunk(callId, 'real', String(call.id), TranscriptionText).catch((err) => {
     console.error('transcription: pipeline error:', err.message);
   });
 });
-
-async function processTranscriptChunk(call, callId, text) {
-  const entities = await extractEquipment(text);
-  if (entities.length === 0) return;
-
-  const accumulated = getCallEquipment(callId);
-
-  for (const entity of entities) {
-    // Look up specs in equipment catalog
-    let result = null;
-    if (entity.manufacturer && entity.model) {
-      result = await lookupEquipment(entity.manufacturer, entity.model);
-    }
-
-    const specs = result ? {
-      cfm_typical: result.cfm_typical,
-      psi_required: result.psi_required,
-      duty_cycle_pct: result.duty_cycle_pct,
-      air_quality_class: result.air_quality_class,
-      confidence: result.confidence,
-    } : null;
-
-    // Log sighting (await to avoid unhandled rejection)
-    await logSighting({
-      manufacturer: entity.manufacturer,
-      model: entity.model,
-      raw_mention: entity.raw_mention,
-      count: entity.count,
-      call_type: 'real',
-      call_id: String(call.id),
-      catalog_match_id: result?.id ?? null,
-    });
-
-    // Broadcast detection
-    broadcast(callId, {
-      type: 'equipment_detected',
-      data: {
-        manufacturer: entity.manufacturer,
-        model: entity.model,
-        count: entity.count,
-        specs,
-        catalogMatch: !!result,
-      },
-    });
-
-    // Accumulate for sizing (cap at 100 to prevent pathological growth)
-    const cfm = parseFloat(specs?.cfm_typical) || 0;
-    if (cfm > 0 && accumulated.length < 100) {
-      accumulated.push({
-        cfm_typical: cfm,
-        duty_cycle_pct: parseInt(specs.duty_cycle_pct, 10) || 50,
-        psi_required: parseInt(specs.psi_required, 10) || 90,
-        air_quality_class: specs.air_quality_class || 'general',
-        count: entity.count,
-      });
-    }
-  }
-
-  // Recalculate sizing with all accumulated equipment
-  if (accumulated.length > 0) {
-    const demand = calculateDemand(accumulated);
-    broadcast(callId, { type: 'sizing_updated', data: demand });
-
-    const recommendation = recommendSystem(demand);
-    if (recommendation) {
-      broadcast(callId, { type: 'recommendation_ready', data: recommendation });
-    }
-  }
-}
 
 module.exports = router;

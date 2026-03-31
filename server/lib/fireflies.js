@@ -1,3 +1,6 @@
+// DEPRECATED for phone calls — replaced by Twilio RT Transcription + call-summarizer.js (2026-03).
+// Still used by fireflies-sync.js for Teams/Zoom meeting transcripts.
+
 const FIREFLIES_UPLOAD_MUTATION = `
   mutation($input: AudioUploadInput) {
     uploadAudio(input: $input) {
