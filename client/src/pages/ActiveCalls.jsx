@@ -71,7 +71,14 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
 
   return (
     <div className="h-full overflow-y-auto scroll-container p-4">
-      <h2 className="text-lg font-semibold mb-4">Live Calls</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Live Calls</h2>
+        {twilioHook.status !== 'ready' && (
+          <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400">
+            {twilioHook.status === 'error' ? '⚠ Audio device error — reload page' : '⏳ Audio device connecting...'}
+          </span>
+        )}
+      </div>
 
       {calls.length === 0 && (
         <div className="text-center py-12">
