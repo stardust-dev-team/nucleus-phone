@@ -2,8 +2,10 @@ const {
   calculateDemand,
   recommendSystem,
   addQualityFilters,
+  selectFilter,
   SAFETY_FACTOR,
   COMPRESSOR_CATALOG,
+  FILTER_SIZES,
 } = require('../sizing-engine');
 
 describe('calculateDemand', () => {
@@ -89,13 +91,24 @@ describe('recommendSystem', () => {
     expect(recommendSystem(null)).toBeNull();
   });
 
-  it('recommends JRS-7.5E for low demand', () => {
+  it('recommends JRS-5E for very low demand', () => {
     const demand = calculateDemand([{ cfm_typical: 8, duty_cycle_pct: 60, count: 1 }]);
+    // adjustedCfm = ceil(4.8 * 1.25) = ceil(6.0) = 6 → fits JRS-5E (18 CFM)
     const rec = recommendSystem(demand);
-    expect(rec.compressor.model).toBe('JRS-7.5E');
-    expect(rec.compressor.price).toBe(7495);
+    expect(rec.compressor.model).toBe('JRS-5E');
     expect(rec.dryer).toBeTruthy();
     expect(rec.filters.length).toBeGreaterThan(0);
+  });
+
+  it('recommends JRS-7.5E for moderate low demand', () => {
+    const demand = calculateDemand([{ cfm_typical: 12, duty_cycle_pct: 100, count: 1 }]);
+    // adjustedCfm = ceil(12 * 1.25) = 15 → still fits JRS-5E (18 CFM)
+    // But slightly higher:
+    const demand2 = calculateDemand([{ cfm_typical: 15, duty_cycle_pct: 100, count: 1 }]);
+    // adjustedCfm = ceil(15 * 1.25) = ceil(18.75) = 19 → JRS-7.5E (28 CFM)
+    const rec2 = recommendSystem(demand2);
+    expect(rec2.compressor.model).toBe('JRS-7.5E');
+    expect(rec2.compressor.price).toBe(7495);
   });
 
   it('recommends JRS-10E for medium demand', () => {
@@ -133,10 +146,13 @@ describe('recommendSystem', () => {
     expect(rec.dryer.cfm).toBeGreaterThanOrEqual(rec.compressor.cfm);
   });
 
-  it('always includes particulate filter', () => {
+  it('always includes particulate filter sized to compressor', () => {
     const demand = calculateDemand([{ cfm_typical: 10, count: 1 }]);
     const rec = recommendSystem(demand);
-    expect(rec.filters.some(f => f.model === 'PF-55-8')).toBe(true);
+    expect(rec.filters.some(f => f.micron === 1)).toBe(true);
+    // Filter CFM should cover compressor output
+    const pf = rec.filters.find(f => f.micron === 1);
+    expect(pf.cfm).toBeGreaterThanOrEqual(rec.compressor.cfm);
   });
 
   it('includes price: null for TBD items', () => {
@@ -162,7 +178,7 @@ describe('addQualityFilters', () => {
     const demand = calculateDemand([{ cfm_typical: 10, count: 1 }]);
     const rec = recommendSystem(demand);
     addQualityFilters(rec, 'ISO_8573_1');
-    expect(rec.filters.some(f => f.model === 'CF-55-8')).toBe(true);
+    expect(rec.filters.some(f => f.micron <= 0.01)).toBe(true);
     expect(rec.notes.join(' ')).toContain('Coalescing filter');
   });
 
@@ -170,16 +186,16 @@ describe('addQualityFilters', () => {
     const demand = calculateDemand([{ cfm_typical: 10, count: 1 }]);
     const rec = recommendSystem(demand);
     addQualityFilters(rec, 'paint_grade');
-    expect(rec.filters.some(f => f.model === 'CF-55-8')).toBe(true);
+    expect(rec.filters.some(f => f.micron <= 0.01)).toBe(true);
   });
 
   it('does not duplicate coalescing filter', () => {
     const demand = calculateDemand([{ cfm_typical: 10, count: 1 }]);
     const rec = recommendSystem(demand);
     addQualityFilters(rec, 'ISO_8573_1');
-    const count1 = rec.filters.filter(f => f.model === 'CF-55-8').length;
+    const count1 = rec.filters.filter(f => f.micron <= 0.01).length;
     addQualityFilters(rec, 'ISO_8573_1'); // call again
-    const count2 = rec.filters.filter(f => f.model === 'CF-55-8').length;
+    const count2 = rec.filters.filter(f => f.micron <= 0.01).length;
     expect(count2).toBe(count1);
   });
 
@@ -187,7 +203,7 @@ describe('addQualityFilters', () => {
     const demand = calculateDemand([{ cfm_typical: 10, count: 1 }]);
     const rec = recommendSystem(demand);
     addQualityFilters(rec, 'general');
-    expect(rec.filters.some(f => f.model === 'CF-55-8')).toBe(false);
+    expect(rec.filters.some(f => f.micron <= 0.01)).toBe(false);
   });
 });
 
@@ -204,10 +220,49 @@ describe('COMPRESSOR_CATALOG', () => {
     }
   });
 
+  it('includes 5HP, 7.5HP, and 10HP models', () => {
+    expect(COMPRESSOR_CATALOG.find(c => c.model === 'JRS-5E')).toBeTruthy();
+    expect(COMPRESSOR_CATALOG.find(c => c.model === 'JRS-7.5E')).toBeTruthy();
+    expect(COMPRESSOR_CATALOG.find(c => c.model === 'JRS-10E')).toBeTruthy();
+  });
+
   it('has JRS-7.5E and JRS-10E with prices', () => {
     const jrs75 = COMPRESSOR_CATALOG.find(c => c.model === 'JRS-7.5E');
     const jrs10 = COMPRESSOR_CATALOG.find(c => c.model === 'JRS-10E');
     expect(jrs75.price).toBe(7495);
     expect(jrs10.price).toBe(9495);
+  });
+});
+
+describe('selectFilter', () => {
+  it('picks smallest filter that covers demand', () => {
+    expect(selectFilter('particulate', 20).model).toBe('PF-30-8');
+    expect(selectFilter('particulate', 40).model).toBe('PF-55-8');
+    expect(selectFilter('particulate', 80).model).toBe('PF-100-8');
+  });
+
+  it('picks largest filter when demand exceeds all sizes', () => {
+    expect(selectFilter('particulate', 200).model).toBe('PF-100-8');
+  });
+
+  it('works for coalescing filters too', () => {
+    expect(selectFilter('coalescing', 25).model).toBe('CF-30-8');
+    expect(selectFilter('coalescing', 60).model).toBe('CF-100-8');
+  });
+});
+
+describe('FILTER_SIZES', () => {
+  it('has multiple sizes for each filter type', () => {
+    expect(FILTER_SIZES.particulate.length).toBeGreaterThanOrEqual(3);
+    expect(FILTER_SIZES.coalescing.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('is sorted by CFM ascending', () => {
+    for (const type of ['particulate', 'coalescing']) {
+      const sizes = FILTER_SIZES[type];
+      for (let i = 1; i < sizes.length; i++) {
+        expect(sizes[i].cfm).toBeGreaterThan(sizes[i - 1].cfm);
+      }
+    }
   });
 });

@@ -285,6 +285,8 @@ async function seed() {
            confidence = EXCLUDED.confidence,
            verified_by = EXCLUDED.verified_by,
            updated_at = NOW()
+         -- xmax = 0: Postgres MVCC detail — freshly inserted rows have xmax 0,
+         -- conflict-updated rows have a non-zero xmax from the prior version.
          RETURNING id, (xmax = 0) AS is_insert`,
         [
           cat.manufacturer, cat.model, cat.model_variants, cat.category,
@@ -340,11 +342,11 @@ async function seed() {
     console.log(`Seed complete: ${inserted} inserted, ${updated} updated, ${detailsCount} details records`);
     console.log(`Total entries: ${allEquipment.length}`);
 
-    // Verification
-    const { rows: [{ count }] } = await pool.query('SELECT COUNT(*)::int AS count FROM equipment_catalog');
+    // Verification — use same client to guarantee read-your-writes
+    const { rows: [{ count }] } = await client.query('SELECT COUNT(*)::int AS count FROM equipment_catalog');
     console.log(`equipment_catalog total rows: ${count}`);
 
-    const { rows: categories } = await pool.query(
+    const { rows: categories } = await client.query(
       'SELECT category, COUNT(*)::int AS count FROM equipment_catalog GROUP BY category ORDER BY category'
     );
     console.log('By category:', categories.map(r => `${r.category}: ${r.count}`).join(', '));

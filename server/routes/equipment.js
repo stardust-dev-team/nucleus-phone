@@ -11,14 +11,15 @@ router.get('/search', async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
 
   try {
-    const pattern = `%${q}%`;
+    const escaped = q.replace(/[%_\\]/g, '\\$&');
+    const pattern = `%${escaped}%`;
     const { rows } = await pool.query(
       `SELECT ec.*, ed.description, ed.air_usage_notes, ed.recommended_compressor,
               ed.recommended_dryer, ed.system_notes, ed.key_selling_points
        FROM equipment_catalog ec
        LEFT JOIN equipment_details ed ON ed.equipment_id = ec.id
-       WHERE ec.manufacturer ILIKE $1 OR ec.model ILIKE $1
-         OR EXISTS (SELECT 1 FROM unnest(ec.model_variants) v WHERE v ILIKE $1)
+       WHERE ec.manufacturer ILIKE $1 ESCAPE '\\' OR ec.model ILIKE $1 ESCAPE '\\'
+         OR EXISTS (SELECT 1 FROM unnest(COALESCE(ec.model_variants, '{}')) v WHERE v ILIKE $1 ESCAPE '\\')
        ORDER BY ec.manufacturer, ec.model
        LIMIT $2`,
       [pattern, limit]
@@ -74,6 +75,8 @@ router.get('/sightings', async (req, res) => {
   }
 });
 
+// NOTE: Parameterized routes (/:id) must come AFTER static paths (/search, /unverified, /sightings)
+
 // PUT /api/equipment/:id/verify — admin marks entry as verified
 router.put('/:id/verify', async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -82,7 +85,7 @@ router.put('/:id/verify', async (req, res) => {
   const verifiedBy = req.user?.identity || req.user?.name || 'admin';
 
   try {
-    const { rows, rowCount } = await pool.query(
+    const { rows } = await pool.query(
       `UPDATE equipment_catalog
        SET confidence = 'high', verified_by = $1, last_verified_at = NOW(), updated_at = NOW()
        WHERE id = $2
@@ -90,7 +93,7 @@ router.put('/:id/verify', async (req, res) => {
       [verifiedBy, id]
     );
 
-    if (rowCount === 0) return res.status(404).json({ error: 'Equipment not found' });
+    if (rows.length === 0) return res.status(404).json({ error: 'Equipment not found' });
     res.json(rows[0]);
   } catch (err) {
     console.error('equipment verify error:', err.message);

@@ -10,6 +10,7 @@ const SAFETY_FACTOR = 1.25; // Industry standard: 25% buffer for leaks + growth
 // CAS compressor catalog, ordered by CFM capacity.
 // price: null means "pricing available on request" (TBD with CAS).
 const COMPRESSOR_CATALOG = [
+  { model: 'JRS-5E',    hp: 5,    cfm: 18,  psi: 150, price: null,  voltage: '230V/1ph' },
   { model: 'JRS-7.5E',  hp: 7.5,  cfm: 28,  psi: 150, price: 7495,  voltage: '230V/1ph or 3ph' },
   { model: 'JRS-10E',   hp: 10,   cfm: 40,  psi: 150, price: 9495,  voltage: '460V/3ph' },
   { model: 'JRS-15E',   hp: 15,   cfm: 60,  psi: 150, price: null,  voltage: '460V/3ph' },
@@ -23,10 +24,30 @@ const DRYER_CATALOG = [
   { model: 'RD100-230', cfm: 100, voltage: '230V/1/60', price: null },
 ];
 
-const FILTER_CATALOG = {
-  particulate: { model: 'PF-55-8', cfm: 55, micron: 1, price: null },
-  coalescing:  { model: 'CF-55-8', cfm: 55, micron: 0.01, price: null },
+// Filters sized by CFM capacity. selectFilter() picks the smallest that covers demand.
+const FILTER_SIZES = {
+  particulate: [
+    { model: 'PF-30-8', cfm: 30, micron: 1, price: null },
+    { model: 'PF-55-8', cfm: 55, micron: 1, price: null },
+    { model: 'PF-100-8', cfm: 100, micron: 1, price: null },
+  ],
+  coalescing: [
+    { model: 'CF-30-8', cfm: 30, micron: 0.01, price: null },
+    { model: 'CF-55-8', cfm: 55, micron: 0.01, price: null },
+    { model: 'CF-100-8', cfm: 100, micron: 0.01, price: null },
+  ],
 };
+
+// Backward compat — legacy tests reference FILTER_CATALOG
+const FILTER_CATALOG = {
+  particulate: FILTER_SIZES.particulate[1],
+  coalescing:  FILTER_SIZES.coalescing[1],
+};
+
+function selectFilter(type, cfm) {
+  const sizes = FILTER_SIZES[type];
+  return sizes.find(f => f.cfm >= cfm) || sizes[sizes.length - 1];
+}
 
 /**
  * Calculate total air demand from a list of equipment.
@@ -88,10 +109,10 @@ function recommendSystem(demand) {
   const dryer = DRYER_CATALOG.find(d => d.cfm >= compressor.cfm)
     || DRYER_CATALOG[DRYER_CATALOG.length - 1];
 
-  // Always include particulate pre-filter — standard practice for any
-  // compressed air system. Coalescing filter added separately via
-  // addQualityFilters() when air quality class requires it.
-  const filters = [FILTER_CATALOG.particulate];
+  // Always include particulate pre-filter sized to match compressor output.
+  // Coalescing filter added separately via addQualityFilters() when air
+  // quality class requires it.
+  const filters = [selectFilter('particulate', compressor.cfm)];
 
   const notes = [];
 
@@ -123,9 +144,10 @@ function addQualityFilters(recommendation, airQualityClass) {
 
   const needsCoalescing = airQualityClass === 'ISO_8573_1' || airQualityClass === 'paint_grade';
   if (needsCoalescing) {
-    const hasCoalescing = recommendation.filters.some(f => f.model === FILTER_CATALOG.coalescing.model);
+    const hasCoalescing = recommendation.filters.some(f => f.micron <= 0.01);
     if (!hasCoalescing) {
-      recommendation.filters.push({ ...FILTER_CATALOG.coalescing });
+      const cfm = recommendation.compressor?.cfm || 55;
+      recommendation.filters.push({ ...selectFilter('coalescing', cfm) });
       recommendation.notes.push('Coalescing filter added for air quality requirements');
     }
   }
@@ -135,8 +157,10 @@ module.exports = {
   calculateDemand,
   recommendSystem,
   addQualityFilters,
+  selectFilter,
   SAFETY_FACTOR,
   COMPRESSOR_CATALOG,
   DRYER_CATALOG,
   FILTER_CATALOG,
+  FILTER_SIZES,
 };

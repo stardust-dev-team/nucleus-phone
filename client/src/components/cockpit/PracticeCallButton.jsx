@@ -124,8 +124,9 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
       const data = await startPracticeCall(diff, callMode);
       setSimCallId(data.simCallId);
 
-      if (callMode === 'browser' && data.assistantId && data.publicKey) {
-        const vapi = new Vapi(data.publicKey);
+      const vapiPubKey = import.meta.env.VITE_VAPI_PUBLIC_KEY || data.publicKey;
+      if (callMode === 'browser' && data.assistantId && vapiPubKey) {
+        const vapi = new Vapi(vapiPubKey);
         vapiRef.current = vapi;
         vapi.on('call-end', () => {
           cleanupVapi();
