@@ -10,16 +10,8 @@
  *   4. Recommend  — CAS compressor card
  */
 
-const PHASE_LISTENING = 0;
-const PHASE_EQUIPMENT = 1;
-const PHASE_SIZING = 2;
-const PHASE_RECOMMENDATION = 3;
-
-function derivePhase({ equipment, sizing, recommendation }) {
-  if (recommendation) return PHASE_RECOMMENDATION;
-  if (sizing) return PHASE_SIZING;
-  if (equipment.length > 0) return PHASE_EQUIPMENT;
-  return PHASE_LISTENING;
+function hasEquipment({ equipment, sizing, recommendation }) {
+  return recommendation || sizing || equipment.length > 0;
 }
 
 function formatCfm(n) {
@@ -33,10 +25,11 @@ function formatPrice(price) {
 }
 
 export default function LiveAnalysis({ data, active }) {
-  const { equipment, sizing, recommendation, connected } = data;
+  const safe = data || {};
+  const { equipment = [], sizing, recommendation, connected = false } = safe;
   if (!active && !connected && equipment.length === 0) return null;
 
-  const phase = derivePhase(data);
+  const detected = hasEquipment(safe);
 
   return (
     <div
@@ -51,7 +44,7 @@ export default function LiveAnalysis({ data, active }) {
         className="flex items-center gap-2 px-3 py-2"
         style={{
           background: 'var(--cockpit-blue-bg)',
-          borderBottom: phase > PHASE_LISTENING ? '1px solid var(--cockpit-blue-border)' : 'none',
+          borderBottom: detected ? '1px solid var(--cockpit-blue-border)' : 'none',
         }}
       >
         <span
@@ -62,9 +55,9 @@ export default function LiveAnalysis({ data, active }) {
           }}
         />
         <span className="text-[12px] font-medium" style={{ color: 'var(--cockpit-blue-900)' }}>
-          {phase === PHASE_LISTENING
+          {!detected
             ? 'Listening for equipment...'
-            : `${equipment.length} equipment detected`}
+            : `${equipment.length} ${equipment.length === 1 ? 'machine' : 'machines'} detected`}
         </span>
       </div>
 
@@ -177,12 +170,6 @@ export default function LiveAnalysis({ data, active }) {
         </div>
       )}
 
-      <style>{`
-        @keyframes live-pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(1.3); }
-        }
-      `}</style>
     </div>
   );
 }

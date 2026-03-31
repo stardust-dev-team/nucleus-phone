@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 3000;
+const RETRY_BASE_MS = 3000;
 
 export default function useLiveAnalysis(callId, enabled = true) {
   const [equipment, setEquipment] = useState([]);
@@ -59,9 +59,17 @@ export default function useLiveAnalysis(callId, enabled = true) {
 
       ws.onmessage = (event) => {
         let msg;
-        try { msg = JSON.parse(event.data); } catch { return; }
+        try {
+          msg = JSON.parse(event.data);
+        } catch (err) {
+          console.debug('live-analysis: malformed message:', err.message);
+          return;
+        }
 
         if (msg.type === 'equipment_detected' && msg.data) {
+          // Dedup by manufacturer:model. If the server sends the same equipment
+          // with a different count, it's dropped — the server already deduplicates
+          // and only sends each manufacturer:model once per call.
           const key = `${msg.data.manufacturer}:${msg.data.model}`;
           if (!seenRef.current.has(key)) {
             seenRef.current.add(key);
@@ -78,14 +86,18 @@ export default function useLiveAnalysis(callId, enabled = true) {
         setConnected(false);
         wsRef.current = null;
 
-        // Don't retry on intentional close or max retries exceeded
+        // Intentional close (code 1000) skips retry. This is load-bearing:
+        // when callId changes, the effect cleanup closes with 1000 before the
+        // retry timer fires, preventing a stale reconnect to the old callId.
         if (event.code === 1000 || retriesRef.current >= MAX_RETRIES) return;
 
         retriesRef.current++;
-        retryTimerRef.current = setTimeout(connect, RETRY_DELAY_MS);
+        const delay = RETRY_BASE_MS * retriesRef.current;
+        retryTimerRef.current = setTimeout(connect, delay);
       };
 
       ws.onerror = () => {
+        console.debug('live-analysis: WebSocket error');
         // onclose fires after onerror — reconnect logic lives there
       };
     }

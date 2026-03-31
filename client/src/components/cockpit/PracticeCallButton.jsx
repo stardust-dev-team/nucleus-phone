@@ -137,15 +137,15 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
       startPolling(data.simCallId, 'in-progress');
     } catch (err) {
       cleanupDaily();
-      onCallEndRef.current?.();
       setPhase('error');
       setErrorMsg(err.message);
     }
   }
 
   async function handleCancel() {
+    const wasActive = phase === 'in-progress';
     cleanup();
-    onCallEndRef.current?.();
+    if (wasActive) onCallEndRef.current?.();
     if (simCallId) {
       try { await cancelPracticeCall(simCallId); } catch (err) { console.debug('sim cancel (best-effort):', err.message); }
     }
