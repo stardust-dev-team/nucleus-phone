@@ -25,6 +25,7 @@ async function processEquipmentChunk(callId, callType, dbCallId, text) {
   if (entities.length === 0) return;
 
   const accumulated = getCallEquipment(callId);
+  let sizingChanged = false;
 
   for (const entity of entities) {
     try {
@@ -71,13 +72,14 @@ async function processEquipmentChunk(callId, callType, dbCallId, text) {
           air_quality_class: specs.air_quality_class || 'general',
           count: entity.count,
         });
+        sizingChanged = true;
       }
     } catch (err) {
       console.error(`equipment-pipeline: failed for ${entity.manufacturer} ${entity.model}:`, err.message);
     }
   }
 
-  if (accumulated.length > 0) {
+  if (sizingChanged) {
     const demand = calculateDemand(accumulated);
     broadcast(callId, { type: 'sizing_updated', data: demand });
 
