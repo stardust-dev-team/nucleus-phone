@@ -291,10 +291,13 @@ router.get('/scoreboard', sessionAuth, async (req, res) => {
 router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
   if (!validateId(req, res)) return;
   const { rows } = await pool.query(
-    "SELECT id, vapi_call_id, status FROM sim_call_scores WHERE id = $1",
+    "SELECT id, vapi_call_id, status, caller_identity FROM sim_call_scores WHERE id = $1",
     [req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
+  if (rows[0].caller_identity !== req.user.identity && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Not your call' });
+  }
   if (rows[0].status !== 'in-progress') {
     return res.status(409).json({ error: `Cannot cancel — status is ${rows[0].status}` });
   }
@@ -376,17 +379,23 @@ router.post('/webhook', async (req, res) => {
   // Update the existing row (created by POST /call, which calls Vapi first then INSERTs).
   // The call-first pattern means the row always exists before the webhook fires,
   // so a simple UPDATE is sufficient — no upsert or retry needed.
-  const { rows } = await pool.query(
-    `UPDATE sim_call_scores SET
-       transcript = $2,
-       recording_url = $3,
-       duration_seconds = $4,
-       cost_cents = $5,
-       status = 'scoring'
-     WHERE vapi_call_id = $1
-     RETURNING id, caller_identity, difficulty`,
-    [vapiCallId, transcript, recording, duration, costCents]
-  );
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      `UPDATE sim_call_scores SET
+         transcript = $2,
+         recording_url = $3,
+         duration_seconds = $4,
+         cost_cents = $5,
+         status = 'scoring'
+       WHERE vapi_call_id = $1
+       RETURNING id, caller_identity, difficulty`,
+      [vapiCallId, transcript, recording, duration, costCents]
+    ));
+  } catch (err) {
+    console.error(`sim webhook: UPDATE failed for ${vapiCallId}:`, err.message);
+    return res.sendStatus(500);
+  }
 
   // 200 immediately — Vapi doesn't need to wait for scoring
   res.sendStatus(200);

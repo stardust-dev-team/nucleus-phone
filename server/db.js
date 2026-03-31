@@ -128,10 +128,8 @@ async function initSchema() {
       CREATE INDEX IF NOT EXISTS idx_sim_vapi ON sim_call_scores(vapi_call_id);
     `);
 
-    // Add debrief columns (safe for existing deployments)
+    // Add columns introduced after initial schema (safe for existing deployments)
     await client.query(`
-      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS caller_debrief TEXT;
-      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS admin_report TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_listen_url TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_control_url TEXT;
     `);

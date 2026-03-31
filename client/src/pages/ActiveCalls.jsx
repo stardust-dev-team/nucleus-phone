@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useActiveCalls from '../hooks/useActiveCalls';
 import { formatDuration } from '../lib/format';
@@ -25,6 +25,8 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
     if (ctxRef.current) { ctxRef.current.close(); ctxRef.current = null; }
     setListenId(null);
   }, []);
+
+  useEffect(() => stopListening, [stopListening]);
 
   const handleListen = useCallback(async (call) => {
     if (listenId === call.simCallId) { stopListening(); return; }
