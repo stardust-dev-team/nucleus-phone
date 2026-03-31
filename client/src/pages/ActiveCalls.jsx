@@ -26,7 +26,7 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
     setListenId(null);
   }, []);
 
-  useEffect(() => stopListening, [stopListening]);
+  useEffect(() => () => stopListening(), [stopListening]);
 
   const handleListen = useCallback(async (call) => {
     if (listenId === call.simCallId) { stopListening(); return; }

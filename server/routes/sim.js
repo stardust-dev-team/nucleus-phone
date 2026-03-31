@@ -397,7 +397,7 @@ router.post('/webhook', async (req, res) => {
     return res.sendStatus(500);
   }
 
-  // 200 immediately — Vapi doesn't need to wait for scoring
+  // 200 — Vapi doesn't need to wait for scoring (500 returned above on DB failure)
   res.sendStatus(200);
 
   if (!rows.length) {
