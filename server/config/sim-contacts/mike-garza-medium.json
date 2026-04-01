@@ -45,10 +45,12 @@
       "No prior interaction data — this is a true cold call"
     ],
     "product_reference": [
-      "JRS-10E — 10HP, 42 CFM @ 125 PSI, 460V/3ph, $9,495",
+      "JRS-10E — 10HP, 42 CFM @ 125 PSI, 460V/3ph, $9,495. Enclosed rotary screw.",
       "JRS-5E — 5HP, 18 CFM @ 150 PSI, 230V/1ph, $4,995 (if smaller shop than expected)",
-      "JRD-40 — Refrigerated dryer, 38°F dewpoint, $2,495",
-      "JDD-40 — Desiccant dryer, -60°F dewpoint, $7,495 (if AS9100 confirmed)"
+      "JRD-40 — Refrigerated dryer, 38°F dewpoint, 40 CFM, 115V, $2,495. General shop use.",
+      "JDD-40 — Desiccant dryer, -60°F dewpoint, wall mount, $7,495. Molecular sieve media (not activated alumina) — deeper moisture removal. Billet aluminum housing, 1/3 size of conventional units. For AS9100.",
+      "JCF-70 — Coalescing filter, 0.01 micron, $349. Oil-free air downstream of dryer.",
+      "JPF-70 — Particulate pre-filter, 1 micron, $399. Upstream of dryer."
     ],
     "fallback": false
   },

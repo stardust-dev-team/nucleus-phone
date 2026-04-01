@@ -163,8 +163,13 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
         <>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {isPractice ? (
-              /* ── Practice layout: full-width two-column ── */
+              /* ── Practice layout: LiveAnalysis hero + two-column prep ── */
               <>
+                {/* LiveAnalysis — full-width hero above prep material */}
+                <div className="px-5 pt-4">
+                  <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-4 px-5 py-4">
                   {/* Left column — Prep material by scoring category */}
                   <div className="min-w-0">
@@ -182,9 +187,8 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                     </ScoreSection>
                   </div>
 
-                  {/* Right column — Live intel (primary) + product reference */}
+                  {/* Right column — Product reference */}
                   <div className="min-w-0">
-                    <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} />
                     <ScoreSection label="Product & Close" weight="30%" color="green">
                       <ProductReference productReference={d.rapport?.product_reference} />
                     </ScoreSection>

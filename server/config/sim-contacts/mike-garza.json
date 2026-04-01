@@ -47,10 +47,11 @@
       "Don't oversell or make claims you can't back up"
     ],
     "product_reference": [
-      "JRS-10E — 10HP, 40 CFM @ 150 PSI, $9,495",
-      "Integrated refrigerated dryer option",
-      "Particulate + coalescing filters (aerospace spec)",
-      "5-year airend warranty"
+      "JRS-10E — 10HP, 42 CFM @ 125 PSI, 460V/3ph, $9,495. Enclosed rotary screw.",
+      "JDD-40 — Desiccant dryer, -60°F dewpoint, wall mount, $7,495. Molecular sieve media (not activated alumina) — deeper moisture removal, billet aluminum housing, 1/3 size of conventional. For AS9100.",
+      "JRD-40 — Refrigerated dryer, 38°F dewpoint, 40 CFM, 115V, $2,495. General shop use.",
+      "JCF-70 — Coalescing filter, 0.01 micron, $349. Oil-free air for aerospace.",
+      "JPF-70 — Particulate pre-filter, 1 micron, $399. Upstream of dryer."
     ],
     "fallback": false
   },
