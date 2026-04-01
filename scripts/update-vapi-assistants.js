@@ -65,12 +65,10 @@ async function patchAssistant(id, difficulty) {
     },
     voice: {
       provider: '11labs',
-      voiceId: 'kpftzLQxRv90Nn6qoJRf',
-      stability: 0.7,
-      similarityBoost: 0.75,
-      style: 0.15,
-      useSpeakerBoost: false,
+      voiceId: 'wsHauqjSkdBeAvdbUFmR',
     },
+    backgroundDenoisingEnabled: false,
+    backgroundSound: 'off',
   };
 
   const res = await fetch(`https://api.vapi.ai/assistant/${id}`, {
