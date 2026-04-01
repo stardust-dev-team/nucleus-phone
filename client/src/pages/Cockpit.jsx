@@ -73,7 +73,10 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
   const id = forcedId || params.id;
   const navigate = useNavigate();
   const isPractice = id?.startsWith(SIM_ID_PREFIX);
-  const { data, loading, error, refreshing, refresh } = useCockpit(id);
+  const [practiceDifficulty, setPracticeDifficulty] = useState(null);
+  const { data, loading, error, refreshing, refresh } = useCockpit(id, {
+    difficulty: isPractice ? practiceDifficulty : undefined,
+  });
   const { theme, toggle } = useCockpitTheme();
   const scoreboard = useScoreboard();
   const practiceBoard = usePracticeScoreboard(isPractice);
@@ -234,6 +237,7 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
               <PracticeCallButton
                 identity={identity}
                 onScoreComplete={handleScoreComplete}
+                onDifficultySelect={setPracticeDifficulty}
                 onCallStart={(simId) => setActiveSimCallId(simId)}
                 onCallEnd={() => setActiveSimCallId(null)}
               />

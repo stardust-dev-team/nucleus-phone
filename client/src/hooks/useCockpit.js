@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getCockpit, refreshCockpit } from '../lib/api';
 
-export default function useCockpit(identifier) {
+export default function useCockpit(identifier, { difficulty } = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,14 +19,14 @@ export default function useCockpit(identifier) {
 
     try {
       const fetcher = refresh ? refreshCockpit : getCockpit;
-      const result = await fetcher(identifier, controller.signal);
+      const result = await fetcher(identifier, controller.signal, { difficulty });
       setData(result);
     } catch (err) {
       if (err.name !== 'AbortError') setError(err.message);
     } finally {
       if (refresh) setRefreshing(false); else setLoading(false);
     }
-  }, [identifier]);
+  }, [identifier, difficulty]);
 
   useEffect(() => {
     fetchData();

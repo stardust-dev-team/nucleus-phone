@@ -1,0 +1,114 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Mike Garza",
+    "email": "mike@garzaprecision.com",
+    "phone": "+14805551234",
+    "company": "Garza Precision Machine",
+    "title": "Owner",
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": {
+      "summary": "Precision machining shop owner. Boeing background. NTMA member.",
+      "durationInRole": "12 years",
+      "durationInCompany": "12 years",
+      "pastExperience": "Machinist at Boeing (2006-2014)",
+      "connectionDegree": "2nd"
+    },
+    "fitScore": "72",
+    "fitReason": "CNC machining shop, likely high air demand, Mesa AZ metro",
+    "persona": "Shop Owner",
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "NTMA member — ask about the chapter",
+      "Boeing background — machinist turned owner",
+      "Aerospace work = tight tolerances, air quality matters"
+    ],
+    "intel_nuggets": [
+      "Runs a CNC machining shop — number of machines unknown, probably 3-6 based on revenue.",
+      "Revenue ~$2M (SalesNav data from 6 months ago — may have changed).",
+      "Does some aerospace work — unclear if AS9100 certified or just aerospace-adjacent.",
+      "Located in Mesa, AZ. 10-20 employees.",
+      "Current compressor situation unknown — no data in CRM."
+    ],
+    "opening_line": "Hey Mike, I noticed you run a machining shop out in Mesa — I work with a lot of shops like yours on their compressed air setups.",
+    "adapted_script": "You know he runs CNC machines but not how many or which brands. Your discovery has to fill those gaps — ask about his equipment, his air usage, and his current compressor. Listen for specific machine names (Haas, Mazak, etc.) and watch LiveAnalysis for detections. The revenue data is 6 months old and the employee count is a range — verify during the call. If he mentions aerospace, dig into whether it's AS9100 (changes the dryer recommendation from refrigerated to desiccant). Don't assume the compressor is broken — he may not be actively shopping. Find the pain first.",
+    "watch_outs": [
+      "Revenue and employee data may be stale — verify, don't cite",
+      "Aerospace work doesn't necessarily mean AS9100 — ask before assuming",
+      "He's a Boeing-trained machinist — don't dumb things down",
+      "No prior interaction data — this is a true cold call"
+    ],
+    "product_reference": [
+      "JRS-10E — 10HP, 42 CFM @ 125 PSI, 460V/3ph, $9,495",
+      "JRS-5E — 5HP, 18 CFM @ 150 PSI, 230V/1ph, $4,995 (if smaller shop than expected)",
+      "JRD-40 — Refrigerated dryer, 38°F dewpoint, $2,495",
+      "JDD-40 — Desiccant dryer, -60°F dewpoint, $7,495 (if AS9100 confirmed)"
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": [
+      {
+        "channel": "email",
+        "summary": "Opened VSD rotary screw compressor email 1x",
+        "disposition": null,
+        "createdAt": "2026-03-25T12:00:00.000Z"
+      }
+    ]
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "garzaprecision.com",
+      "company_name": "Garza Precision Machine",
+      "segment": "cnc_machining",
+      "status": "enriched",
+      "discovery_source": "phantombuster_salesnav",
+      "created_at": "2026-02-26T12:00:00.000Z",
+      "enriched_at": "2026-02-28T12:00:00.000Z"
+    }
+  ],
+
+  "icpScore": {
+    "domain": "garzaprecision.com",
+    "fit_score": "72",
+    "fit_reason": "CNC machining shop, likely high air demand, Mesa AZ metro, owner-operator",
+    "persona": "Shop Owner",
+    "segment": "cnc_machining"
+  },
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": true,
+      "company": true,
+      "title": true,
+      "linkedin": false
+    },
+    "validation_status": "valid",
+    "validated_at": "2026-03-01T12:00:00.000Z"
+  },
+
+  "emailEngagement": [
+    { "event_type": "open", "created_at": "2026-03-25T12:00:00.000Z", "campaign_name": "CNC Air Quality Series" }
+  ],
+
+  "companyData": {
+    "name": "Garza Precision Machine",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Mesa",
+    "state": "AZ",
+    "numberofemployees": "10-20",
+    "annualrevenue": "~$2M (6mo old)",
+    "company_vernacular": "CNC machining shop. Aerospace and hydraulic work. Owner-operator. Compressor details unknown."
+  }
+}

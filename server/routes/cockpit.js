@@ -8,6 +8,11 @@ const { generateRapportIntel, clearCache } = require('../lib/claude');
 const { normalizePhone } = require('../lib/phone');
 const { TEST_COCKPIT_DATA } = require('../lib/test-cockpit-data');
 const SIM_MIKE_GARZA = require('../config/sim-contacts/mike-garza.json');
+const SIM_MIKE_GARZA_BY_DIFFICULTY = {
+  easy:   require('../config/sim-contacts/mike-garza-easy.json'),
+  medium: require('../config/sim-contacts/mike-garza-medium.json'),
+  hard:   require('../config/sim-contacts/mike-garza-hard.json'),
+};
 
 const router = Router();
 
@@ -19,7 +24,9 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
   try {
     // Simulation contact — static data, no API calls
     if (identifier === 'sim-mike-garza') {
-      return res.json(SIM_MIKE_GARZA);
+      const difficulty = req.query.difficulty;
+      const simData = SIM_MIKE_GARZA_BY_DIFFICULTY[difficulty] || SIM_MIKE_GARZA;
+      return res.json(simData);
     }
 
     // Test caller — return rich mock data, no API calls

@@ -15,7 +15,7 @@ const POLL_CALL_MS = 5000;
 const POLL_SCORE_MS = 3000;
 const SCORE_TIMEOUT_MS = 60000;
 
-export default function PracticeCallButton({ identity, onScoreComplete, onCallStart, onCallEnd }) {
+export default function PracticeCallButton({ identity, onScoreComplete, onDifficultySelect, onCallStart, onCallEnd }) {
   const [phase, setPhase] = useState('idle'); // idle | selecting | connecting | in-progress | scoring | complete | error
   const [difficulty, setDifficulty] = useState(null);
   const [callMode, setCallMode] = useState('browser'); // 'phone' | 'browser'
@@ -116,6 +116,7 @@ export default function PracticeCallButton({ identity, onScoreComplete, onCallSt
 
   async function handleStart(diff) {
     setDifficulty(diff);
+    onDifficultySelect?.(diff);
     setPhase('connecting');
     setErrorMsg('');
     setResult(null);

@@ -88,12 +88,14 @@ export function saveDisposition(callId, data) {
   });
 }
 
-export function getCockpit(identifier, signal) {
-  return apiFetch(`/cockpit/${encodeURIComponent(identifier)}`, { signal });
+export function getCockpit(identifier, signal, { difficulty } = {}) {
+  const params = difficulty ? `?difficulty=${difficulty}` : '';
+  return apiFetch(`/cockpit/${encodeURIComponent(identifier)}${params}`, { signal });
 }
 
-export function refreshCockpit(identifier, signal) {
-  return apiFetch(`/cockpit/${encodeURIComponent(identifier)}?refresh=true`, { signal });
+export function refreshCockpit(identifier, signal, { difficulty } = {}) {
+  const params = difficulty ? `?refresh=true&difficulty=${difficulty}` : '?refresh=true';
+  return apiFetch(`/cockpit/${encodeURIComponent(identifier)}${params}`, { signal });
 }
 
 export function getScoreboard(signal) {

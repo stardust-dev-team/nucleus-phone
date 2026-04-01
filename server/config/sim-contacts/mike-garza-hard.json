@@ -1,0 +1,89 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Mike Garza",
+    "email": null,
+    "phone": "+14805551234",
+    "company": "Garza Precision Machine",
+    "title": null,
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": null,
+    "fitScore": null,
+    "fitReason": null,
+    "persona": null,
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "Located in Mesa, AZ — that's all we know"
+    ],
+    "intel_nuggets": [
+      "Company name: Garza Precision Machine. 'Precision' suggests machining but could be anything.",
+      "Phone number sourced from business listing — no email, no LinkedIn, no enrichment data.",
+      "No CRM history. No prior contact. No email engagement. True cold outreach.",
+      "Industry classified as 'Industrial Machinery' — broad category, could be machining, fabrication, assembly, or distribution."
+    ],
+    "opening_line": null,
+    "adapted_script": "You're going in almost blind. All you have is a company name and a phone number. Your entire job on this call is DISCOVERY — who is this person, what do they do, and do they need compressed air? Start by confirming you've reached the right person and company. Ask what they do. Listen for ANY equipment keywords — LiveAnalysis can't help you until Mike gives you something to work with. If he's hostile (likely), you need to earn the right to ask questions before you can sell anything. Don't pitch until you have enough data. If LiveAnalysis lights up, use it — but you may need to carry the whole call on instinct alone.",
+    "watch_outs": [
+      "No email on file — if you get one during the call, that's a win",
+      "No title — you don't even know if this person is the decision maker",
+      "Zero interaction history — he has never heard of Joruva",
+      "Don't reference data you don't have — you'll sound like you're guessing"
+    ],
+    "product_reference": [
+      "JRS-10E — 10HP, 42 CFM @ 125 PSI, 460V/3ph, $9,495",
+      "JRS-5E — 5HP, 18 CFM @ 150 PSI, 230V/1ph, $4,995",
+      "JRS-15E — 15HP, 60 CFM @ 150 PSI, 460V/3ph (if larger operation)"
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": []
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "garzaprecision.com",
+      "company_name": "Garza Precision Machine",
+      "segment": null,
+      "status": "discovered",
+      "discovery_source": "business_listing",
+      "created_at": "2026-03-15T12:00:00.000Z",
+      "enriched_at": null
+    }
+  ],
+
+  "icpScore": null,
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": false,
+      "company": true,
+      "title": false,
+      "linkedin": false
+    },
+    "validation_status": "partial",
+    "validated_at": "2026-03-15T12:00:00.000Z"
+  },
+
+  "emailEngagement": [],
+
+  "companyData": {
+    "name": "Garza Precision Machine",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Mesa",
+    "state": "AZ",
+    "numberofemployees": null,
+    "annualrevenue": null,
+    "company_vernacular": null
+  }
+}
