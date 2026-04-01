@@ -163,17 +163,18 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
         <>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {isPractice ? (
-              /* ── Practice layout: LiveAnalysis hero + two-column prep ── */
+              /* ── Practice layout: Bridge — viewscreen center, stations flanking ── */
               <>
-                {/* LiveAnalysis — full-width hero above prep material */}
-                <div className="px-5 pt-4">
-                  <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} />
+                {/* Contact identity — ship status bar */}
+                <div className="px-5 pt-3 pb-1">
+                  <ContactIdentity identity={d.identity} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-4 px-5 py-4">
-                  {/* Left column — Prep material by scoring category */}
-                  <div className="min-w-0">
-                    <ContactIdentity identity={d.identity} />
+                {/* Bridge layout: 3-column with viewscreen center */}
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-3 px-5 pb-3" style={{ minHeight: '320px' }}>
+
+                  {/* Left stations — Rapport + Discovery */}
+                  <div className="min-w-0 flex flex-col gap-0">
                     <ScoreSection label="Rapport" weight="20%" color="amber">
                       <RapportOpener openingLine={d.rapport?.opening_line} />
                       <RapportTags tags={d.rapport?.rapport_starters} />
@@ -182,13 +183,18 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                       <QualScript adaptedScript={d.rapport?.adapted_script} />
                       <IntelNuggets nuggets={d.rapport?.intel_nuggets} />
                     </ScoreSection>
+                  </div>
+
+                  {/* CENTER — Main Viewscreen */}
+                  <div className="min-w-0 flex flex-col">
+                    <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} />
+                  </div>
+
+                  {/* Right stations — Objections + Product */}
+                  <div className="min-w-0 flex flex-col gap-0">
                     <ScoreSection label="Objection Handling" weight="25%" color="orange">
                       <IntelNuggets watchOuts={d.rapport?.watch_outs} />
                     </ScoreSection>
-                  </div>
-
-                  {/* Right column — Product reference */}
-                  <div className="min-w-0">
                     <ScoreSection label="Product & Close" weight="30%" color="green">
                       <ProductReference productReference={d.rapport?.product_reference} />
                     </ScoreSection>
