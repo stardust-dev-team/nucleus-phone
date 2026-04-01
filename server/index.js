@@ -50,6 +50,7 @@ app.use('/api/scoreboard', require('./routes/scoreboard'));
 app.use('/api/sim', require('./routes/sim'));
 app.use('/api/transcription', require('./routes/transcription'));
 app.use('/api/equipment', apiKeyAuth, require('./routes/equipment'));
+app.use('/api/signals', require('./routes/signals'));
 
 // Serve React build in production
 const clientDist = path.join(__dirname, '..', 'client', 'dist');

@@ -9,6 +9,7 @@ import ActiveCalls from './pages/ActiveCalls';
 import History from './pages/History';
 import Cockpit from './pages/Cockpit';
 import Scoreboard from './pages/Scoreboard';
+import Pipeline from './pages/Pipeline';
 import useTwilioDevice from './hooks/useTwilioDevice';
 import useCallState from './hooks/useCallState';
 
@@ -111,6 +112,7 @@ export default function App() {
         )}
         <Route path="/history" element={<History identity={identity} role={role} />} />
         <Route path="/scoreboard" element={<Scoreboard />} />
+        <Route path="/pipeline" element={<Pipeline />} />
         <Route
           path="/practice"
           element={

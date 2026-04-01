@@ -8,6 +8,7 @@ import IntelNuggets from '../components/cockpit/IntelNuggets';
 import InteractionTimeline from '../components/cockpit/InteractionTimeline';
 import QualScript from '../components/cockpit/QualScript';
 import CompanyIntel from '../components/cockpit/CompanyIntel';
+import SignalBadges from '../components/cockpit/SignalBadges';
 import ProductReference from '../components/cockpit/ProductReference';
 
 const STATUS_TEXT = {
@@ -107,6 +108,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
               {/* Left column — Rapport */}
               <div>
                 <ContactIdentity identity={cockpitData.identity} />
+                <SignalBadges domain={cockpitData.identity?.company_domain || cockpitData.companyData?.domain} />
                 <RapportOpener openingLine={cockpitData.rapport?.opening_line} />
                 <RapportTags tags={cockpitData.rapport?.rapport_starters} />
                 <IntelNuggets
