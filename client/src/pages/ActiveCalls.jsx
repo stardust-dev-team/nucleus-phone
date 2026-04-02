@@ -76,7 +76,7 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Live Calls</h2>
         {twilioHook.status !== 'ready' && (
-          <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400">
+          <span className="text-xs px-2 py-1 rounded bg-jv-amber/20 text-jv-amber">
             {twilioHook.status === 'error' ? '⚠ Audio device error — reload page' : '⏳ Audio device connecting...'}
           </span>
         )}
@@ -93,14 +93,14 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
         {calls.map((call) => (
           <div
             key={call.conferenceName}
-            className="bg-jv-card border border-jv-border rounded-xl p-4"
+            className="bg-jv-card border border-jv-border rounded-sentinel p-4"
           >
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{call.leadName || 'Unknown'}</p>
                   {call.type === 'sim' && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-purple-500/20 text-purple-400">
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-jv-violet/20 text-jv-violet">
                       Practice
                     </span>
                   )}
@@ -114,7 +114,7 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
             </div>
 
             <div className="flex items-center gap-2 mb-3">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${call.type === 'sim' ? 'bg-purple-400' : 'bg-jv-green'}`} />
+              <div className={`w-2 h-2 rounded-full animate-pulse ${call.type === 'sim' ? 'bg-jv-violet' : 'bg-jv-green'}`} />
               <span className="text-xs text-jv-muted">
                 {call.type === 'sim'
                   ? (call.simStatus === 'scoring' ? 'Scoring…' : 'In progress')
@@ -126,9 +126,9 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
               call.hasListenUrl && call.simStatus === 'in-progress' && (
                 <button
                   onClick={() => handleListen(call)}
-                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`w-full py-2.5 rounded-sentinel text-sm font-medium transition-colors ${
                     listenId === call.simCallId
-                      ? 'bg-purple-600 text-white hover:bg-purple-700'
+                      ? 'bg-jv-violet text-white'
                       : 'bg-jv-elevated border border-jv-border hover:bg-jv-card'
                   }`}
                 >
@@ -140,14 +140,14 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
                 <button
                   onClick={() => handleJoin(call, true)}
                   disabled={twilioHook.status !== 'ready'}
-                  className="flex-1 py-2.5 rounded-lg bg-jv-elevated border border-jv-border text-sm font-medium hover:bg-jv-card transition-colors disabled:opacity-40"
+                  className="flex-1 py-2.5 rounded-sentinel bg-jv-elevated border border-jv-border text-sm font-medium hover:bg-jv-card transition-colors disabled:opacity-40"
                 >
                   Join Silent
                 </button>
                 <button
                   onClick={() => handleJoin(call, false)}
                   disabled={twilioHook.status !== 'ready'}
-                  className="flex-1 py-2.5 rounded-lg bg-jv-blue text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-40"
+                  className="flex-1 py-2.5 rounded-sentinel bg-jv-amber text-black text-sm font-semibold transition-colors disabled:opacity-40"
                 >
                   Join Call
                 </button>

@@ -156,7 +156,7 @@ export default function CallComplete({ callState, identity }) {
         <button
           onClick={handleSave}
           disabled={!disposition || saving}
-          className="flex-1 py-3 rounded-lg bg-jv-blue text-white font-semibold disabled:opacity-40 hover:bg-blue-700 transition-colors"
+          className="flex-1 py-3 rounded-sentinel bg-jv-amber text-black font-semibold disabled:opacity-40 transition-colors"
         >
           {saving ? 'Saving...' : 'Save & Done'}
         </button>

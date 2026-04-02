@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 
 const TIER_STYLES = {
-  spear: { bg: '#dc2626', color: '#fff', label: 'SPEAR' },
-  targeted: { bg: '#f59e0b', color: '#000', label: 'TARGETED' },
-  awareness: { bg: '#6b7280', color: '#fff', label: 'AWARENESS' },
+  spear: { bg: 'var(--cockpit-red-bg)', color: 'var(--cockpit-red-text)', label: 'SPEAR' },
+  targeted: { bg: 'var(--cockpit-amber-50)', color: 'var(--cockpit-amber-900)', label: 'TARGETED' },
+  awareness: { bg: 'var(--cockpit-gray-100)', color: 'var(--cockpit-text-muted)', label: 'AWARENESS' },
 };
 
 function formatMonths(dateStr) {
@@ -48,7 +48,8 @@ export default function SignalBadges({ domain }) {
   badges.push(
     <span key="tier" className="signal-badge tier" style={{
       background: tierStyle.bg, color: tierStyle.color,
-      padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px',
+      padding: '2px 8px', borderRadius: '3px', fontWeight: 'bold', fontSize: '11px',
+      letterSpacing: '0.5px',
     }}>
       {tierStyle.label} · Score {meta.signal_score}
     </span>
@@ -60,10 +61,11 @@ export default function SignalBadges({ domain }) {
     const urgent = months !== null && months <= 9;
     badges.push(
       <span key="cert" className="signal-badge cert" style={{
-        background: urgent ? '#fef2f2' : '#fffbeb',
-        color: urgent ? '#991b1b' : '#92400e',
-        padding: '2px 8px', borderRadius: '4px', fontSize: '12px',
-        border: `1px solid ${urgent ? '#fca5a5' : '#fcd34d'}`,
+        background: urgent ? 'var(--cockpit-red-bg)' : 'var(--cockpit-amber-50)',
+        color: urgent ? 'var(--cockpit-red-text)' : 'var(--cockpit-amber-900)',
+        padding: '2px 8px', borderRadius: '3px', fontSize: '12px',
+        border: `1px solid ${urgent ? 'var(--cockpit-red-text)' : 'var(--cockpit-amber-100)'}`,
+        opacity: 0.85,
       }}>
         {meta.cert_standard || 'AS9100'} expires {months !== null ? `${months}mo` : meta.cert_expiry_date}
         {meta.cert_body ? ` — ${meta.cert_body}` : ''}
@@ -75,10 +77,10 @@ export default function SignalBadges({ domain }) {
   if (meta.contract_total) {
     badges.push(
       <span key="contract" className="signal-badge contract" style={{
-        background: meta.dod_flag ? '#eff6ff' : '#f0fdf4',
-        color: meta.dod_flag ? '#1e40af' : '#166534',
-        padding: '2px 8px', borderRadius: '4px', fontSize: '12px',
-        border: `1px solid ${meta.dod_flag ? '#93c5fd' : '#86efac'}`,
+        background: meta.dod_flag ? 'var(--cockpit-blue-50)' : 'var(--cockpit-green-50)',
+        color: meta.dod_flag ? 'var(--cockpit-blue-900)' : 'var(--cockpit-green-900)',
+        padding: '2px 8px', borderRadius: '3px', fontSize: '12px',
+        border: `1px solid ${meta.dod_flag ? 'var(--cockpit-blue-border)' : 'var(--cockpit-green-500-20)'}`,
       }}>
         {meta.dod_flag ? 'DoD' : 'Govt'} contract {formatCurrency(meta.contract_total)}
       </span>
@@ -89,9 +91,9 @@ export default function SignalBadges({ domain }) {
   if (meta.source_count > 1) {
     badges.push(
       <span key="multi" className="signal-badge multi" style={{
-        background: '#faf5ff', color: '#6b21a8',
-        padding: '2px 8px', borderRadius: '4px', fontSize: '12px',
-        border: '1px solid #c084fc',
+        background: 'var(--cockpit-purple-50)', color: 'var(--cockpit-purple-900)',
+        padding: '2px 8px', borderRadius: '3px', fontSize: '12px',
+        border: '1px solid var(--cockpit-purple-border)',
       }}>
         {meta.source_count}x MATCH
       </span>

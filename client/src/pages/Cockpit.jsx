@@ -44,8 +44,8 @@ function Skeleton() {
 const SCORE_COLORS = {
   amber:  { bg: 'var(--cockpit-amber-50)', text: 'var(--cockpit-amber-600)', border: 'var(--cockpit-amber-100)' },
   blue:   { bg: 'var(--cockpit-blue-50)', text: 'var(--cockpit-blue-500)', border: 'var(--cockpit-blue-border)' },
-  green:  { bg: 'var(--cockpit-green-50)', text: 'var(--cockpit-green-500)', border: 'rgba(22,163,74,0.2)' },
-  orange: { bg: 'var(--cockpit-orange-50)', text: 'var(--cockpit-orange-500)', border: 'rgba(234,88,12,0.2)' },
+  green:  { bg: 'var(--cockpit-green-50)', text: 'var(--cockpit-green-500)', border: 'var(--cockpit-green-500-20)' },
+  orange: { bg: 'var(--cockpit-orange-50)', text: 'var(--cockpit-orange-500)', border: 'var(--cockpit-orange-50)' },
   purple: { bg: 'var(--cockpit-purple-50)', text: 'var(--cockpit-purple-500)', border: 'var(--cockpit-purple-border)' },
 };
 
