@@ -193,6 +193,8 @@ const DETAILS = {
     recommended_compressor: 'JRS-15E',
     recommended_dryer: 'JRD-80',
     system_notes: 'Shops with VF-4+ usually have 3-5 machines total. Size for the shop, not the machine.',
+    key_selling_points: ['VF-4 shops almost always have a 4th axis rotary — that\'s another air consumer most people forget to size for', 'These shops outgrew their compressor two machines ago. They just haven\'t admitted it yet.'],
+    common_objections: ['We\'ve been running fine for years', 'We\'ll deal with it when we add the next machine'],
   },
   'Mazak:INTEGREX i-200': {
     description: 'Multi-tasking mill-turn center. Continuous air demand for live tooling, sub-spindle, and chip management.',
@@ -203,6 +205,8 @@ const DETAILS = {
     recommended_compressor: 'JRS-15E',
     recommended_dryer: 'JRD-80',
     system_notes: 'INTEGREX shops are high-end — sell on air quality, not just volume.',
+    key_selling_points: ['An INTEGREX does the work of a mill and a lathe — your air system needs to handle both simultaneously', 'Done-in-one machining means zero tolerance for air interruptions mid-cycle. One pressure drop scraps a part that\'s had 40 minutes of work.'],
+    common_objections: ['Mazak specs say 90 PSI and we have that', 'Our machine runs fine'],
   },
   'Pearson:CE25': {
     description: 'Compact case erector for 5-25 CPM lines. Continuous high duty cycle during production runs.',
@@ -213,6 +217,8 @@ const DETAILS = {
     recommended_compressor: 'JRS-10E',
     recommended_dryer: 'JRD-40',
     system_notes: 'Packaging lines often have 3-5 pneumatic machines. Size for the whole line.',
+    key_selling_points: ['A missed case fold stops the whole line — not just one machine', 'Packaging lines add equipment constantly. Size the air system for next year\'s throughput target, not today\'s.'],
+    common_objections: ['The line builder spec\'d the compressor', 'We only run one shift'],
   },
   'SATA:SATAjet 5000 B 1.3': {
     description: 'Premium HVLP spray gun — the standard in high-end collision and refinish work.',
@@ -238,6 +244,7 @@ const DETAILS = {
     recommended_dryer: 'JRD-200',
     system_notes: 'Single compressor often insufficient for #6+ nozzles. May need dedicated unit or parallel setup. Always pair with dryer — wet blasting is the #1 complaint.',
     key_selling_points: ['Biggest air ROI in the shop — proper sizing cuts blast time in half', 'Most sandblasters are running 30-40% below optimal pressure', 'Dry air eliminates flash rust rework'],
+    common_objections: ['We only blast a few times a month', 'We rent a diesel compressor when we need to blast'],
   },
   'ShopBot:PRSalpha': {
     description: 'Full-size CNC router for cabinet/sign shops. Intermittent air for tool change and hold-down clamps.',
@@ -248,9 +255,11 @@ const DETAILS = {
     recommended_compressor: 'JRS-7.5E',
     recommended_dryer: 'JRD-40',
     system_notes: 'Many wood shops can get by with JRS-7.5E unless running extensive pneumatic tooling.',
+    key_selling_points: ['Wood dust and moisture in the same air line kills pneumatic tools fast — a dryer pays for itself in nailer replacements alone', 'CNC router plus a crew running finish nailers? That\'s two different air profiles fighting over one pipe.'],
+    common_objections: ['We just use a small shop compressor', 'Woodworking doesn\'t need industrial air'],
   },
 
-  // ── Additional CNC details (expanding to top 20) ──
+  // ── Additional equipment details (expanding to top 20) ──
 
   'Haas:Mini Mill': {
     description: 'Entry-level Haas vertical mill. Huge install base — schools, startups, and small job shops. Low air demand but shops often add machines fast.',
@@ -316,6 +325,7 @@ const DETAILS = {
     recommended_dryer: 'JRD-80',
     system_notes: 'VTC shops often have the machine furthest from the compressor. Check pipe sizing and layout.',
     key_selling_points: ['Long pipe runs kill pressure — proper sizing at the compressor eliminates the problem at the machine', 'Mold shops run these machines hard. They need volume, not just pressure.'],
+    common_objections: ['We added a second drop closer to the machine', 'Our pipe is big enough'],
   },
   'Mazak:VARIAXIS i-300': {
     description: '5-axis machining center with full simultaneous contouring. High-end aerospace and medical work. Premium air demands from trunnion table and pallet system.',
@@ -326,7 +336,7 @@ const DETAILS = {
     recommended_air_quality: 'ISO 8573 Class 2 or better — surface finish on 5-axis parts is directly affected by air quality',
     recommended_compressor: 'JRS-15E',
     recommended_dryer: 'JRD-80',
-    recommended_filters: 'Coalescing filter mandatory before machine',
+    recommended_filters: ['Coalescing filter mandatory before machine'],
     system_notes: 'VARIAXIS shops are AS9100 or ISO 13485 certified. They document everything. Sell on traceability and air quality certification.',
     key_selling_points: ['Surface finish rejects on a $2,000 turbine blade cost more than a year of filter changes', 'AS9100 shops need to document air quality — our system makes that easy'],
     common_objections: ['Our current system meets spec', 'We already have point-of-use filters'],
@@ -369,6 +379,7 @@ const DETAILS = {
     recommended_dryer: 'JRD-40',
     system_notes: 'If it\'s a Puma 2600SY with bar feeder, treat air demand like a mill + lathe combined.',
     key_selling_points: ['Bar feeder downtime from air issues costs you parts per hour. The math is simple.', 'SY model? That\'s a mill and a lathe in one. Your air system needs to know that.'],
+    common_objections: ['The bar feeder has its own air regulator', 'We\'ve never had a tailstock issue'],
   },
 
   'Brother:Speedio S500X2': {
@@ -395,6 +406,7 @@ const DETAILS = {
     recommended_dryer: 'JRD-40',
     system_notes: 'R650X2 shops often run multiple Speedios. Quote the full cell, not one machine.',
     key_selling_points: ['5-axis Speedio is production 5-axis — air interruptions show up immediately in your scrap rate', 'If you\'re running a cell of Speedios, one undersized compressor bottlenecks the whole cell'],
+    common_objections: ['Our S500 runs fine on this compressor, the R650 should too', 'Brother didn\'t spec a bigger compressor for 5-axis'],
   },
 
   'DMG Mori:DMU 50': {
@@ -406,7 +418,7 @@ const DETAILS = {
     recommended_air_quality: 'ISO 8573 Class 2 minimum — DMG Mori installation manuals specify this',
     recommended_compressor: 'JRS-15E',
     recommended_dryer: 'JRD-80',
-    recommended_filters: 'Coalescing + particulate filtration to meet OEM spec',
+    recommended_filters: ['Coalescing + particulate filtration to meet OEM spec'],
     system_notes: 'DMG Mori service techs check air quality. If it doesn\'t meet spec, they document it — and it can void warranty coverage.',
     key_selling_points: ['DMG Mori will flag your air quality on a service visit. Get ahead of it.', 'A warranty denial on a $300K machine because of a $5K air system is an expensive lesson'],
     common_objections: ['DMG Mori hasn\'t said anything about our air', 'We meet the spec already'],
@@ -423,6 +435,101 @@ const DETAILS = {
     system_notes: 'ROBODRILL cells are the ultimate test of air system sizing. 4 machines × 0.7-sec tool changes = massive intermittent demand. Size for peak, not average.',
     key_selling_points: ['A cell of ROBODRILLs is only as fast as its air supply. One pressure drop = four machines waiting.', 'These cells make parts by the thousands. Calculate the cost of one lost minute across a shift.'],
     common_objections: ['Fanuc sized the compressor when they installed the cell', 'We added a machine and it\'s still fine'],
+  },
+
+  // ── Remaining top-20 CNC machines ──
+
+  'Haas:VF-1': {
+    description: 'Compact Haas vertical mill. Sweet spot for small shops — bigger than a Mini Mill, more affordable than a VF-2. Very common first "real" VMC purchase.',
+    typical_applications: ['small parts', 'prototyping', 'short runs', 'job shop'],
+    industries: ['job shop', 'aerospace', 'medical', 'education'],
+    air_usage_notes: 'Standard tool change and air blast. Lower duty cycle than VF-2 but same pneumatic accessories. Often paired with a Kurt vise — pneumatic vise clamp adds demand.',
+    common_air_problems: ['shops upgrading from manual mill have no compressed air infrastructure', 'running air blast continuously as a coolant substitute wastes CFM'],
+    recommended_air_quality: 'Dried air recommended — same taper corrosion risk as any Haas',
+    recommended_compressor: 'JRS-7.5E',
+    recommended_dryer: 'JRD-40',
+    system_notes: 'VF-1 is the gateway drug. If they bought one, a VF-2 or lathe is next. Size for two machines minimum.',
+    key_selling_points: ['You bought the VF-1 because it fits your shop now. Size the air system for where your shop is going.', 'A JRS-7.5E handles the VF-1 and leaves headroom for the next machine.'],
+    common_objections: ['It\'s just one small machine', 'I\'ll upgrade the compressor when I add another machine'],
+  },
+  'Haas:VF-3': {
+    description: 'Mid-size Haas vertical mill. Larger Y-travel than VF-2 — popular for bigger parts and mold work. Often the second or third Haas in a growing shop.',
+    typical_applications: ['mid-size parts', 'mold bases', 'fixtures', 'production'],
+    industries: ['mold making', 'aerospace', 'automotive', 'general manufacturing'],
+    air_usage_notes: 'Same pneumatic profile as VF-2 but larger work envelope means more chip blow-off air usage. Often run with 4th axis or pallet system.',
+    common_air_problems: ['shops added VF-3 without reassessing compressor capacity', 'oil mist from flood coolant contaminating air lines near machine'],
+    recommended_air_quality: 'Dried air mandatory — taper and bearing protection',
+    recommended_compressor: 'JRS-10E',
+    recommended_dryer: 'JRD-40',
+    system_notes: 'VF-3 shops are growing shops. They probably just added this machine. Good time to audit the whole air system.',
+    key_selling_points: ['Adding a VF-3 means you outgrew your VF-2 work envelope. Did your air system grow too?', 'Mold work on a VF-3 demands consistent pressure — pressure drops show up in surface finish.'],
+    common_objections: ['Same compressor ran two VF-2s fine', 'We\'ll deal with it at the next machine'],
+  },
+  'Haas:VF-5': {
+    description: 'Large-format Haas vertical mill. 50×26" travel — the biggest standard Haas VMC. Shops running these are doing serious production or large-part work.',
+    typical_applications: ['large parts', 'aerospace panels', 'mold work', 'fixtures'],
+    industries: ['aerospace', 'mold making', 'heavy equipment', 'energy'],
+    air_usage_notes: 'Large work envelope = more blow-off air. Dual vise setups common — double the pneumatic clamping demand. Long cycle times mean sustained air demand.',
+    common_air_problems: ['pressure sag during long roughing cycles with continuous chip management', 'dual vise clamp cycling during pallet flip operations'],
+    recommended_air_quality: 'Dried air mandatory — large investment machine deserves proper air',
+    recommended_compressor: 'JRS-15E',
+    recommended_dryer: 'JRD-80',
+    system_notes: 'A VF-5 is a serious machine. These shops aren\'t price shopping — they need capacity and reliability.',
+    key_selling_points: ['A VF-5 costs $80K+. A $3K air quality upgrade protects that investment.', 'Large-format milling means long cycles. Sustained air demand, not intermittent.'],
+    common_objections: ['We have a big compressor already', 'Air hasn\'t been an issue'],
+  },
+  'Haas:VF-6': {
+    description: 'Extra-large Haas vertical mill. 64×32" travel — aerospace longeron and panel work. Often the biggest machine on the floor and the furthest from the compressor.',
+    typical_applications: ['aerospace structural', 'large mold bases', 'energy components', 'heavy machining'],
+    industries: ['aerospace', 'energy', 'heavy equipment', 'defense'],
+    air_usage_notes: 'Massive work envelope drives high chip management air demand. Through-spindle air blast standard at this size. Machine weight means it\'s installed far from the compressor — long pipe runs.',
+    common_air_problems: ['pressure drop from long pipe runs to machine at back of shop', 'insufficient receiver capacity for sustained roughing cycles'],
+    recommended_air_quality: 'Dried air mandatory — these parts are high-value',
+    recommended_compressor: 'JRS-15E',
+    recommended_dryer: 'JRD-80',
+    system_notes: 'VF-6 is Haas\'s biggest standard VMC. If a shop has one, they\'re doing big work with big margins. Sell on reliability, not price.',
+    key_selling_points: ['The VF-6 is usually the farthest machine from the compressor. Pipe sizing matters more than compressor size at that point.', 'Aerospace structural work on a VF-6 means every part is traceable. Air quality is part of that traceability.'],
+    common_objections: ['We added a drop closer to the machine', 'Our foreman says air is fine'],
+  },
+  'Haas:EC-400': {
+    description: 'Horizontal machining center with dual pallet changer. Pallet changes are big air events — pneumatic clamping on both pallets plus chip evacuation between changes.',
+    typical_applications: ['production milling', 'tombstone work', 'multi-face machining', 'high-volume'],
+    industries: ['automotive', 'aerospace', 'medical', 'production job shop'],
+    air_usage_notes: 'Pallet change cycle uses pneumatic clamping on both pallets simultaneously. Tombstone fixtures add 4-6 pneumatic clamps per pallet. Chip evacuation between pallet swaps is air-intensive.',
+    common_air_problems: ['pallet clamp pressure drops during rapid changeover — causes pallet position error alarm', 'tombstone fixtures with 8+ pneumatic clamps overwhelm single drop line'],
+    recommended_air_quality: 'Dried and filtered — pallet locating pins and clamps are precision components',
+    recommended_compressor: 'JRS-15E',
+    recommended_dryer: 'JRD-80',
+    recommended_filters: ['Coalescing filter recommended — pallet mechanism sensitivity'],
+    system_notes: 'EC-400 is Haas\'s production workhorse. These shops run lights-out or close to it. Air reliability is non-negotiable.',
+    key_selling_points: ['A pallet error alarm at 2 AM during lights-out means lost production until morning. Clean, consistent air prevents it.', 'Tombstone fixtures multiply your air demand by the number of clamps. 4 fixtures × 4 clamps = 16 pneumatic consumers.'],
+    common_objections: ['We only run one shift', 'The pallet changer doesn\'t use that much air'],
+  },
+  'Mazak:QTN-300': {
+    description: 'Large-bore Quick Turn Nexus. Handles bigger bar stock and chucking work than the QTN-200. Common in oil and gas, hydraulics, and heavy equipment shops.',
+    typical_applications: ['large-diameter turning', 'oil field components', 'hydraulic cylinders', 'heavy shafts'],
+    industries: ['oil and gas', 'hydraulics', 'heavy equipment', 'aerospace'],
+    air_usage_notes: 'Larger chuck = more pneumatic clamping force = more air per cycle. Heavy parts mean stronger tailstock engagement — higher air demand during load/unload. Bar feeder for large stock adds significant demand.',
+    common_air_problems: ['large-bar feeder cycling causing pressure dips across the shop', 'chuck clamping force inconsistency from pressure fluctuations during multi-machine operation'],
+    recommended_air_quality: 'Dried air mandatory — heavy hydraulic/pneumatic systems need clean air for valve longevity',
+    recommended_compressor: 'JRS-15E',
+    recommended_dryer: 'JRD-80',
+    system_notes: 'QTN-300 shops are doing heavy work. They care about uptime and clamping reliability. Sell on consistency under load.',
+    key_selling_points: ['Large-bore chucking means large pneumatic forces. Pressure fluctuations show up as clamping inconsistency.', 'Oil and gas work tolerates zero part ejection failures. That starts with consistent air.'],
+    common_objections: ['We sized the compressor when we bought the QTN-200', 'Our air system handles the whole shop fine'],
+  },
+  'Doosan:DNM 5700': {
+    description: 'Large-format Doosan vertical mill. 57×30" travel — Doosan\'s answer to the Haas VF-5/VF-6. Same value-play positioning with bigger capability.',
+    typical_applications: ['large parts', 'mold bases', 'structural components', 'production'],
+    industries: ['mold making', 'aerospace', 'heavy equipment', 'energy'],
+    air_usage_notes: 'Large work envelope and heavy material removal = high chip management air demand. Often run with coolant-through-spindle, reducing air blast usage but still needing clean dry supply air.',
+    common_air_problems: ['same pressure-drop-from-long-pipe-runs issue as any large VMC at the back of the shop', 'insufficient receiver capacity for sustained roughing with continuous chip blow-off'],
+    recommended_air_quality: 'Dried air recommended — mold work demands consistent finish quality',
+    recommended_compressor: 'JRS-15E',
+    recommended_dryer: 'JRD-80',
+    system_notes: 'DNM 5700 is Doosan\'s big-envelope play. Shops bought it for value — they\'ll respond to ROI arguments on air.',
+    key_selling_points: ['You saved on the machine versus a Mazak or DMG Mori. Now invest that savings where it protects your throughput.', 'Mold base work on a DNM 5700 means long cycles. One pressure drop mid-cycle = one scrapped mold base.'],
+    common_objections: ['We already have a big compressor from the last machine', 'Doosan dealer said our air was fine'],
   },
 };
 
@@ -560,4 +667,9 @@ async function seed() {
   }
 }
 
-seed();
+// Allow test imports without running the seed
+if (require.main === module) {
+  seed();
+}
+
+module.exports = { DETAILS };
