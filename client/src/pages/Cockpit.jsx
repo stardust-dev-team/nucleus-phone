@@ -187,7 +187,7 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
 
                   {/* CENTER — Main Viewscreen */}
                   <div className="min-w-0 flex flex-col">
-                    <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} />
+                    <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} contact={d.identity} callId={liveCallId} />
                   </div>
 
                   {/* Right stations — Objections + Product */}
@@ -216,7 +216,7 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                       watchOuts={d.rapport?.watch_outs}
                     />
                     <ProductReference productReference={d.rapport?.product_reference} />
-                    <LiveAnalysis data={liveAnalysis} active={callPhase === 'active'} />
+                    <LiveAnalysis data={liveAnalysis} active={callPhase === 'active'} contact={d.identity} callId={liveCallId} />
                   </div>
                   <div className="min-w-0">
                     <InteractionTimeline

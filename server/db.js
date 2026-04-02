@@ -241,6 +241,37 @@ async function initSchema() {
     `);
     console.log('nucleus_phone_calls columns updated');
 
+    // Quote requests from LiveAssistant DirectSaleCTA (direct-sale products)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS quote_requests (
+        id SERIAL PRIMARY KEY,
+        call_id TEXT,
+        lead_email TEXT NOT NULL,
+        lead_name TEXT,
+        lead_company TEXT,
+        lead_phone TEXT,
+        recommendation_snapshot JSONB NOT NULL,
+        equipment_snapshot JSONB,
+        status TEXT DEFAULT 'pending',
+        slack_notified BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_quote_requests_status ON quote_requests(status);
+
+      CREATE OR REPLACE FUNCTION update_quote_requests_updated_at()
+      RETURNS TRIGGER AS $$
+      BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_quote_requests_updated_at ON quote_requests;
+      CREATE TRIGGER trg_quote_requests_updated_at
+        BEFORE UPDATE ON quote_requests
+        FOR EACH ROW EXECUTE FUNCTION update_quote_requests_updated_at();
+    `);
+    console.log('quote_requests table ready');
+
   } finally {
     client.release();
   }

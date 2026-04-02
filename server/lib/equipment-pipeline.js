@@ -8,7 +8,7 @@
 
 const { extractEquipment } = require('./entity-extractor');
 const { lookupEquipment } = require('./equipment-lookup');
-const { calculateDemand, recommendSystem } = require('./sizing-engine');
+const { calculateDemand, recommendSystem, addQualityFilters, deriveSalesChannel } = require('./sizing-engine');
 const { logSighting } = require('./equipment-db');
 const { broadcast, getCallEquipment } = require('./live-analysis');
 
@@ -85,6 +85,19 @@ async function processEquipmentChunk(callId, callType, dbCallId, text) {
 
     const recommendation = recommendSystem(demand);
     if (recommendation) {
+      // Derive air quality class from accumulated equipment (priority: ISO > paint > general)
+      const AQ_PRIORITY = { ISO_8573_1: 2, paint_grade: 1 };
+      let bestAq = null;
+      let bestPriority = 0;
+      for (const item of accumulated) {
+        const p = AQ_PRIORITY[item.air_quality_class] || 0;
+        if (p > bestPriority) {
+          bestPriority = p;
+          bestAq = item.air_quality_class;
+        }
+      }
+      addQualityFilters(recommendation, bestAq);
+      deriveSalesChannel(recommendation);
       broadcast(callId, { type: 'recommendation_ready', data: recommendation });
     }
   }

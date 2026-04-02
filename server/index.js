@@ -50,6 +50,8 @@ app.use('/api/scoreboard', require('./routes/scoreboard'));
 app.use('/api/sim', require('./routes/sim'));
 app.use('/api/transcription', require('./routes/transcription'));
 app.use('/api/equipment', apiKeyAuth, require('./routes/equipment'));
+const { sessionAuth } = require('./middleware/auth');
+app.use('/api/quote-request', sessionAuth, require('./routes/quote-request'));
 app.use('/api/signals', require('./routes/signals'));
 
 // Serve React build in production

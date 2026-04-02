@@ -10,6 +10,8 @@
  *   4. Recommend  — CAS compressor card with dryer/filter upsells
  */
 
+import DirectSaleCTA from './DirectSaleCTA';
+
 function hasEquipment({ equipment, sizing, recommendation }) {
   return recommendation || sizing || equipment.length > 0;
 }
@@ -24,7 +26,7 @@ function formatPrice(price) {
   return `$${Number(price).toLocaleString()}`;
 }
 
-export default function LiveAnalysis({ data, active }) {
+export default function LiveAnalysis({ data, active, contact, callId }) {
   const safe = data || {};
   const { equipment = [], sizing, recommendation, connected = false } = safe;
 
@@ -232,16 +234,29 @@ export default function LiveAnalysis({ data, active }) {
           >
             <div>
               <div className="text-[16px] font-bold" style={{ color: 'var(--cockpit-text)' }}>
-                {recommendation.compressor.model}
+                {recommendation.parallelConfig
+                  ? `${recommendation.parallelConfig.unitCount}x ${recommendation.compressor.model}`
+                  : recommendation.compressor.model}
               </div>
               <div className="text-[12px] mt-0.5" style={{ color: 'var(--cockpit-text-secondary)' }}>
-                {recommendation.compressor.hp} HP &middot; {recommendation.compressor.cfm} CFM &middot; {recommendation.compressor.voltage || '460V/3ph'}
+                {recommendation.parallelConfig
+                  ? `${recommendation.compressor.hp} HP each · ${recommendation.parallelConfig.totalCfm} CFM total · Parallel configuration`
+                  : `${recommendation.compressor.hp} HP · ${recommendation.compressor.cfm} CFM · ${recommendation.compressor.voltage || '460V/3ph'}`}
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-[18px] font-bold" style={{ color: 'var(--cockpit-live-500)' }}>
-                {formatPrice(recommendation.compressor.price)}
-              </div>
+              {recommendation.salesChannel === 'direct' ? (
+                <span
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                  style={{ background: 'var(--cockpit-amber-50)', color: 'var(--cockpit-amber-900)', border: '1px solid var(--cockpit-amber-100)' }}
+                >
+                  Direct Sale
+                </span>
+              ) : (
+                <div className="text-[18px] font-bold" style={{ color: 'var(--cockpit-live-500)' }}>
+                  {formatPrice(recommendation.compressor.price)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -301,6 +316,19 @@ export default function LiveAnalysis({ data, active }) {
                   {note}
                 </p>
               ))}
+            </div>
+          )}
+
+          {/* Direct sale CTAs */}
+          {recommendation.salesChannel === 'direct' && (
+            <div className="mt-3">
+              <DirectSaleCTA
+                recommendation={recommendation}
+                contactName={contact?.name}
+                contactCompany={contact?.company}
+                contactPhone={contact?.phone}
+                callId={callId}
+              />
             </div>
           )}
         </div>
