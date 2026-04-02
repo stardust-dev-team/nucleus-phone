@@ -12,148 +12,148 @@
    - Animations reduced in intensity — gentle pulses, not strobes.
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── Light mode — warm cream, not sterile white ── */
+/* ── Light mode — cool paper, restful, zero amber tint on surfaces ── */
 :root {
-  /* Surfaces: warm paper tones, never clinical white */
-  --cockpit-bg: #F3F1EC;
-  --cockpit-card: #FAF9F6;
-  --cockpit-card-border: rgba(30,27,75,0.07);
-  --cockpit-footer-bg: #FAF9F6;
-  --cockpit-gamify-bg: #FAF9F6;
-  --cockpit-gamify-border: rgba(30,27,75,0.05);
-  --cockpit-gamify-stat-bg: #F3F1EC;
-  --cockpit-gray-50: #F5F3EF;
-  --cockpit-gray-100: #EDEAE4;
+  /* Surfaces: neutral cool paper. NOT warm — warm bg + warm accents = orange overload */
+  --cockpit-bg: #F4F4F6;
+  --cockpit-card: #FFFFFF;
+  --cockpit-card-border: rgba(30,30,60,0.06);
+  --cockpit-footer-bg: #FFFFFF;
+  --cockpit-gamify-bg: #FFFFFF;
+  --cockpit-gamify-border: rgba(30,30,60,0.04);
+  --cockpit-gamify-stat-bg: #F8F8FA;
+  --cockpit-gray-50: #F8F8FA;
+  --cockpit-gray-100: #EEEFF2;
 
-  /* Text: warm charcoal, not harsh black. 85% contrast max. */
-  --cockpit-text: #2D2A3E;
-  --cockpit-text-secondary: #5C586A;
-  --cockpit-text-muted: #8A8694;
+  /* Text: cool dark gray — crisp against neutral bg without being harsh */
+  --cockpit-text: #1E1E2E;
+  --cockpit-text-secondary: #52526A;
+  --cockpit-text-muted: #8888A0;
 
-  /* Header: Sentinel deep, slightly warmer than pure Abyss */
+  /* Header: Sentinel Abyss */
   --cockpit-header-bg: #0A0918;
   --cockpit-header-text: #E8E6EF;
   --cockpit-header-border: rgba(49,46,129,0.25);
 
-  /* ── Amber temperature (command/operational) ── */
-  --cockpit-amber-50: #FDF8EC;
-  --cockpit-amber-100: #FAEDC4;
-  --cockpit-amber-600: #C8850A;
-  --cockpit-amber-900: #614013;
+  /* ── Amber temperature (command) — pulled back, not screaming ── */
+  --cockpit-amber-50: #FFF9EE;
+  --cockpit-amber-100: #FCEFD0;
+  --cockpit-amber-600: #B07A0C;
+  --cockpit-amber-900: #5A3A10;
 
-  /* ── Violet temperature (intel) — softened for readability ── */
-  --cockpit-blue-50: rgba(119,82,216,0.05);
-  --cockpit-blue-500: #7752D8;
-  --cockpit-blue-900: #3D2B75;
-  --cockpit-blue-bg: rgba(119,82,216,0.06);
-  --cockpit-blue-border: rgba(119,82,216,0.12);
+  /* ── Violet temperature (intel) — soft, readable ── */
+  --cockpit-blue-50: rgba(100,72,200,0.04);
+  --cockpit-blue-500: #6B4EC8;
+  --cockpit-blue-900: #362870;
+  --cockpit-blue-bg: rgba(100,72,200,0.05);
+  --cockpit-blue-border: rgba(100,72,200,0.1);
 
-  /* ── Green (success/qualified) — slightly muted ── */
-  --cockpit-green-50: #EFF8F0;
-  --cockpit-green-500: #1A9444;
-  --cockpit-green-900: #14532D;
-  --cockpit-green-500-20: rgba(26,148,68,0.18);
-  --cockpit-check-accent: #1A9444;
+  /* ── Green (success) — muted, not neon ── */
+  --cockpit-green-50: #F0F8F2;
+  --cockpit-green-500: #1A8840;
+  --cockpit-green-900: #0F4A24;
+  --cockpit-green-500-20: rgba(26,136,64,0.14);
+  --cockpit-check-accent: #1A8840;
 
-  /* ── Orange (objections/caution) ── */
-  --cockpit-orange-50: #FEF5EC;
-  --cockpit-orange-500: #D4680E;
-  --cockpit-orange-900: #6B2F0D;
+  /* ── Orange (caution) — desaturated, doesn't compete with amber ── */
+  --cockpit-orange-50: #FFF6EE;
+  --cockpit-orange-500: #C05E10;
+  --cockpit-orange-900: #5E2E0A;
 
-  /* ── Red (errors/hot) — slightly desaturated for comfort ── */
-  --cockpit-red-bg: #FCEDED;
-  --cockpit-red-text: #8B2020;
+  /* ── Red (errors) — calm red, not alarming ── */
+  --cockpit-red-bg: #FDF0F0;
+  --cockpit-red-text: #802020;
 
-  /* ── Live analysis — warm amber glow, gentle ── */
-  --cockpit-live-500: #C8850A;
-  --cockpit-live-600: #A36B08;
-  --cockpit-live-900: #614013;
-  --cockpit-live-bg: rgba(200,133,10,0.05);
-  --cockpit-live-border: rgba(200,133,10,0.15);
-  --cockpit-live-glow: rgba(245,158,11,0.08);
-  --cockpit-live-badge-bg: rgba(200,133,10,0.08);
+  /* ── Live analysis — warm amber, subtle ── */
+  --cockpit-live-500: #B07A0C;
+  --cockpit-live-600: #906008;
+  --cockpit-live-900: #5A3A10;
+  --cockpit-live-bg: rgba(176,122,12,0.04);
+  --cockpit-live-border: rgba(176,122,12,0.12);
+  --cockpit-live-glow: rgba(176,122,12,0.06);
+  --cockpit-live-badge-bg: rgba(176,122,12,0.06);
 
-  /* ── Practice (violet/intel temperature) ── */
-  --cockpit-purple-50: rgba(119,82,216,0.05);
-  --cockpit-purple-500: #7752D8;
-  --cockpit-purple-600: #6842C2;
-  --cockpit-purple-900: #3D2B75;
-  --cockpit-purple-bg: rgba(119,82,216,0.06);
-  --cockpit-purple-border: rgba(119,82,216,0.12);
+  /* ── Practice (violet) — understated ── */
+  --cockpit-purple-50: rgba(100,72,200,0.04);
+  --cockpit-purple-500: #6B4EC8;
+  --cockpit-purple-600: #5C40B0;
+  --cockpit-purple-900: #362870;
+  --cockpit-purple-bg: rgba(100,72,200,0.05);
+  --cockpit-purple-border: rgba(100,72,200,0.1);
 
-  --cockpit-scroll-thumb: rgba(30,27,75,0.1);
+  --cockpit-scroll-thumb: rgba(30,30,60,0.08);
 }
 
-/* ── Dark mode — warm indigo, never pure black ── */
+/* ── Dark mode — deep slate with violet undertone, never pure black ── */
 [data-theme="dark"] {
-  /* Surfaces: warm deep indigo base, purple-black undertone */
-  --cockpit-bg: #0E0C1A;
-  --cockpit-card: #15132A;
-  --cockpit-card-border: rgba(69,63,149,0.2);
-  --cockpit-footer-bg: #15132A;
-  --cockpit-gamify-bg: #15132A;
-  --cockpit-gamify-border: rgba(69,63,149,0.15);
-  --cockpit-gamify-stat-bg: rgba(245,245,244,0.025);
-  --cockpit-gray-50: rgba(245,245,244,0.025);
-  --cockpit-gray-100: rgba(245,245,244,0.04);
+  /* Surfaces: layered dark with enough separation to read hierarchy */
+  --cockpit-bg: #111118;
+  --cockpit-card: #1A1A24;
+  --cockpit-card-border: rgba(80,78,120,0.18);
+  --cockpit-footer-bg: #1A1A24;
+  --cockpit-gamify-bg: #1A1A24;
+  --cockpit-gamify-border: rgba(80,78,120,0.12);
+  --cockpit-gamify-stat-bg: rgba(255,255,255,0.02);
+  --cockpit-gray-50: rgba(255,255,255,0.02);
+  --cockpit-gray-100: rgba(255,255,255,0.04);
 
-  /* Text: warm off-white, never pure white. Prevents halation. */
-  --cockpit-text: #DAD8E4;
-  --cockpit-text-secondary: #9E9AAE;
-  --cockpit-text-muted: #6E6A80;
+  /* Text: warm off-white, high readability without halation */
+  --cockpit-text: #D8D6E2;
+  --cockpit-text-secondary: #9896A8;
+  --cockpit-text-muted: #68667A;
 
   /* Header: deepest layer */
-  --cockpit-header-bg: #080714;
-  --cockpit-header-text: #DAD8E4;
-  --cockpit-header-border: rgba(69,63,149,0.25);
+  --cockpit-header-bg: #0A0A12;
+  --cockpit-header-text: #D8D6E2;
+  --cockpit-header-border: rgba(80,78,120,0.2);
 
-  /* ── Amber — warmer, less saturated for dark backgrounds ── */
-  --cockpit-amber-50: rgba(200,133,10,0.08);
-  --cockpit-amber-100: rgba(200,133,10,0.14);
-  --cockpit-amber-600: #E8A020;
-  --cockpit-amber-900: #F5DDA0;
+  /* ── Amber — warm but not hot ── */
+  --cockpit-amber-50: rgba(176,122,12,0.07);
+  --cockpit-amber-100: rgba(176,122,12,0.12);
+  --cockpit-amber-600: #D4981C;
+  --cockpit-amber-900: #F0D890;
 
-  /* ── Violet — softened, warmer lavender on dark ── */
-  --cockpit-blue-50: rgba(139,112,230,0.07);
-  --cockpit-blue-500: #9B82E8;
-  --cockpit-blue-900: #D4C8F5;
-  --cockpit-blue-bg: rgba(139,112,230,0.08);
-  --cockpit-blue-border: rgba(139,112,230,0.15);
+  /* ── Violet — soft lavender, easy on dark bg ── */
+  --cockpit-blue-50: rgba(120,100,210,0.06);
+  --cockpit-blue-500: #9080D8;
+  --cockpit-blue-900: #C8BEF0;
+  --cockpit-blue-bg: rgba(120,100,210,0.07);
+  --cockpit-blue-border: rgba(120,100,210,0.12);
 
   /* ── Green ── */
-  --cockpit-green-50: rgba(34,180,80,0.08);
-  --cockpit-green-500: #2CB85A;
-  --cockpit-green-900: #A8E8B8;
-  --cockpit-green-500-20: rgba(44,184,90,0.18);
-  --cockpit-check-accent: #2CB85A;
+  --cockpit-green-50: rgba(30,160,70,0.07);
+  --cockpit-green-500: #28A850;
+  --cockpit-green-900: #98E0A8;
+  --cockpit-green-500-20: rgba(40,168,80,0.15);
+  --cockpit-check-accent: #28A850;
 
   /* ── Orange ── */
-  --cockpit-orange-50: rgba(212,104,14,0.08);
-  --cockpit-orange-500: #E87A1C;
-  --cockpit-orange-900: #F5CCA0;
+  --cockpit-orange-50: rgba(192,94,16,0.07);
+  --cockpit-orange-500: #D87018;
+  --cockpit-orange-900: #F0C090;
 
-  /* ── Red — desaturated for less visual alarm fatigue ── */
-  --cockpit-red-bg: rgba(180,50,50,0.1);
-  --cockpit-red-text: #E8A0A0;
+  /* ── Red — low alarm, still visible ── */
+  --cockpit-red-bg: rgba(160,45,45,0.08);
+  --cockpit-red-text: #E09898;
 
-  /* ── Live analysis — warm amber, gentler glow ── */
-  --cockpit-live-500: #E8A020;
-  --cockpit-live-600: #C8850A;
-  --cockpit-live-900: #F5DDA0;
-  --cockpit-live-bg: rgba(232,160,32,0.05);
-  --cockpit-live-border: rgba(232,160,32,0.15);
-  --cockpit-live-glow: rgba(232,160,32,0.07);
-  --cockpit-live-badge-bg: rgba(232,160,32,0.1);
+  /* ── Live analysis — warm, ambient ── */
+  --cockpit-live-500: #D4981C;
+  --cockpit-live-600: #B07A0C;
+  --cockpit-live-900: #F0D890;
+  --cockpit-live-bg: rgba(212,152,28,0.04);
+  --cockpit-live-border: rgba(212,152,28,0.12);
+  --cockpit-live-glow: rgba(212,152,28,0.06);
+  --cockpit-live-badge-bg: rgba(212,152,28,0.08);
 
-  /* ── Practice — warm lavender ── */
-  --cockpit-purple-50: rgba(155,130,232,0.06);
-  --cockpit-purple-500: #A890F0;
-  --cockpit-purple-600: #9B82E8;
-  --cockpit-purple-900: #D4C8F5;
-  --cockpit-purple-bg: rgba(155,130,232,0.08);
-  --cockpit-purple-border: rgba(155,130,232,0.15);
+  /* ── Practice — soft lavender ── */
+  --cockpit-purple-50: rgba(144,128,216,0.05);
+  --cockpit-purple-500: #A090E0;
+  --cockpit-purple-600: #9080D8;
+  --cockpit-purple-900: #C8BEF0;
+  --cockpit-purple-bg: rgba(144,128,216,0.06);
+  --cockpit-purple-border: rgba(144,128,216,0.12);
 
-  --cockpit-scroll-thumb: rgba(155,130,232,0.12);
+  --cockpit-scroll-thumb: rgba(144,128,216,0.1);
 }
 
 /* ── Animations — reduced intensity for long sessions ── */
