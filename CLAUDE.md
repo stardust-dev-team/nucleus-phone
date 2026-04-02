@@ -138,3 +138,9 @@ Jest + supertest. Config: `jest.config.js`. Tests in `server/lib/__tests__/` and
 - **Auth per-handler:** Routes use `apiKeyAuth` middleware inline, not at router level
 - **Credit-gating:** Always check `checkCreditBudget(service)` before paid API calls
 - **Interaction sync:** Fire-and-forget `.catch(err => console.error(...))` pattern
+
+## Signal Engine
+- `client/src/components/cockpit/SignalBadges.jsx` — tier badge + cert/contract/multi-source badges
+- `client/src/pages/Pipeline.jsx` — team work queue (distinct from dashboard's Pipeline.tsx)
+- `server/routes/signals.js` — proxies to multichannel API. CRITICAL: /pipeline route MUST be before /:domain (Express route ordering)
+- Env: MULTICHANNEL_API_URL, MC_API_KEY
