@@ -23,24 +23,26 @@ export default function Shell({ identity, role, onLogout, deviceStatus }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-jv-border bg-jv-card">
+      {/* Header — Sentinel Abyss */}
+      <header className="flex items-center justify-between px-4 py-3 bg-jv-card" style={{ borderBottom: '1px solid rgba(49,46,129,0.3)' }}>
         <div className="flex items-center gap-3">
           <img
-            src="https://joruva.com/wp-content/uploads/2024/10/joruva-logo-white.svg"
-            alt="Joruva"
+            src="/joruva-logo-white.svg"
+            alt="Nucleus"
             className="h-6"
           />
-          <span className="text-sm text-jv-muted">Phone</span>
+          <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
+          <span className="text-[11px] font-semibold tracking-[2px] uppercase" style={{ color: '#F97316' }}>Phone</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[deviceStatus] || 'bg-gray-500'}`} />
-            <span className="text-sm capitalize">{identity}</span>
+            <span className="text-sm capitalize text-jv-bone">{identity}</span>
           </div>
           <button
             onClick={onLogout}
-            className="text-xs text-jv-muted hover:text-white transition-colors"
+            className="text-xs transition-colors"
+            style={{ color: '#78716C' }}
           >
             Logout
           </button>
@@ -52,20 +54,19 @@ export default function Shell({ identity, role, onLogout, deviceStatus }) {
         <Outlet />
       </main>
 
-      {/* Bottom nav */}
-      <nav className="flex border-t border-jv-border bg-jv-card pb-[env(safe-area-inset-bottom)]">
+      {/* Bottom nav — Sentinel */}
+      <nav className="flex bg-jv-card pb-[env(safe-area-inset-bottom)]" style={{ borderTop: '1px solid rgba(49,46,129,0.3)' }}>
         {tabs.map((tab) => {
           const active = location.pathname === tab.path;
           return (
             <button
               key={tab.path}
               onClick={() => navigate(tab.path)}
-              className={`flex-1 flex flex-col items-center py-3 gap-1 transition-colors ${
-                active ? 'text-jv-blue' : 'text-jv-muted'
-              }`}
+              className="flex-1 flex flex-col items-center py-3 gap-1 transition-colors"
+              style={{ color: active ? '#F59E0B' : '#78716C' }}
             >
               <span className="text-lg">{tab.icon}</span>
-              <span className="text-xs">{tab.label}</span>
+              <span className="text-[10px] font-medium tracking-wider uppercase">{tab.label}</span>
             </button>
           );
         })}

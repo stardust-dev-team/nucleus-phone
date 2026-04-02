@@ -4,7 +4,9 @@
 
 html, body, #root {
   height: 100%;
-  background: #0A0A0A;
+  background: #06050F;
+  color: #F5F5F4;
+  font-family: 'Roboto', system-ui, sans-serif;
 }
 
 /* PWA safe area insets for notched devices */
@@ -23,3 +25,14 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
 }
+
+/* ── Sentinel slit gradient utility ── */
+.sentinel-slit {
+  background: linear-gradient(to right, #F59E0B, #D97706, #8B5CF6);
+}
+
+/* ── Global scrollbar — Sentinel ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.35); }

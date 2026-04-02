@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 import { formatTime } from '../../lib/format';
 
 const STATUS_BADGE = {
-  pre: { bg: 'rgba(59,130,246,0.15)', color: '#93C5FD', label: 'Pre-call', pulse: false },
-  active: { bg: 'rgba(34,197,94,0.15)', color: '#4ADE80', label: 'On call', pulse: true },
-  post: { bg: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', label: 'Post-call', pulse: false },
+  pre: { bg: 'rgba(139,92,246,0.12)', color: '#A78BFA', label: 'Pre-call', pulse: false },
+  active: { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', label: 'On call', pulse: true },
+  post: { bg: 'rgba(245,245,244,0.06)', color: 'rgba(245,245,244,0.5)', label: 'Post-call', pulse: false },
 };
 
 export default function CockpitHeader({
@@ -37,16 +37,16 @@ export default function CockpitHeader({
       className="sticky top-0 z-20 flex items-center justify-between px-4 h-[44px] shrink-0"
       style={{ background: 'var(--cockpit-header-bg)', borderBottom: '1px solid var(--cockpit-header-border)' }}
     >
-      {/* Left: logo + back + title */}
+      {/* Left: Sentinel mark + module label */}
       <div className="flex items-center gap-2.5">
-        <img src="/joruva-logo-white.svg" alt="Joruva" className="h-[20px] block" />
-        <div className="w-px h-[22px] bg-white/[0.12]" />
+        <img src="/joruva-logo-white.svg" alt="Nucleus" className="h-[20px] block" />
+        <div className="w-px h-[22px]" style={{ background: 'rgba(49,46,129,0.4)' }} />
         {callPhase === 'pre' && (
-          <button onClick={onBack} className="text-[12px] text-white/45 hover:text-white/70 transition-colors hidden md:block">
+          <button onClick={onBack} className="text-[12px] hover:text-white/70 transition-colors hidden md:block" style={{ color: '#78716C' }}>
             &larr; Back
           </button>
         )}
-        <span className="text-[13px] font-medium text-white">Call cockpit</span>
+        <span className="text-[13px] font-semibold tracking-wider uppercase" style={{ color: '#F5F5F4' }}>Cockpit</span>
       </div>
 
       {/* Center: gamification stats */}
@@ -55,29 +55,29 @@ export default function CockpitHeader({
           {stats.map((s) => (
             <div
               key={s.label}
-              className="flex items-center gap-1 px-2 py-0.5 rounded"
-              style={{ background: 'rgba(255,255,255,0.06)' }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-sentinel"
+              style={{ background: 'rgba(30,27,75,0.5)' }}
             >
               <span className="text-[11px]">{s.icon}</span>
-              <span className="text-[12px] font-semibold text-white/90 leading-none">{s.value}</span>
-              <span className="text-[9px] text-white/40">{s.label}</span>
+              <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{s.value}</span>
+              <span className="text-[9px]" style={{ color: '#78716C' }}>{s.label}</span>
             </div>
           ))}
           {sorted.length > 0 && (
             <>
-              <div className="w-px h-4 bg-white/10 mx-0.5" />
+              <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(49,46,129,0.4)' }} />
               <div className="flex items-center gap-0.5">
                 {sorted.slice(0, 3).map((m, i) => {
                   const isMe = m.identity === currentUser;
                   return (
                     <span
                       key={m.identity}
-                      className="text-[10px] px-1.5 py-[1px] rounded"
+                      className="text-[10px] px-1.5 py-[1px] rounded-sentinel"
                       title={`${m.displayName}: ${m.callsMade} calls`}
                       style={{
-                        color: isMe ? '#93C5FD' : 'rgba(255,255,255,0.45)',
+                        color: isMe ? '#F59E0B' : '#78716C',
                         fontWeight: isMe ? 600 : 400,
-                        background: i === 0 ? 'rgba(217,119,6,0.15)' : 'transparent',
+                        background: i === 0 ? 'rgba(245,158,11,0.12)' : 'transparent',
                       }}
                     >
                       {i === 0 && '👑 '}{m.displayName || m.identity} {m.callsMade}
@@ -95,16 +95,16 @@ export default function CockpitHeader({
         <div className="hidden md:flex items-center gap-1.5">
           {practiceStats.practiceCount > 0 && (
             <>
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded" style={{ background: 'var(--cockpit-purple-bg)' }}>
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-sentinel" style={{ background: 'var(--cockpit-purple-bg)' }}>
                 <span className="text-[11px]">🎯</span>
-                <span className="text-[12px] font-semibold text-white/90 leading-none">{practiceStats.practiceCount}</span>
-                <span className="text-[9px] text-white/40">Practice</span>
+                <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{practiceStats.practiceCount}</span>
+                <span className="text-[9px]" style={{ color: '#78716C' }}>Practice</span>
               </div>
               {practiceStats.avgScore && (
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded" style={{ background: 'var(--cockpit-purple-bg)' }}>
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-sentinel" style={{ background: 'var(--cockpit-purple-bg)' }}>
                   <span className="text-[11px]">📊</span>
-                  <span className="text-[12px] font-semibold text-white/90 leading-none">{practiceStats.avgScore}</span>
-                  <span className="text-[9px] text-white/40">Avg</span>
+                  <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{practiceStats.avgScore}</span>
+                  <span className="text-[9px]" style={{ color: '#78716C' }}>Avg</span>
                 </div>
               )}
             </>
@@ -115,7 +115,7 @@ export default function CockpitHeader({
       {/* Right: status + controls */}
       <div className="flex items-center gap-2">
         {callPhase === 'active' && (
-          <span className="text-[13px] font-semibold tabular-nums text-[#4ADE80]">
+          <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#F59E0B' }}>
             {formatTime(timer)}
           </span>
         )}
@@ -125,7 +125,7 @@ export default function CockpitHeader({
           style={{ background: badge.bg, color: badge.color }}
         >
           {badge.pulse && (
-            <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80] animate-[pulse_1.5s_ease-in-out_infinite]" />
+            <span className="w-1.5 h-1.5 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: '#F59E0B' }} />
           )}
           {badge.label}
         </span>
@@ -133,7 +133,8 @@ export default function CockpitHeader({
         <button
           onClick={onRefresh}
           disabled={refreshing}
-          className="text-white/60 hover:text-white/90 transition-colors disabled:opacity-40"
+          className="transition-colors disabled:opacity-40"
+          style={{ color: '#78716C' }}
           title="Refresh intel"
         >
           <svg className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -143,7 +144,13 @@ export default function CockpitHeader({
 
         <button
           onClick={onThemeToggle}
-          className="flex items-center gap-1 px-2 py-[3px] rounded-[16px] border border-white/15 bg-white/[0.08] text-[11px] font-medium text-white/80 cursor-pointer hover:bg-white/[0.12] transition-colors"
+          className="flex items-center gap-1 px-2 py-[3px] text-[11px] font-medium cursor-pointer transition-colors"
+          style={{
+            borderRadius: '3px',
+            border: '1px solid rgba(49,46,129,0.4)',
+            background: 'rgba(15,13,41,0.5)',
+            color: '#A8A29E',
+          }}
           title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >
           <span className="text-[12px]">{theme === 'light' ? '☀️' : '🌙'}</span>
