@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joruva Sales Team Study Guide v2 — Signal-Amplified Outbound</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap');
+
+    :root {
+      --bg-primary: #0A0A0A;
+      --bg-card: #141414;
+      --bg-card-hover: #1A1A1A;
+      --blue: #014EFC;
+      --deep-blue: #0033A0;
+      --sky-blue: #15B5FF;
+      --green: #7EC55F;
+      --text-primary: #F5F5F5;
+      --text-secondary: #A0A0A0;
+      --text-dim: #6B6B6B;
+      --border: #2A2A2A;
+      --max-width: 900px;
+      --orange: #FF8C42;
+      --red: #FF4D4D;
+      --yellow: #FFD700;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .container { max-width: var(--max-width); margin: 0 auto; padding: 0 32px; }
+
+    /* Cover / Header */
+    .cover {
+      background: linear-gradient(135deg, #0A0A0A 0%, #0033A0 50%, #014EFC 100%);
+      padding: 80px 0 60px;
+      text-align: center;
+      border-bottom: 3px solid var(--green);
+    }
+    .cover img.logo {
+      height: 48px;
+      margin-bottom: 32px;
+      filter: brightness(1.1);
+    }
+    .cover h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -0.5px;
+    }
+    .cover .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .cover .version {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-top: 24px;
+    }
+    .cover .badge {
+      display: inline-block;
+      background: var(--green);
+      color: #000;
+      font-weight: 600;
+      font-size: 0.75rem;
+      padding: 4px 12px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 16px;
+    }
+
+    /* Navigation TOC */
+    .toc {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 32px;
+      margin: 40px auto;
+      max-width: var(--max-width);
+    }
+    .toc h2 {
+      font-size: 1.1rem;
+      color: var(--sky-blue);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .toc ol {
+      columns: 2;
+      column-gap: 40px;
+      padding-left: 20px;
+    }
+    .toc li {
+      margin-bottom: 8px;
+      break-inside: avoid;
+    }
+    .toc a {
+      color: var(--text-primary);
+      text-decoration: none;
+      border-bottom: 1px solid var(--border);
+      transition: color 0.2s;
+    }
+    .toc a:hover { color: var(--blue); border-color: var(--blue); }
+
+    /* Sections */
+    section {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 48px 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    section:last-of-type { border-bottom: none; }
+
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--blue);
+      display: inline-block;
+    }
+    h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 28px 0 12px;
+      color: var(--sky-blue);
+    }
+    h4 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 20px 0 8px;
+      color: var(--green);
+    }
+    p { margin-bottom: 14px; }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px;
+      font-size: 0.92rem;
+    }
+    th {
+      background: var(--deep-blue);
+      color: #fff;
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: var(--bg-card); }
+    tr:hover td { background: var(--bg-card-hover); }
+
+    /* Callout boxes */
+    .callout {
+      background: var(--bg-card);
+      border-left: 4px solid var(--blue);
+      border-radius: 0 8px 8px 0;
+      padding: 20px 24px;
+      margin: 20px 0;
+    }
+    .callout.tip { border-left-color: var(--green); }
+    .callout.warning { border-left-color: var(--orange); }
+    .callout.critical { border-left-color: var(--red); }
+    .callout.paul {
+      border-left-color: var(--yellow);
+      background: linear-gradient(90deg, rgba(255,215,0,0.05), transparent);
+    }
+    .callout-label {
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .callout.tip .callout-label { color: var(--green); }
+    .callout.warning .callout-label { color: var(--orange); }
+    .callout.critical .callout-label { color: var(--red); }
+    .callout.paul .callout-label { color: var(--yellow); }
+
+    /* Tier badges */
+    .tier {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .tier.spear { background: var(--red); color: #fff; }
+    .tier.targeted { background: var(--orange); color: #000; }
+    .tier.awareness { background: var(--text-dim); color: #fff; }
+
+    /* Formula boxes */
+    .formula {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin: 16px 0;
+      font-family: 'Courier New', monospace;
+      font-size: 1.05rem;
+      text-align: center;
+    }
+    .formula .label {
+      font-family: 'Roboto', sans-serif;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .formula .result { color: var(--green); font-weight: 700; }
+
+    /* Quick ref cards */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .card h4 { margin-top: 0; }
+
+    /* Lists */
+    ul, ol { margin: 0 0 14px 20px; }
+    li { margin-bottom: 6px; }
+
+    /* Emphasis */
+    strong { color: var(--text-primary); }
+    em { color: var(--text-secondary); font-style: italic; }
+    code {
+      background: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.9em;
+      color: var(--sky-blue);
+    }
+
+    /* Hero images */
+    .hero-img {
+      width: 100%;
+      max-height: 300px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin: 20px 0;
+      border: 1px solid var(--border);
+    }
+
+    /* Scorecard */
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin: 16px 0;
+    }
+    .score-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .score-item .label {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .score-item .value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--sky-blue);
+    }
+
+    /* Footer */
+    footer {
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+    footer a { color: var(--text-secondary); text-decoration: none; }
+    footer a:hover { color: var(--blue); }
+
+    /* Print */
+    @media print {
+      body { background: #fff; color: #111; font-size: 11pt; }
+      .cover { background: #0033A0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      section { page-break-inside: avoid; }
+      table { font-size: 9pt; }
+      .callout { border: 1px solid #ccc; }
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .cover h1 { font-size: 1.6rem; }
+      .toc ol { columns: 1; }
+      .score-grid { grid-template-columns: repeat(2, 1fr); }
+      .card-grid { grid-template-columns: 1fr; }
+      section { padding: 32px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===================== COVER ===================== -->
+<div class="cover">
+  <img src="img-logo.png" alt="Joruva Industrial" class="logo">
+  <h1>Sales Team Study Guide</h1>
+  <p class="subtitle">Signal-Amplified Outbound Edition &mdash; CNC &amp; Aerospace Focus</p>
+  <span class="badge">Version 2.0 &bull; April 2026</span>
+  <p class="version">Confidential &mdash; Joruva Sales Team Only</p>
+</div>
+
+<!-- ===================== TOC ===================== -->
+<div class="toc container">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#welcome">Welcome &amp; How to Use This Guide</a></li>
+    <li><a href="#compressors">Air Compressors 101</a></li>
+    <li><a href="#accessories">Accessories: Dryers, Filters, OWS, Drains</a></li>
+    <li><a href="#sizing">CFM &amp; PSI Cheat Guide</a></li>
+    <li><a href="#certifications">CNC Certifications by Industry</a></li>
+    <li><a href="#signal">Signal-Amplified Outbound System</a></li>
+    <li><a href="#cockpit">The Cockpit &amp; Live Analysis Widget</a></li>
+    <li><a href="#simulator">Practice Simulator &amp; Grading</a></li>
+    <li><a href="#call-guide">Call Playbook &amp; Common Scenarios</a></li>
+    <li><a href="#faq">FAQ from the Team</a></li>
+  </ol>
+</div>
+
+<!-- ===================== 1. WELCOME ===================== -->
+<section id="welcome">
+  <h2>1. Welcome &amp; How to Use This Guide</h2>
+
+  <p>This guide is your single reference for everything you need to make effective sales and market research calls at Joruva Industrial. You don't need to memorize it. You need to know <strong>where to find things</strong> so when a prospect asks a question, you can pull the answer in seconds.</p>
+
+  <div class="callout tip">
+    <div class="callout-label">How to Study</div>
+    <p><strong>Read Sections 2-5 once</strong> to get the big picture. Keep this guide open during practice calls. When Mike Garza asks something you can't answer, search this page (<code>Ctrl+F</code> or <code>Cmd+F</code>) for the keyword. Over time, the pattern matching becomes instinct.</p>
+  </div>
+
+  <h3>The Joruva Approach</h3>
+  <p>We are <strong>not a traditional sales team</strong>. We are consultants who happen to sell equipment. Our job is to:</p>
+  <ul>
+    <li><strong>Size correctly</strong> &mdash; never oversell, never undersell</li>
+    <li><strong>Educate</strong> &mdash; most shop owners don't know their air system is a problem until it fails</li>
+    <li><strong>Build trust</strong> &mdash; one honest recommendation earns years of repeat business and referrals</li>
+  </ul>
+  <p>If a prospect tries to push you toward a bigger unit and it's not right for them, <strong>tell them no</strong>. That's not losing a sale. That's earning a customer.</p>
+
+  <div class="callout paul">
+    <div class="callout-label">Ask Paul</div>
+    <p>Paul Johnson has <strong>35+ years</strong> in the compressed air industry. If anything in this guide raises questions you can't resolve, reach out to Paul directly. He's your walking encyclopedia and loves talking shop. No question is too basic.</p>
+  </div>
+
+  <h3>What's New in v2</h3>
+  <ul>
+    <li>Full product lineup including <strong>filters, air dryers, and OWS</strong> with pricing</li>
+    <li><strong>Signal-Amplified Outbound</strong> system overview &mdash; you'll now know <em>why</em> to call each prospect</li>
+    <li><strong>CNC certification guide</strong> by industry vertical</li>
+    <li><strong>CFM/PSI cheat calculations</strong> for sizing on the fly</li>
+    <li><strong>Cockpit &amp; Live Widget</strong> walkthrough &mdash; the real-time analysis tool that sizes for you mid-call</li>
+    <li>Feedback incorporated from Ryann, Alex, and Paul's practice sessions</li>
+  </ul>
+</section>
+
+<!-- ===================== 2. COMPRESSORS ===================== -->
+<section id="compressors">
+  <h2>2. Air Compressors 101</h2>
+
+  <img src="img-cnc-hero.jpg" alt="CNC Manufacturing Facility" class="hero-img">
+
+  <h3>What Is an Air Compressor?</h3>
+  <p>An air compressor converts power (electric or gas) into pressurized air stored in a tank. That pressurized air then powers pneumatic tools, CNC machines, paint booths, packaging lines &mdash; basically any industrial operation that needs a blast of controlled airflow.</p>
+  <p>Think of it as the <strong>fourth utility</strong> in a manufacturing facility &mdash; right after electricity, water, and gas. Most shops can't operate without it.</p>
+
+  <h3>Two Main Types You'll Encounter</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Piston / Reciprocating</h4>
+      <ul>
+        <li>Like a car engine &mdash; pistons pump up and down to compress air</li>
+        <li><strong>Louder</strong>, runs in start/stop cycles</li>
+        <li>Lower upfront cost</li>
+        <li>Best for: small shops, intermittent use</li>
+        <li>Common competitor: old Ingersoll Rand pistons (you'll hear this a lot)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Rotary Screw</h4>
+      <ul>
+        <li>Two helical screws spin together continuously to compress air</li>
+        <li><strong>Quieter</strong>, runs continuously</li>
+        <li>Higher upfront cost, but far more efficient long-term</li>
+        <li>Best for: CNC shops, production floors, anything running 8+ hrs/day</li>
+        <li><strong>This is our primary product line</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Our Product Lineup</h3>
+
+  <h4>Rotary Screw Compressors (Our Bread and Butter)</h4>
+  <table>
+    <tr>
+      <th>Model</th>
+      <th>HP</th>
+      <th>Voltage</th>
+      <th>CFM Output</th>
+      <th>Best For</th>
+      <th>Qualification</th>
+    </tr>
+    <tr>
+      <td><strong>JRS-7.5E</strong></td>
+      <td>7.5</td>
+      <td>230V 1-Phase</td>
+      <td>24 CFM</td>
+      <td>1-3 CNC machines</td>
+      <td>Recommended</td>
+    </tr>
+    <tr>
+      <td><strong>JRS-10E</strong></td>
+      <td>10</td>
+      <td>230V 3-Phase</td>
+      <td>35&ndash;42 CFM</td>
+      <td>3-5 CNC machines</td>
+      <td>Required</td>
+    </tr>
+    <tr>
+      <td><strong>JRS-25E</strong></td>
+      <td>25</td>
+      <td>460V 3-Phase</td>
+      <td>100 CFM</td>
+      <td>5-10+ CNC machines</td>
+      <td>Required</td>
+    </tr>
+    <tr>
+      <td><strong>JRS-30E</strong></td>
+      <td>30</td>
+      <td>460V 3-Phase</td>
+      <td>125 CFM</td>
+      <td>10-15+ CNC machines</td>
+      <td>Required</td>
+    </tr>
+  </table>
+
+  <div class="callout tip">
+    <div class="callout-label">Pattern Matching Shortcut</div>
+    <p>When someone tells you how many CNC machines they run, your brain should go:</p>
+    <ul>
+      <li><strong>1-3 machines</strong> &rarr; JRS-7.5E or JRS-10E</li>
+      <li><strong>3-5 machines</strong> &rarr; JRS-10E</li>
+      <li><strong>5-10 machines</strong> &rarr; JRS-25E</li>
+      <li><strong>10+ machines</strong> &rarr; JRS-30E or multiple units</li>
+    </ul>
+    <p><em>But remember:</em> this is a starting point. Alex taught us that machine counts alone aren't enough &mdash; <strong>machine models matter</strong>. Two shops with the same number of CNCs can have totally different air demands depending on their equipment. The Live Widget handles the heavy math for you.</p>
+  </div>
+
+  <h4>Electric Stationary Reciprocating</h4>
+  <table>
+    <tr><th>HP</th><th>Voltage</th><th>CFM @ 175 PSI</th><th>Tank</th><th>Best For</th></tr>
+    <tr><td>5 HP</td><td>230V 1-Phase</td><td>18 CFM</td><td>80 gal</td><td>Light shop work, auto body</td></tr>
+    <tr><td>7.5 HP</td><td>230V 1-Phase</td><td>24 CFM</td><td>80 gal</td><td>Small fab shops</td></tr>
+    <tr><td>10 HP</td><td>230V 3-Phase</td><td>35 CFM</td><td>120 gal</td><td>Medium shops</td></tr>
+    <tr><td>15 HP</td><td>230V 3-Phase</td><td>50 CFM</td><td>120 gal</td><td>Production floors</td></tr>
+  </table>
+
+  <h4>Gas Portable (Jobsite / Contractor)</h4>
+  <table>
+    <tr><th>Engine</th><th>CFM</th><th>Tank</th><th>Use Case</th></tr>
+    <tr><td>6.5 HP</td><td>10 CFM</td><td>8 gal</td><td>Light duty, nail guns</td></tr>
+    <tr><td>9 HP</td><td>15 CFM</td><td>10 gal</td><td>Medium duty, sandblasting</td></tr>
+    <tr><td>13 HP (Honda GX390)</td><td>25 CFM</td><td>30 gal</td><td>Heavy duty, remote sites</td></tr>
+  </table>
+
+  <h3>Key Selling Points</h3>
+  <ul>
+    <li><strong>Made in Texas</strong> &mdash; assembled domestically. Prospects care about this, especially aerospace shops</li>
+    <li><strong>UL Listed</strong> &mdash; File #E340852. This is a safety certification. Auditors check for it</li>
+    <li><strong>CSA Certified</strong> &mdash; #2758942. Required for Canadian shops and some US government contracts</li>
+    <li><strong>Ships in 3-5 days</strong> &mdash; this matters when someone's old unit just broke and they're bleeding $200/day on a rental</li>
+    <li><strong>CAS Distributor Pricing</strong> &mdash; we're an authorized distributor at 55% off list. Our pricing beats most competitors by 30-50%</li>
+  </ul>
+
+  <div class="callout warning">
+    <div class="callout-label">What &ldquo;Qualification Required&rdquo; Means</div>
+    <p>For rotary screw units and 15HP+ reciprocating units, we need to confirm the customer has:</p>
+    <ul>
+      <li>Correct <strong>electrical service</strong> (3-phase for most big units &mdash; a lot of small shops don't have this)</li>
+      <li>Adequate <strong>ventilation</strong> &mdash; rotary screws generate heat</li>
+      <li>Proper <strong>site access</strong> &mdash; can they physically get it into their compressor room?</li>
+    </ul>
+    <p>You don't need to do the qualification yourself. Just note it and flag it for Alex or Paul. They'll handle the technical walkthrough.</p>
+  </div>
+</section>
+
+<!-- ===================== 3. ACCESSORIES ===================== -->
+<section id="accessories">
+  <h2>3. Accessories: Dryers, Filters, OWS &amp; Drains</h2>
+
+  <p>A compressor alone isn't a complete system. Compressed air comes out hot, wet, and dirty. Before it hits the machines, it needs to be <strong>dried, filtered, and the condensate (dirty water) needs to be disposed of legally</strong>. That's where accessories come in.</p>
+
+  <div class="formula">
+    <div class="label">The Complete Air System</div>
+    <span class="result">Compressor &rarr; Air Dryer &rarr; Filters &rarr; Machines</span><br>
+    <span style="color: var(--text-dim);">&darr; condensate from dryer &darr;</span><br>
+    <span class="result">Oil-Water Separator &rarr; Drain &rarr; Legal Disposal</span>
+  </div>
+
+  <h3>Air Dryers</h3>
+  <p>Compressed air generates moisture. If wet air hits CNC machines, you get rust, tool wear, and bad surface finishes. Dryers remove that moisture.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Refrigerated Dryers</h4>
+      <p><strong>This is what you recommend 90% of the time.</strong></p>
+      <ul>
+        <li>Cools air to 38&deg;F dew point</li>
+        <li>Removes most moisture effectively</li>
+        <li><strong>Lower cost</strong> than desiccant</li>
+        <li>Perfect for: general CNC, fab shops, auto body, most manufacturing</li>
+      </ul>
+      <table>
+        <tr><th>CFM Rating</th><th>Dew Point</th><th>Pairs With</th></tr>
+        <tr><td>50 CFM</td><td>38&deg;F</td><td>5-10 HP compressors</td></tr>
+        <tr><td>100 CFM</td><td>38&deg;F</td><td>25 HP compressors</td></tr>
+        <tr><td>250 CFM</td><td>38&deg;F</td><td>30+ HP / multi-unit</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>Desiccant Dryers</h4>
+      <p><strong>Only recommend when the application specifically demands it.</strong></p>
+      <ul>
+        <li>Achieves -40&deg;F dew point (ultra-dry air)</li>
+        <li><strong>More expensive</strong> to buy and operate</li>
+        <li>Required for: pharmaceutical, food &amp; beverage, laser cutting, paint finishing, some aerospace</li>
+      </ul>
+      <table>
+        <tr><th>CFM Rating</th><th>Dew Point</th><th>Use Case</th></tr>
+        <tr><td>50 CFM</td><td>-40&deg;F</td><td>Pharma, food processing</td></tr>
+        <tr><td>100 CFM</td><td>-40&deg;F</td><td>Laser cutting, clean rooms</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout critical">
+    <div class="callout-label">Alex&rsquo;s Rule &mdash; Don&rsquo;t Default to Desiccant</div>
+    <p>From Alex (Nucleus Launch call): <em>&ldquo;Most often you can get away with a refrigerated dryer and save them on cost. If you're the only one quoting a desiccant dryer and everybody else has refrigerated, that could price you out.&rdquo;</em></p>
+    <p><strong>Always ask:</strong> &ldquo;What are you using your compressed air for specifically?&rdquo; If they say general CNC machining, go refrigerated. Only go desiccant if they mention <strong>laser cutting, clean rooms, food/pharma, or specific manufacturer requirements</strong> for ultra-dry air.</p>
+  </div>
+
+  <h3>Filters</h3>
+  <p>Filters remove particles, oil aerosol, and vapor from compressed air. There are three main types, and they're installed in sequence:</p>
+
+  <table>
+    <tr><th>Filter Type</th><th>What It Removes</th><th>When to Recommend</th></tr>
+    <tr>
+      <td><strong>Particulate Filter</strong></td>
+      <td>Dust, rust, pipe scale (solid particles)</td>
+      <td>Every system &mdash; this is the baseline</td>
+    </tr>
+    <tr>
+      <td><strong>Coalescing Filter</strong></td>
+      <td>Oil aerosol and fine mist</td>
+      <td>Any oil-lubricated compressor (which is all of ours)</td>
+    </tr>
+    <tr>
+      <td><strong>Activated Carbon Filter</strong></td>
+      <td>Oil vapor and odor</td>
+      <td>Food, pharma, breathing air, paint finishing</td>
+    </tr>
+  </table>
+
+  <div class="callout paul">
+    <div class="callout-label">Ask Paul &mdash; Filter Sizing</div>
+    <p>Filter sizing depends on the specific system. Paul and Alex can help determine the right filter arrangement and models. Your job on the call is to <strong>ask what filtration they currently have</strong> &mdash; this tells us a lot about their setup and what they might need.</p>
+  </div>
+
+  <h3>Oil-Water Separators (OWS)</h3>
+  <p>When air is compressed, moisture condenses out and mixes with compressor oil. You can't dump that down the drain &mdash; it's an <strong>EPA violation</strong>. An OWS separates the oil from the water so the water can be legally discharged.</p>
+
+  <table>
+    <tr><th>Model</th><th>CFM Rating</th><th>Price Range</th><th>Best For</th></tr>
+    <tr><td>OWS75</td><td>75 CFM</td><td>$800&ndash;$1,000</td><td>Single small compressor</td></tr>
+    <tr><td>OWS150</td><td>150 CFM</td><td>$1,200&ndash;$1,500</td><td>Single medium compressor</td></tr>
+    <tr><td>OWS450</td><td>450 CFM</td><td>$2,000&ndash;$2,500</td><td>Large compressor or multi-unit</td></tr>
+    <tr><td>OWS1000</td><td>1,000 CFM</td><td>$3,500&ndash;$4,000</td><td>Large facility</td></tr>
+    <tr><td>OWS2000</td><td>2,000 CFM</td><td>$5,000&ndash;$6,000</td><td>Major operation</td></tr>
+    <tr><td>OWS3000</td><td>3,000 CFM</td><td>$7,000&ndash;$8,000</td><td>Multi-compressor facility</td></tr>
+    <tr><td>OWS3500</td><td>3,500 CFM</td><td>$8,500&ndash;$10,000</td><td>IBC tote &mdash; forklift accessible</td></tr>
+    <tr><td>OWS7000</td><td>7,000 CFM</td><td>$15,000&ndash;$18,000</td><td>IBC tote &mdash; enterprise scale</td></tr>
+  </table>
+
+  <div class="callout tip">
+    <div class="callout-label">Reactis Additive Technology</div>
+    <p>Our OWS units use <strong>Reactis additive</strong> &mdash; a proprietary treatment media with a <strong>6,000-hour service life</strong>, which is 3x the industry standard of 2,000 hours. This is a major differentiator. Replacement is via Service Kits.</p>
+    <p><em>Never refer to the Reactis cartridge as a &ldquo;tea bag&rdquo; &mdash; always call it an &ldquo;additive&rdquo; or &ldquo;cartridge.&rdquo;</em></p>
+  </div>
+
+  <h3>Drains</h3>
+  <p>Automatic condensate drains remove accumulated moisture from the tank, dryer, and filter bowls. Most shops have <strong>manual drains</strong> that someone forgets to open. An automatic drain ensures moisture doesn't sit in the system and cause rust or contamination.</p>
+  <p>When a prospect mentions problems with moisture in their lines or tools, <strong>ask about their drains</strong>. It's often the cheapest fix in the entire system and it makes you look like an expert.</p>
+
+  <div class="callout paul">
+    <div class="callout-label">Alex&rsquo;s Pro Tip &mdash; Drains Win Trust</div>
+    <p><em>&ldquo;You could sell them a better drain and be their favorite rep after that.&rdquo;</em> &mdash; Alex, Nucleus Launch. Small accessory, big relationship builder. Always ask about drains.</p>
+  </div>
+</section>
+
+<!-- ===================== 4. SIZING ===================== -->
+<section id="sizing">
+  <h2>4. CFM &amp; PSI Cheat Guide</h2>
+
+  <h3>Key Measurements Explained</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>CFM (Cubic Feet per Minute)</h4>
+      <p><strong>How much air</strong> the compressor delivers. This is the #1 sizing metric.</p>
+      <p>Think of it like water flow from a hose &mdash; CFM is how many gallons per minute you're getting.</p>
+    </div>
+    <div class="card">
+      <h4>PSI (Pounds per Square Inch)</h4>
+      <p><strong>How hard</strong> the air pushes. Most industrial applications need 90-125 PSI.</p>
+      <p>Think of it like water pressure &mdash; PSI is how forcefully the water comes out.</p>
+    </div>
+    <div class="card">
+      <h4>HP (Horsepower)</h4>
+      <p><strong>How powerful</strong> the motor is. More HP generally means more CFM, but it's not a perfect correlation.</p>
+      <p>Don't sell by HP alone. Always size by CFM demand.</p>
+    </div>
+    <div class="card">
+      <h4>Dew Point</h4>
+      <p>The temperature at which moisture condenses out of compressed air. <strong>Lower dew point = drier air</strong>.</p>
+      <p>38&deg;F = refrigerated dryer. -40&deg;F = desiccant dryer.</p>
+    </div>
+  </div>
+
+  <h3>Quick Sizing Formula</h3>
+
+  <div class="formula">
+    <div class="label">Step 1: Calculate Total CFM Demand</div>
+    <span class="result">Total CFM = Sum of all machine CFM requirements</span>
+  </div>
+  <div class="formula">
+    <div class="label">Step 2: Add Headroom (Safety Factor)</div>
+    <span class="result">Required Compressor CFM = Total CFM &times; 1.25</span><br>
+    <span style="color: var(--text-secondary); font-size: 0.85rem;">25% headroom accounts for leaks, future growth, and peak demand</span>
+  </div>
+  <div class="formula">
+    <div class="label">Step 3: Pick the Next Size Up</div>
+    <span class="result">Always round UP to the next available compressor model</span>
+  </div>
+
+  <h3>Worked Example</h3>
+  <div class="callout">
+    <div class="callout-label">Scenario: Mike Garza&rsquo;s Shop</div>
+    <p><strong>Equipment:</strong> 3x Haas VF-2 + 1x Mazak QTN-200</p>
+    <ul>
+      <li>Haas VF-2: ~8 CFM each &rarr; 3 &times; 8 = <strong>24 CFM</strong></li>
+      <li>Mazak QTN-200: ~6 CFM &rarr; <strong>6 CFM</strong></li>
+      <li>Misc. pneumatic tools, blow guns: ~<strong>8 CFM</strong></li>
+    </ul>
+    <p><strong>Total demand:</strong> 38 CFM</p>
+    <p><strong>With 25% headroom:</strong> 38 &times; 1.25 = 47.5 CFM</p>
+    <p><strong>Recommendation:</strong> JRS-10E at 42 CFM is tight but workable for current setup. If they're truly adding 2 more machines, revisit then &mdash; <strong>don't oversell now</strong>.</p>
+  </div>
+
+  <h3>Common CNC Machine CFM Requirements</h3>
+  <table>
+    <tr><th>Machine Type</th><th>Typical CFM</th><th>Typical PSI</th><th>Notes</th></tr>
+    <tr><td>Haas VF-2 (Vertical Mill)</td><td>6-10 CFM</td><td>90 PSI</td><td>Most common CNC you'll hear about</td></tr>
+    <tr><td>Haas VF-4 (Larger Mill)</td><td>10-14 CFM</td><td>90 PSI</td><td>Bigger work envelope, more air</td></tr>
+    <tr><td>Mazak QTN-200 (Lathe)</td><td>5-8 CFM</td><td>90 PSI</td><td>Turning center, moderate demand</td></tr>
+    <tr><td>Bridgeport Mill (Manual/CNC)</td><td>4-8 CFM</td><td>90 PSI</td><td>Older but still everywhere</td></tr>
+    <tr><td>Laser Cutter</td><td>15-50 CFM</td><td>100-150 PSI</td><td>High demand, needs ultra-dry air (desiccant)</td></tr>
+    <tr><td>Paint Booth</td><td>15-25 CFM</td><td>40-60 PSI</td><td>Lower PSI, higher volume</td></tr>
+    <tr><td>Blow Guns / Pneumatic Tools</td><td>4-12 CFM</td><td>90 PSI</td><td>Add to total, often forgotten</td></tr>
+  </table>
+
+  <div class="callout warning">
+    <div class="callout-label">Important &mdash; Don&rsquo;t Rely on Machine Count Alone</div>
+    <p>Alex made this crystal clear: <em>&ldquo;You can have a shop with 2 machines and another with 12, and they have the same flow requirements.&rdquo;</em></p>
+    <p>Machine count gets you in the ballpark. The Live Widget does the real work &mdash; it pulls actual specs from manufacturer databases when the prospect names their equipment. <strong>Your job is to get them talking about their machines.</strong></p>
+  </div>
+
+  <h3>OWS Sizing</h3>
+  <div class="formula">
+    <div class="label">OWS Formula</div>
+    <span class="result">Required OWS CFM = Total Compressor CFM &times; 1.1</span><br>
+    <span style="color: var(--text-secondary); font-size: 0.85rem;">Always round UP to the next OWS model</span>
+  </div>
+  <p><strong>Example:</strong> If you sell a JRS-10E (42 CFM), the OWS75 covers it. If you sell a JRS-25E (100 CFM), the OWS150 covers it.</p>
+
+  <h3>Dryer Sizing</h3>
+  <p>Simple rule: <strong>match the dryer CFM to the compressor CFM</strong>. If the compressor outputs 42 CFM, use a 50 CFM dryer. Account for altitude and extreme heat (Arizona summer, for example) &mdash; those reduce dryer efficiency. When in doubt, size up one model.</p>
+</section>
+
+<!-- ===================== 5. CERTIFICATIONS ===================== -->
+<section id="certifications">
+  <h2>5. CNC Certifications by Industry</h2>
+
+  <p>Certifications are the <strong>single most important intelligence signal</strong> in our system. When a CNC shop has a certification, they have to go through regular audits. Audits mean paperwork, inspections, and &mdash; increasingly &mdash; questions about their air system. That's our opening.</p>
+
+  <h3>Priority: Aerospace (AS9100)</h3>
+
+  <div class="callout">
+    <div class="callout-label">AS9100 &mdash; The Big One</div>
+    <p><strong>What it is:</strong> Quality management standard for aerospace, defense, and space organizations. It's based on ISO 9001 but adds aerospace-specific requirements.</p>
+    <p><strong>Who has it:</strong> Any shop making parts for Boeing, Lockheed Martin, Northrop Grumman, Raytheon, or any aerospace prime contractor.</p>
+    <p><strong>Why it matters to us:</strong> AS9100 auditors are increasingly asking about <strong>air quality documentation</strong>. If a shop can't show their compressed air meets spec, they risk their certification &mdash; and losing that cert means losing their biggest contracts.</p>
+    <p><strong>Renewal cycle:</strong> Every <strong>3 years</strong> with annual surveillance audits.</p>
+    <p><strong>Our data source:</strong> The OASIS database tracks AS9100 certifications and expiration dates. Our signal engine pulls from this directly.</p>
+  </div>
+
+  <div class="callout tip">
+    <div class="callout-label">How to Use This on a Call</div>
+    <p><em>&ldquo;I noticed your AS9100 renewal is coming up in October. How's your air system documentation looking for the audit?&rdquo;</em></p>
+    <p>This is the <strong>money opener</strong>. It shows you did your homework, and it connects your product to something they're already worried about. Most reps call and say &ldquo;do you need a compressor?&rdquo; &mdash; you're calling and talking about their <em>certification</em>.</p>
+  </div>
+
+  <h3>Other Key Certifications</h3>
+
+  <table>
+    <tr><th>Certification</th><th>Industry</th><th>Air System Relevance</th><th>Common Shorthand</th></tr>
+    <tr>
+      <td><strong>AS9100</strong></td>
+      <td>Aerospace &amp; Defense</td>
+      <td>Air quality documentation, contamination control</td>
+      <td>&ldquo;AS&rdquo;, &ldquo;9100&rdquo;, &ldquo;aerospace cert&rdquo;</td>
+    </tr>
+    <tr>
+      <td><strong>ISO 9001</strong></td>
+      <td>General Manufacturing</td>
+      <td>Quality management systems &mdash; air system is supporting infrastructure</td>
+      <td>&ldquo;ISO&rdquo;, &ldquo;nine-oh-oh-one&rdquo;</td>
+    </tr>
+    <tr>
+      <td><strong>ISO 13485</strong></td>
+      <td>Medical Devices</td>
+      <td>Ultra-clean air required; desiccant dryers + carbon filters often mandatory</td>
+      <td>&ldquo;13485&rdquo;, &ldquo;medical ISO&rdquo;</td>
+    </tr>
+    <tr>
+      <td><strong>IATF 16949</strong></td>
+      <td>Automotive</td>
+      <td>Process consistency &mdash; air system reliability and monitoring</td>
+      <td>&ldquo;IATF&rdquo;, &ldquo;auto cert&rdquo;, &ldquo;16949&rdquo;</td>
+    </tr>
+    <tr>
+      <td><strong>NADCAP</strong></td>
+      <td>Aerospace Special Processes</td>
+      <td>Heat treat, NDT, surface treatment &mdash; some require certified air quality</td>
+      <td>&ldquo;NADCAP&rdquo;</td>
+    </tr>
+  </table>
+
+  <div class="callout warning">
+    <div class="callout-label">Industry Jargon Warning</div>
+    <p>From the team call: <em>&ldquo;I say AS9100 because that's what's written here. I don't know &mdash; they might have a shorthand for that.&rdquo;</em></p>
+    <p>You might hear people call it &ldquo;their AS cert,&rdquo; &ldquo;their 9100,&rdquo; &ldquo;their aerospace qual,&rdquo; or something else entirely. <strong>Don't worry about sounding dumb.</strong> If they correct you, that's a learning moment. Write it down. The system gets smarter with every call.</p>
+  </div>
+
+  <h3>Target States (Tier 1 for CNC/Aerospace)</h3>
+  <p>These states have the highest concentration of certified CNC shops:</p>
+  <p><strong>MI</strong> &bull; <strong>OH</strong> &bull; <strong>CA</strong> &bull; <strong>CT</strong> &bull; <strong>TX</strong> &bull; <strong>WI</strong> &bull; <strong>MN</strong> &bull; <strong>PA</strong></p>
+</section>
+
+<!-- ===================== 6. SIGNAL SYSTEM ===================== -->
+<section id="signal">
+  <h2>6. Signal-Amplified Outbound System</h2>
+
+  <img src="img-facility.jpg" alt="Manufacturing Facility" class="hero-img">
+
+  <p>This is what makes Joruva different from every other compressed air company. Instead of calling from a list and hoping someone picks up, <strong>you know why you're calling before you dial</strong>.</p>
+
+  <h3>Three Intelligence Signals</h3>
+
+  <div class="card-grid">
+    <div class="card" style="border-top: 3px solid var(--blue);">
+      <h4>1. Certification Timeline</h4>
+      <p><strong>Source:</strong> OASIS Database (government-reviewed, 100% accurate)</p>
+      <p>We know when their AS9100 / ISO certification expires. An upcoming renewal means audit prep, which means air system scrutiny.</p>
+      <p><strong>Your opener:</strong> <em>&ldquo;I noticed your AS9100 renewal is coming up. How's your air system documentation looking for the audit?&rdquo;</em></p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--green);">
+      <h4>2. Government Contracts</h4>
+      <p><strong>Source:</strong> USA Spending (federal contract awards)</p>
+      <p>When a CNC shop wins a DoD, Navy, or Air Force contract, they're scaling up production. More production = more air demand.</p>
+      <p><strong>Your opener:</strong> <em>&ldquo;Congrats on the Navy contract. Are you scaling up production? That usually means more air demand.&rdquo;</em></p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--orange);">
+      <h4>3. Manufacturer Directory</h4>
+      <p><strong>Source:</strong> DoS Manufacturing Directory (5,000+ CNC shops)</p>
+      <p>Confirms they're a real machine shop with SIC codes, employee count, and location. This is our baseline verification layer.</p>
+      <p><strong>Used for:</strong> Confirming they're worth calling and providing context for the conversation.</p>
+    </div>
+  </div>
+
+  <h3>Priority Tiers</h3>
+
+  <p>Prospects are automatically ranked into three tiers. Your call queue will be sorted by tier, highest priority first:</p>
+
+  <table>
+    <tr><th>Tier</th><th>Badge</th><th>Criteria</th><th>Action</th></tr>
+    <tr>
+      <td><span class="tier spear">SPEAR</span></td>
+      <td style="color: var(--red); font-weight: 700;">Highest Priority</td>
+      <td>Expiring certification <strong>AND</strong> recent government contract</td>
+      <td><strong>Phone call</strong>. Use both signals in your opener. This is the hottest lead possible.</td>
+    </tr>
+    <tr>
+      <td><span class="tier targeted">TARGETED</span></td>
+      <td style="color: var(--orange); font-weight: 700;">High Priority</td>
+      <td>One strong signal &mdash; either cert renewal <strong>OR</strong> contract, not both</td>
+      <td>Phone call with single-signal opener.</td>
+    </tr>
+    <tr>
+      <td><span class="tier awareness">AWARENESS</span></td>
+      <td style="color: var(--text-dim); font-weight: 700;">Standard</td>
+      <td>Directory listing only, no active signals</td>
+      <td>Email only. No phone unless they respond.</td>
+    </tr>
+  </table>
+
+  <div class="callout tip">
+    <div class="callout-label">Trust the Data</div>
+    <p>The certification and contract data comes from government-reviewed databases. It's <strong>100% accurate</strong> in terms of existence. What we're still validating through your calls is how prospects react to it and what shorthand they use. Every call teaches the system something.</p>
+  </div>
+
+  <h3>What Your Calls Are Building</h3>
+  <p>Every conversation feeds back into the system in three ways:</p>
+  <ol>
+    <li><strong>Data validation</strong> &mdash; when you confirm a shop has AS9100 and 5 Haas machines, you validate our data across thousands of similar records</li>
+    <li><strong>Sizing intelligence</strong> &mdash; machine types + compressor setups create patterns. When the next shop has the same Haas VF-2s, the system already knows the CFM</li>
+    <li><strong>Competitive intel</strong> &mdash; when they say &ldquo;we're running an old Ingersoll Rand piston,&rdquo; that tells us exactly what they're replacing and how to position against it</li>
+  </ol>
+</section>
+
+<!-- ===================== 7. COCKPIT ===================== -->
+<section id="cockpit">
+  <h2>7. The Cockpit &amp; Live Analysis Widget</h2>
+
+  <p>The Cockpit is your command center during calls. It's a web app that runs in your browser (Chrome recommended) on both laptop and phone.</p>
+
+  <h3>Cockpit Layout</h3>
+
+  <table>
+    <tr><th>Panel</th><th>Location</th><th>What It Shows</th></tr>
+    <tr>
+      <td><strong>Prospect Profile</strong></td>
+      <td>Left side</td>
+      <td>Name, title, company, LinkedIn background, career history, how they got into our system</td>
+    </tr>
+    <tr>
+      <td><strong>Intelligence Signals</strong></td>
+      <td>Left side (below profile)</td>
+      <td>Certification timeline, contract info, directory listing. Tier badge (SPEAR/TARGETED/AWARENESS)</td>
+    </tr>
+    <tr>
+      <td><strong>Live Analysis Widget</strong></td>
+      <td style="color: var(--green); font-weight: 700;">CENTER</td>
+      <td>Real-time call transcription + automatic product recommendations. <strong>This is the most important panel.</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Recommendation Card</strong></td>
+      <td>Right side</td>
+      <td>Product recommendation built live from the conversation &mdash; model, price, specs, why it fits</td>
+    </tr>
+    <tr>
+      <td><strong>Scorecard</strong></td>
+      <td>Bottom (post-call)</td>
+      <td>Call performance score across 5 dimensions</td>
+    </tr>
+  </table>
+
+  <h3>The Live Analysis Widget &mdash; Your Secret Weapon</h3>
+
+  <p>This is the center panel and it's what sets Joruva apart from anything else in the industry.</p>
+
+  <p><strong>How it works:</strong></p>
+  <ol>
+    <li>You're on a call. The widget is <strong>listening and transcribing in real time</strong></li>
+    <li>When the prospect mentions a machine &mdash; &ldquo;I've got three Haas VF-2s&rdquo; &mdash; the widget catches it</li>
+    <li>It automatically looks up that machine's <strong>CFM and PSI requirements</strong> from manufacturer specs</li>
+    <li>It cross-references against our product catalog</li>
+    <li>A <strong>recommendation card appears</strong> on the right with the suggested compressor, dryer, filters, and OWS &mdash; with pricing</li>
+  </ol>
+
+  <p><strong>You don't press any buttons.</strong> You don't Google anything. You don't put them on hold. It just happens while you're talking.</p>
+
+  <div class="callout">
+    <div class="callout-label">How Alex Used to Do It</div>
+    <p><em>&ldquo;What I typically do is get the model information and go on Google and search that manufacturer, look for the technical specs&hellip; then say, I'll come back with a recommendation in a few days. But this is just instantaneous.&rdquo;</em></p>
+    <p>What used to take Alex hours of research and a callback, the widget does in seconds. And once it looks up a machine model once, it's <strong>permanently stored</strong> in our database for every future call.</p>
+  </div>
+
+  <div class="callout warning">
+    <div class="callout-label">Important Nuances</div>
+    <ul>
+      <li>The widget is <strong>an assistant, not gospel</strong>. Some cockpit data may be older or not perfectly relevant to the current conversation. Use your judgment.</li>
+      <li>The Live Widget's real-time recommendations ARE reliable &mdash; they're responding to what the prospect just said</li>
+      <li>Background intel (profile, career history) gives you context but isn't always complete</li>
+      <li><strong>Always verify the full equipment setup</strong> &mdash; Alex's feedback: ask about dryers, filters, drains, and OWS. The widget might not catch everything on the first pass</li>
+    </ul>
+  </div>
+
+  <h3>Accessing the Cockpit</h3>
+  <ul>
+    <li><strong>Laptop:</strong> Log in via your Joruva email at the URL provided in your setup email</li>
+    <li><strong>Phone:</strong> Same URL in <strong>Chrome</strong> (optimized for Samsung Galaxy and iPhone). Save to homescreen for app-like experience.</li>
+    <li><strong>Authentication:</strong> You must have a <code>@joruva.com</code> email to access the system</li>
+  </ul>
+
+  <div class="callout critical">
+    <div class="callout-label">Call Routing &mdash; Stay in the System</div>
+    <p>For Nucleus to capture and transcribe your calls, you <strong>must make calls through the Cockpit</strong>. If you copy a phone number and dial from your personal phone, the system can't track it. Stay within Chrome/the Cockpit for all calls.</p>
+    <p>Your personal phone number is <strong>never exposed</strong> to prospects. The system handles routing.</p>
+  </div>
+</section>
+
+<!-- ===================== 8. SIMULATOR ===================== -->
+<section id="simulator">
+  <h2>8. Practice Simulator &amp; Grading</h2>
+
+  <p>The Mike Garza Simulator is your training ground. Mike is an AI character who runs a CNC aerospace shop called <strong>Garza Precision Machine</strong> (note: &ldquo;Machine,&rdquo; singular &mdash; he will correct you if you say &ldquo;Machines&rdquo;).</p>
+
+  <h3>Difficulty Levels</h3>
+  <table>
+    <tr><th>Mode</th><th>Mike's Personality</th><th>When to Use</th></tr>
+    <tr>
+      <td><strong>Easy</strong></td>
+      <td>Friendly, receptive. His compressor just broke and he needs help <em>now</em></td>
+      <td>Start here. Learn the product lineup, practice sizing</td>
+    </tr>
+    <tr>
+      <td><strong>Hard</strong></td>
+      <td>Hostile. &ldquo;Take me off your list.&rdquo; Will test your ability to earn 10 seconds</td>
+      <td>After you're comfortable with Easy. Build resilience</td>
+    </tr>
+  </table>
+
+  <div class="callout tip">
+    <div class="callout-label">Ryann&rsquo;s Discovery</div>
+    <p>Ryann and Lily figured out that on Hard Mode, you need to say something valuable <strong>before Mike has a chance to shut you down</strong>. The signal intelligence opener works: lead with the AS9100 cert, not &ldquo;Hi, I'm calling from Joruva.&rdquo;</p>
+  </div>
+
+  <h3>Grading: 5 Dimensions</h3>
+
+  <div class="score-grid">
+    <div class="score-item">
+      <div class="label">Rapport</div>
+      <div class="value">20%</div>
+    </div>
+    <div class="score-item">
+      <div class="label">Discovery</div>
+      <div class="value">20%</div>
+    </div>
+    <div class="score-item">
+      <div class="label">Objection Handling</div>
+      <div class="value">20%</div>
+    </div>
+    <div class="score-item">
+      <div class="label">Product Knowledge</div>
+      <div class="value">20%</div>
+    </div>
+    <div class="score-item">
+      <div class="label">Closing</div>
+      <div class="value">20%</div>
+    </div>
+  </div>
+
+  <p>The grader is <strong>intentionally harsh</strong>. A C on this system is a legitimately good sales call. Ryann went from 0.1 to 6.6 in less than a week. The grades are heavily weighted on <strong>opening and closing</strong>.</p>
+
+  <h3>Three Unlocks That Move the Needle</h3>
+  <ol>
+    <li><strong>Product Fluency</strong> &mdash; Not memorizing every spec. It's pattern matching. Someone says &ldquo;6 CNC machines&rdquo; and your brain goes to the JRS-25E. The cheat tables in Section 2 are your friend until this becomes instinct.</li>
+    <li><strong>Own the Close</strong> &mdash; Don't let the prospect drive next steps. Instead of &ldquo;okay&rdquo; when they say &ldquo;send me a quote,&rdquo; try: <em>&ldquo;I'll get that quote over today. Are you looking to have this installed before your October audit, or is there flexibility on timing?&rdquo;</em></li>
+    <li><strong>Clean Opener</strong> &mdash; Have one rehearsed opener you can say cleanly every time. Not robotic &mdash; just practiced enough that it flows. Don't stumble on the company name or start with a vague intro.</li>
+  </ol>
+
+  <div class="callout">
+    <div class="callout-label">What a Good Call Sounds Like</div>
+    <p><em>&ldquo;Hi Mike, this is [your name] with Joruva Industrial. I noticed your AS9100 renewal is coming up in October &mdash; how's your air system looking for the audit?&rdquo;</em></p>
+    <p>That's 10 seconds. You showed you know his world. You connected to something he's already thinking about. He's not hanging up &mdash; he's curious.</p>
+  </div>
+</section>
+
+<!-- ===================== 9. CALL PLAYBOOK ===================== -->
+<section id="call-guide">
+  <h2>9. Call Playbook &amp; Common Scenarios</h2>
+
+  <h3>Call Structure (4 Phases)</h3>
+
+  <h4>Phase 1: The Opener (0-15 seconds)</h4>
+  <p>You have two options depending on what signals are available:</p>
+
+  <table>
+    <tr><th>Type</th><th>When to Use</th><th>Example</th></tr>
+    <tr>
+      <td><strong>Signal Opener</strong></td>
+      <td>SPEAR or TARGETED tier &mdash; you have cert/contract intel</td>
+      <td><em>&ldquo;Hi [name], this is [you] with Joruva Industrial. I noticed your AS9100 renewal is coming up &mdash; how's your air system documentation looking for the audit?&rdquo;</em></td>
+    </tr>
+    <tr>
+      <td><strong>Research Opener</strong></td>
+      <td>AWARENESS tier or no strong signal</td>
+      <td><em>&ldquo;Hi [name], this is [you] with Joruva Industrial. We're doing some market research in the CNC manufacturing space. I've got a couple quick questions about how your shop handles compressed air &mdash; would you have a minute?&rdquo;</em></td>
+    </tr>
+  </table>
+
+  <h4>Phase 2: Discovery (2-4 minutes)</h4>
+  <p>Your goal: learn enough to size a system. The <strong>money question</strong> is machine count and type.</p>
+
+  <p><strong>Key discovery questions (in priority order):</strong></p>
+  <ol>
+    <li>&ldquo;What CNC machines are you running?&rdquo; <em>(This is the #1 question &mdash; the Live Widget does the rest)</em></li>
+    <li>&ldquo;What compressor are you using now?&rdquo;</li>
+    <li>&ldquo;How old is your current unit?&rdquo;</li>
+    <li>&ldquo;Do you have filtration and a dryer on your system?&rdquo; <em>(Alex's advice: dig into this)</em></li>
+    <li>&ldquo;What about condensate disposal &mdash; do you have a drain and separator?&rdquo;</li>
+  </ol>
+
+  <p><strong>Bonus questions</strong> (only if conversation is flowing):</p>
+  <ul>
+    <li>&ldquo;Are you adding machines or expanding?&rdquo;</li>
+    <li>&ldquo;When's your next audit?&rdquo;</li>
+    <li>&ldquo;Who handles your maintenance now?&rdquo;</li>
+  </ul>
+
+  <h4>Phase 3: Recommendation (if applicable)</h4>
+  <p>The Live Widget will generate a recommendation. Read it naturally:</p>
+  <p><em>&ldquo;Based on what you've described, our JRS-10E at $9,495 gives you 42 CFM with headroom to grow. It's a rotary screw, so it'll run way quieter than that Ingersoll piston. Made in Texas, ships in 3-5 days.&rdquo;</em></p>
+
+  <h4>Phase 4: Close</h4>
+  <p>Remember: you're <strong>not selling</strong>. You're consulting.</p>
+  <ul>
+    <li><strong>Warm lead:</strong> <em>&ldquo;Can I email you a spec sheet? I'll include the compliance documentation package.&rdquo;</em></li>
+    <li><strong>Not ready:</strong> <em>&ldquo;No worries at all. Thanks for the time. Let us know if we can be of help down the road.&rdquo;</em></li>
+    <li><strong>Wants a quote:</strong> <em>&ldquo;I'll get that over today. Are you looking to have this in place before your audit, or is there flexibility?&rdquo;</em></li>
+  </ul>
+
+  <h3>Common Objections &amp; Responses</h3>
+
+  <table>
+    <tr><th>What They Say</th><th>What It Means</th><th>How to Respond</th></tr>
+    <tr>
+      <td>&ldquo;We already have a compressor guy&rdquo;</td>
+      <td>They have a relationship but might not be happy</td>
+      <td><em>&ldquo;Totally understand. We're not looking to replace anyone &mdash; just doing some research in the CNC space. Quick question: when's the last time your system was sized against your current machine lineup?&rdquo;</em></td>
+    </tr>
+    <tr>
+      <td>&ldquo;Send me something by email&rdquo;</td>
+      <td>Polite dismissal OR genuine interest</td>
+      <td><em>&ldquo;Happy to. What specifically would be most useful &mdash; a spec sheet on the unit, or the compliance documentation for your audit?&rdquo;</em></td>
+    </tr>
+    <tr>
+      <td>&ldquo;What about a bigger unit?&rdquo;</td>
+      <td>Testing you &mdash; will you upsell?</td>
+      <td><em>&ldquo;I'd actually stick with the [model] for now. You've got headroom. I'd rather size you right than oversell you something you're paying for and not using.&rdquo;</em></td>
+    </tr>
+    <tr>
+      <td>&ldquo;Take me off your list&rdquo;</td>
+      <td>Hard no (for now)</td>
+      <td><em>&ldquo;Absolutely, I'll make sure of it. Before I do &mdash; is there anything about your air system that's been bugging you?&rdquo;</em> (50/50 shot they start talking)</td>
+    </tr>
+    <tr>
+      <td>&ldquo;Do you install?&rdquo;</td>
+      <td>Logistics question &mdash; they're interested</td>
+      <td><em>&ldquo;Our units come with a standard hookup &mdash; any licensed electrician or your existing maintenance team can handle it. Most of our customers already have a guy they trust for that.&rdquo;</em></td>
+    </tr>
+    <tr>
+      <td>&ldquo;What's the lead time?&rdquo;</td>
+      <td>They're serious</td>
+      <td><em>&ldquo;3-5 business days from order. We ship from Texas.&rdquo;</em></td>
+    </tr>
+    <tr>
+      <td>&ldquo;Do you manufacture in the US?&rdquo;</td>
+      <td>Especially important for aerospace/defense shops</td>
+      <td><em>&ldquo;Yes &mdash; assembled in Texas. UL-listed, CSA-certified. That's important for your compliance documentation.&rdquo;</em></td>
+    </tr>
+  </table>
+
+  <h3>After the Call</h3>
+  <p>The system handles most of the post-call work automatically:</p>
+  <ul>
+    <li><strong>Transcription</strong> is saved to Nucleus</li>
+    <li><strong>Outcome is logged</strong> in HubSpot</li>
+    <li><strong>Follow-up email</strong> is sent automatically with whatever you promised (spec sheet, quote, compliance docs)</li>
+    <li><strong>Hot leads</strong> are flagged immediately to Tom, Paul, or Alex for fast follow-up</li>
+  </ul>
+  <p>You don't need to take notes. You don't need to update the CRM. Just have the conversation.</p>
+</section>
+
+<!-- ===================== 10. FAQ ===================== -->
+<section id="faq">
+  <h2>10. FAQ from the Team</h2>
+
+  <h3>Product Questions</h3>
+
+  <p><strong>Q: What's the price on air dryers?</strong><br>
+  A: We now have pricing from CAS on all appropriately-sized filters and dryers for our product lineup. The Live Widget will show pricing during calls. If you need specific pricing outside of a call, check the product catalog in the Cockpit or ask Paul/Alex.</p>
+
+  <p><strong>Q: Do we install the compressors?</strong><br>
+  A: No. Our units have standard hookups. The customer uses their own electrician or maintenance team. Most shops already have &ldquo;a guy.&rdquo; This came up in practice &mdash; Ryann and Lily figured out the right framing: <em>&ldquo;It's a standard hookup &mdash; your guy can handle it.&rdquo;</em></p>
+
+  <p><strong>Q: When should I recommend a desiccant dryer vs. refrigerated?</strong><br>
+  A: Refrigerated by default (90% of applications). Only go desiccant if they mention: laser cutting, clean rooms, pharmaceutical, food/beverage, or a manufacturer spec that requires -40&deg;F dew point. Ask: <em>&ldquo;What's the reason you're using that type of dryer?&rdquo;</em> to understand if it's truly needed.</p>
+
+  <p><strong>Q: Should I always recommend an OWS?</strong><br>
+  A: Yes &mdash; every oil-lubricated compressor system should have one. It's an EPA compliance item. Alex flagged this &mdash; always include it in system recommendations.</p>
+
+  <h3>System &amp; Process Questions</h3>
+
+  <p><strong>Q: Should I use the Practice Simulator or the Call Loader to call Mike Garza?</strong><br>
+  A: Always use the <strong>Practice Simulator widget</strong>. Mike Garza still appears in the call directory &mdash; that'll be cleaned up. Don't call him from the directory.</p>
+
+  <p><strong>Q: What if a lead calls my personal phone from a LinkedIn ad?</strong><br>
+  A: Your personal phone number has been scrubbed from all ads and landing pages. All leads route through the Cockpit. If somehow a call comes directly to your cell, take notes and manually enter them. But this shouldn't happen anymore.</p>
+
+  <p><strong>Q: When do we start making real calls?</strong><br>
+  A: <strong>Not yet.</strong> Right now the priority is: (1) practice with the simulator, (2) get comfortable with the Live Widget, (3) help debug the system. Market research calls start after the system is fully validated. Tom will send a notification when it's go-time.</p>
+
+  <p><strong>Q: What are we focused on right now? Just CNC?</strong><br>
+  A: Yes, intentionally. CNC aerospace is our beachhead. We build domain expertise here first, then expand into automotive, medical, food processing, and general manufacturing. Plenty of adjacent markets &mdash; we'll get there.</p>
+
+  <p><strong>Q: The Cockpit data didn't seem super helpful during my practice. Is that normal?</strong><br>
+  A: Yes &mdash; some cockpit data is intentionally imperfect in the simulator to represent real-world conditions where data might be stale or incomplete. The <strong>Live Widget</strong> (center panel, real-time transcription + recommendations) is the reliable piece. Background intel is context, not gospel.</p>
+
+  <div class="callout paul">
+    <div class="callout-label">Paul&rsquo;s Golden Rule</div>
+    <p><em>&ldquo;If you just shut your mouth and listen, the customer will tell you how to sell to them.&rdquo;</em></p>
+    <p>Once they start talking &mdash; let them go. Your best information comes from them, not from the Cockpit. The system amplifies what you hear. Your job is to hear it.</p>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="container">
+    <img src="img-logo.png" alt="Joruva Industrial" style="height: 28px; margin-bottom: 12px; opacity: 0.7;">
+    <p>&copy; 2026 Joruva Industrial. All rights reserved.</p>
+    <p style="margin-top: 8px;">
+      <a href="https://joruva.com">Home</a> &nbsp;|&nbsp;
+      <a href="https://joruva.com/privacy">Privacy Policy</a> &nbsp;|&nbsp;
+      <a href="mailto:info@joruva.com">info@joruva.com</a>
+    </p>
+    <p style="margin-top: 12px; font-size: 0.75rem; color: #444;">
+      This document is confidential and intended solely for Joruva Industrial sales team members.<br>
+      Do not distribute externally. For questions, contact Tom Russo at <a href="mailto:tom@joruva.com">tom@joruva.com</a>.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

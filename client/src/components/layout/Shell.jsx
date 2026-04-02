@@ -35,6 +35,16 @@ export default function Shell({ identity, role, onLogout, deviceStatus }) {
           <span className="text-[11px] font-semibold tracking-[2px] uppercase" style={{ color: '#F97316' }}>Phone</span>
         </div>
         <div className="flex items-center gap-3">
+          <a
+            href="/study-guide.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-semibold tracking-wide transition-colors hover:text-white"
+            style={{ color: '#7EC55F', textDecoration: 'none' }}
+          >
+            Latest Study Guide from HQ
+          </a>
+          <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[deviceStatus] || 'bg-gray-500'}`} />
             <span className="text-sm capitalize text-jv-bone">{identity}</span>
