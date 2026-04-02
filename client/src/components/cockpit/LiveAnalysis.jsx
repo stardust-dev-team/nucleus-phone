@@ -305,7 +305,10 @@ export default function LiveAnalysis({ data, active, contact, callId }) {
                     border: '1px solid var(--cockpit-live-border)',
                   }}
                 >
-                  + {recommendation.ows.model} OWS{recommendation.ows.price != null ? ` (${formatPrice(recommendation.ows.price)})` : ''}
+                  + {recommendation.ows.model} OWS ({formatPrice(recommendation.ows.price)})
+                  {recommendation.ows.serviceKit && (
+                    <span style={{ color: 'var(--cockpit-live-600)' }}> · {recommendation.ows.serviceKit} sub saves 10%</span>
+                  )}
                 </span>
               )}
             </div>

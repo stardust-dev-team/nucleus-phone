@@ -58,14 +58,14 @@ const FILTER_SIZES = {
 // Prices from WooCommerce (live). Service kits sold separately (subscription saves 10%).
 // Reactis additive included on 150 SCFM+ units.
 const OWS_CATALOG = [
-  { model: 'OWS75',   maxCfm: 75,   price: 234,   serviceKit: 'SERVKIT75',   salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS150',  maxCfm: 150,  price: 1092,  serviceKit: 'SERVKIT150',  salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS450',  maxCfm: 450,  price: 1570,  serviceKit: 'SERVKIT450',  salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS1000', maxCfm: 1000, price: 2436,  serviceKit: 'SERVKIT1000', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS2000', maxCfm: 2000, price: 5360,  serviceKit: 'SERVKIT1000', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS3000', maxCfm: 3000, price: 7790,  serviceKit: 'SERVKIT3500', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS3500', maxCfm: 3500, price: 14800, serviceKit: 'SERVKIT3500', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'OWS7000', maxCfm: 7000, price: 20940, serviceKit: 'SERVKIT7000', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS75',   maxCfm: 75,   price: 234,   serviceKit: 'SERVKIT75',   serviceKitPrice: 128,  salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS150',  maxCfm: 150,  price: 1092,  serviceKit: 'SERVKIT150',  serviceKitPrice: 580,  salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS450',  maxCfm: 450,  price: 1570,  serviceKit: 'SERVKIT450',  serviceKitPrice: 790,  salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS1000', maxCfm: 1000, price: 2436,  serviceKit: 'SERVKIT1000', serviceKitPrice: 1200, salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS2000', maxCfm: 2000, price: 5360,  serviceKit: 'SERVKIT1000', serviceKitPrice: 1200, salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS3000', maxCfm: 3000, price: 7790,  serviceKit: 'SERVKIT3500', serviceKitPrice: 3580, salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS3500', maxCfm: 3500, price: 14800, serviceKit: 'SERVKIT3500', serviceKitPrice: 3580, salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
+  { model: 'OWS7000', maxCfm: 7000, price: 20940, serviceKit: 'SERVKIT7000', serviceKitPrice: 17900, salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
 ];
 
 function selectOws(cfm) {
@@ -176,6 +176,8 @@ function recommendSystem(demand) {
   const ows = selectOws(dryerCfm);
 
   const notes = [];
+  const subPrice = Math.round(ows.serviceKitPrice * 0.9);
+  notes.push(`${ows.model} oil-water separator ($${ows.price.toLocaleString()}) + ${ows.serviceKit} service kit subscription ($${subPrice.toLocaleString()}/interval, saves 10%)`);
 
   // Flag undersized dryer in parallel configs
   if (parallelConfig && dryer.cfm < parallelConfig.totalCfm) {
