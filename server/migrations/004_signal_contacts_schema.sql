@@ -8,6 +8,7 @@
 -- ── Step 1: Add new columns to v35_pb_contacts ─────────────────────
 ALTER TABLE v35_pb_contacts ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'phantombuster';
 ALTER TABLE v35_pb_contacts ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE v35_pb_contacts ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE v35_pb_contacts ADD COLUMN IF NOT EXISTS domain TEXT;
 ALTER TABLE v35_pb_contacts ADD COLUMN IF NOT EXISTS enrichment_batch_id TEXT;
 
