@@ -184,6 +184,9 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
     const repEmail = req.user?.email;
 
     if (send_follow_up && repEmail && !call.follow_up_email_sent) {
+      // Basic email validation
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
       // Resolve lead email: request body → HubSpot lookup
       let resolvedEmail = lead_email;
       if (!resolvedEmail && call.hubspot_contact_id) {
@@ -197,11 +200,11 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
 
       // Always save lead_email for auditability
       if (resolvedEmail) {
-        pool.query('UPDATE nucleus_phone_calls SET lead_email = $1 WHERE id = $2', [resolvedEmail, id])
+        await pool.query('UPDATE nucleus_phone_calls SET lead_email = $1 WHERE id = $2', [resolvedEmail, id])
           .catch(err => console.error('Failed to save lead_email:', err.message));
       }
 
-      if (resolvedEmail) {
+      if (resolvedEmail && EMAIL_RE.test(resolvedEmail)) {
         try {
           await sendFollowUpEmail({
             fromEmail: repEmail,
@@ -213,12 +216,11 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
             callerIdentity: call.caller_identity,
             qualification: qualification || 'info_only',
           });
-          pool.query('UPDATE nucleus_phone_calls SET follow_up_email_sent = TRUE WHERE id = $1', [id])
-            .catch(err => console.error('Failed to update follow_up_email_sent:', err.message));
+          await pool.query('UPDATE nucleus_phone_calls SET follow_up_email_sent = TRUE WHERE id = $1', [id]);
           emailResult = { email_sent: true };
         } catch (err) {
           console.error('[email] Follow-up failed:', err.message);
-          pool.query(
+          await pool.query(
             'UPDATE nucleus_phone_calls SET follow_up_email_error = $1 WHERE id = $2',
             [err.message.substring(0, 500), id]
           ).catch(e => console.error('Failed to save email error:', e.message));

@@ -16,7 +16,7 @@ import useCallState from './hooks/useCallState';
 export default function App() {
   const [user, setUser] = useState(null); // { identity, role, email }
   const [loading, setLoading] = useState(true);
-  const [emailReady, setEmailReady] = useState(false);
+  const [emailReady, setEmailReady] = useState(null);
 
   // Check session on mount
   useEffect(() => {

@@ -108,9 +108,9 @@ router.get('/callback', async (req, res) => {
        .catch(err => console.error(`[auth] Failed to persist MSAL cache for ${email}:`, err.message));
     }
 
-    // Create session — include homeAccountId for email token refresh
+    // Create session (homeAccountId stays in DB only — no need to leak it in the JWT)
     const token = jwt.sign(
-      { identity: user.identity, role: user.role, email, homeAccountId },
+      { identity: user.identity, role: user.role, email },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
