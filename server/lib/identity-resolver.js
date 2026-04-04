@@ -42,11 +42,25 @@ async function resolve(identifier) {
   }
 
   const props = hsContact?.properties || {};
-  const name = [props.firstname, props.lastname].filter(Boolean).join(' ') || null;
-  const company = props.company || null;
+  let name = [props.firstname, props.lastname].filter(Boolean).join(' ') || null;
+  let company = props.company || null;
   const phone = normalizePhone(identifier) || normalizePhone(props.phone) || null;
 
-  // Step 2: PB contacts lookup (requires company + name from Step 1)
+  // Step 1b: If HubSpot didn't find the contact, try v35_pb_contacts by phone number.
+  // Dropcontact-enriched PB contacts have phone numbers but aren't in HubSpot.
+  if (!hsContact && phone) {
+    try {
+      const pbByPhone = await lookupPbContactByPhone(phone);
+      if (pbByPhone) {
+        name = name || pbByPhone.full_name;
+        company = company || pbByPhone.company_name;
+      }
+    } catch (err) {
+      console.warn('Identity resolver: PB phone lookup failed:', err.message);
+    }
+  }
+
+  // Step 2: PB contacts lookup by company + name (enriches with LinkedIn, title, etc.)
   let pbData = null;
   if (company && name) {
     try {
@@ -226,6 +240,28 @@ async function lookupPbContact(company, name) {
       title: best.past_title,
     } : null,
   };
+}
+
+/**
+ * Look up a PB contact by phone number. Used when HubSpot doesn't know the contact
+ * but Dropcontact enriched them with a phone number in v35_pb_contacts.
+ */
+async function lookupPbContactByPhone(phone) {
+  // Normalize: strip formatting, match last 7+ digits to handle format differences
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  const suffix = digits.slice(-10); // last 10 digits (US numbers)
+
+  const { rows } = await pool.query(`
+    SELECT full_name, first_name, last_name, title, company_name, phone,
+           linkedin_profile_url
+    FROM v35_pb_contacts
+    WHERE phone IS NOT NULL
+      AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || $1
+    LIMIT 1
+  `, [suffix]);
+
+  return rows[0] || null;
 }
 
 function unresolved(identifier) {
