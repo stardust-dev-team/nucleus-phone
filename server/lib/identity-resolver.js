@@ -48,9 +48,10 @@ async function resolve(identifier) {
 
   // Step 1b: If HubSpot didn't find the contact, try v35_pb_contacts by phone number.
   // Dropcontact-enriched PB contacts have phone numbers but aren't in HubSpot.
-  if (!hsContact && phone) {
+  // Try raw identifier first (e.g. "+1 734-656-2200"), then normalized digits.
+  if (!hsContact && (phone || type === 'phone')) {
     try {
-      const pbByPhone = await lookupPbContactByPhone(phone);
+      const pbByPhone = await lookupPbContactByPhone(identifier, phone);
       if (pbByPhone) {
         name = name || pbByPhone.full_name;
         company = company || pbByPhone.company_name;
@@ -246,20 +247,20 @@ async function lookupPbContact(company, name) {
  * Look up a PB contact by phone number. Used when HubSpot doesn't know the contact
  * but Dropcontact enriched them with a phone number in v35_pb_contacts.
  */
-async function lookupPbContactByPhone(phone) {
-  // Try exact match first (uses idx_pbc_phone index), then fuzzy suffix match
+async function lookupPbContactByPhone(rawPhone, normalizedPhone) {
+  // Try exact match on raw phone first (e.g. "+1 734-656-2200" — uses idx_pbc_phone index)
   const { rows } = await pool.query(`
     SELECT full_name, first_name, last_name, title, company_name, phone,
            linkedin_profile_url
     FROM v35_pb_contacts
-    WHERE phone = $1
+    WHERE phone = $1 OR phone = $2
     LIMIT 1
-  `, [phone]);
+  `, [rawPhone, normalizedPhone || rawPhone]);
 
   if (rows.length > 0) return rows[0];
 
-  // Fuzzy: strip to digits, match by suffix (handles format differences like +1 vs 1)
-  const digits = phone.replace(/\D/g, '');
+  // Fuzzy: last 7 digits suffix match (handles +1 vs 1, spaces vs dashes)
+  const digits = (rawPhone || '').replace(/\D/g, '');
   if (digits.length < 7) return null;
 
   const { rows: fuzzyRows } = await pool.query(`
