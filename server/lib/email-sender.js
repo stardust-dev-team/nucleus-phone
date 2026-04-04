@@ -89,47 +89,47 @@ async function getTokenForUser(email) {
  */
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function buildEmail({ leadName, leadCompany, products, callerName, qualification }) {
   const firstName = escapeHtml(leadName?.split(' ')[0] || '');
   const company = escapeHtml(leadCompany);
-  callerName = escapeHtml(callerName);
+  const safeCaller = escapeHtml(callerName);
   const productList = (products || []).filter(Boolean).map(escapeHtml);
 
   if (qualification === 'hot') {
     return {
-      subject: `${callerName} from Joruva — your quote for ${company || 'your shop'}`,
+      subject: `${safeCaller} from Joruva — your quote for ${company || 'your shop'}`,
       body: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #222; max-width: 580px; line-height: 1.6;">
   <p>${firstName},</p>
   <p>Good talking with you${leadCompany ? ` about what's running at ${company}` : ''}. Based on what you described, I'm putting together a quote for ${productList.length ? productList.join(', ') : 'the equipment we discussed'}.</p>
   <p>I'll include the compliance documentation package — everything your auditor would need on the air system side. Expect that in your inbox shortly.</p>
   <p>One call to size it right. That's the whole idea.</p>
-  <p>${callerName}<br>Joruva Industrial</p>
+  <p>${safeCaller}<br>Joruva Industrial</p>
 </div>`,
     };
   }
 
   if (qualification === 'warm') {
     return {
-      subject: `${callerName} from Joruva — specs we discussed`,
+      subject: `${safeCaller} from Joruva — specs we discussed`,
       body: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #222; max-width: 580px; line-height: 1.6;">
   <p>${firstName},</p>
   <p>Thanks for the conversation${leadCompany ? ` about ${company}'s setup` : ''}. I'm sending over the spec sheets for ${productList.length ? productList.join(', ') : 'the equipment we covered'} so you have everything in one place.</p>
   <p>No rush on any of this. When the timing is right, we're here to size it to your actual demand.</p>
-  <p>${callerName}<br>Joruva Industrial</p>
+  <p>${safeCaller}<br>Joruva Industrial</p>
 </div>`,
     };
   }
 
   // info_only or fallback
   return {
-    subject: `Good talking with you — ${callerName} from Joruva`,
+    subject: `Good talking with you — ${safeCaller} from Joruva`,
     body: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #222; max-width: 580px; line-height: 1.6;">
   <p>${firstName},</p>
   <p>Appreciate your time today. If anything comes up on the compressed air side, you've got a direct line.</p>
-  <p>${callerName}<br>Joruva Industrial</p>
+  <p>${safeCaller}<br>Joruva Industrial</p>
 </div>`,
   };
 }

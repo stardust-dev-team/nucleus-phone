@@ -181,6 +181,7 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
 
     // ── Follow-up email from rep's mailbox ────────────────────────
     let emailResult = {};
+    // API key auth has no req.user — email sending requires session auth
     const repEmail = req.user?.email;
 
     if (send_follow_up && repEmail && !call.follow_up_email_sent) {
@@ -201,8 +202,7 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
       // Validate and save lead_email for auditability
       const validEmail = resolvedEmail && EMAIL_RE.test(resolvedEmail);
       if (validEmail) {
-        await pool.query('UPDATE nucleus_phone_calls SET lead_email = $1 WHERE id = $2', [resolvedEmail, id])
-          .catch(err => console.error('Failed to save lead_email:', err.message));
+        await pool.query('UPDATE nucleus_phone_calls SET lead_email = $1 WHERE id = $2', [resolvedEmail, id]);
       }
 
       if (validEmail) {
