@@ -103,6 +103,7 @@ async function runBatchEnrichment({ tiers = ['spear', 'targeted'], resumeFrom = 
        FROM v35_signal_metadata sm
        JOIN v35_lead_reservoir lr ON lr.domain = sm.domain
        WHERE sm.signal_tier = ANY($1)
+         AND sm.domain NOT LIKE '%.signal-pending'
          AND NOT EXISTS (
            SELECT 1 FROM v35_pb_contacts pb
            WHERE pb.domain = sm.domain AND pb.source = 'apollo'
@@ -201,6 +202,7 @@ async function runBatchEnrichment({ tiers = ['spear', 'targeted'], resumeFrom = 
          SELECT 1 FROM v35_signal_metadata sm
          WHERE sm.signal_tier = ANY($1)
            AND sm.domain > $2
+           AND sm.domain NOT LIKE '%.signal-pending'
            AND NOT EXISTS (
              SELECT 1 FROM v35_pb_contacts pb
              WHERE pb.domain = sm.domain AND pb.source = 'apollo'
