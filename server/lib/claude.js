@@ -31,6 +31,13 @@ Given contact data (name, title, company, interaction history, pipeline data, PB
 - watch_outs: Array of 0-2 things to avoid (e.g., competitor mentions, past complaints, sensitive topics).
 - product_reference: Relevant product lines based on their history/industry.
 
+When signal metadata is present (signal_tier, cert_expiry, contract_total, dod_flag), weave it into the opening_line and intel_nuggets:
+- For cert expiry within 9 months: mention upcoming recertification as a conversation hook (e.g., "your AS9100 is up for renewal")
+- For DoD/government contracts: reference compliance or mil-spec requirements naturally
+- For SPEAR-tier contacts: the opener should be direct and high-value, referencing the specific signal that flagged them
+- For TARGETED-tier: reference their industry fit
+- NEVER mention tiers, scores, or signal data by name — use the underlying facts naturally.
+
 Respond with ONLY valid JSON, no markdown fences.`;
 
 function cacheKey(contactData) {
@@ -113,6 +120,15 @@ function trimForClaude(contactData) {
     emailEngagement: (contactData.emailEngagement || []).slice(0, 5).map(e => ({
       event_type: e.event_type, campaign_name: e.campaign_name,
     })),
+    signalMetadata: contactData.signalMetadata ? {
+      signal_tier: contactData.signalMetadata.signal_tier,
+      signal_score: contactData.signalMetadata.signal_score,
+      cert_expiry_date: contactData.signalMetadata.cert_expiry_date,
+      cert_standard: contactData.signalMetadata.cert_standard,
+      contract_total: contactData.signalMetadata.contract_total,
+      dod_flag: contactData.signalMetadata.dod_flag,
+      source_count: contactData.signalMetadata.source_count,
+    } : null,
   };
 }
 

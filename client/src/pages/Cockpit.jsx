@@ -18,6 +18,7 @@ import LiveAnalysis from '../components/cockpit/LiveAnalysis';
 import CallControls from '../components/cockpit/CallControls';
 import PracticeCallButton from '../components/cockpit/PracticeCallButton';
 import PracticeHistory from '../components/cockpit/PracticeHistory';
+import SignalBadges from '../components/cockpit/SignalBadges';
 import useLiveAnalysis from '../hooks/useLiveAnalysis';
 
 function deriveCallPhase(twilioStatus, callData) {
@@ -165,9 +166,13 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
             {isPractice ? (
               /* ── Practice layout: Bridge — viewscreen center, stations flanking ── */
               <>
-                {/* Contact identity — ship status bar */}
+                {/* Contact identity + signal context — ship status bar */}
                 <div className="px-5 pt-3 pb-1">
                   <ContactIdentity identity={d.identity} />
+                  <SignalBadges
+                    signalMetadata={d.signalMetadata}
+                    domain={d.icpScore?.domain}
+                  />
                 </div>
 
                 {/* Bridge layout: 3-column with viewscreen center */}
@@ -209,6 +214,10 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
                 <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-4 px-5 py-4">
                   <div className="min-w-0">
                     <ContactIdentity identity={d.identity} />
+                    <SignalBadges
+                      signalMetadata={d.signalMetadata}
+                      domain={d.icpScore?.domain}
+                    />
                     <RapportOpener openingLine={d.rapport?.opening_line} />
                     <RapportTags tags={d.rapport?.rapport_starters} />
                     <IntelNuggets
