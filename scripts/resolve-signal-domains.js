@@ -82,9 +82,11 @@ async function run() {
 
   for (let i = 0; i < companies.length; i++) {
     const c = companies[i];
-    // Strip suffixes for better search (Inc., LLC, Corp., etc.)
-    const searchName = c.company_name
-      .replace(/,?\s*(INC\.?|LLC\.?|CORP\.?|L\.?P\.?|CO\.?|LTD\.?)\s*$/i, '')
+    // Aggressively strip suffixes + holding/parent company noise for better search
+    let searchName = c.company_name
+      .replace(/,?\s*(INC\.?|LLC\.?|CORP\.?|CORPORATION|L\.?P\.?|CO\.?|LTD\.?|COMPANY|HOLDINGS?|ENTERPRISES?|ASSOCIATES?|SOLUTIONS?|TECHNOLOGIES|GROUP|MFG\.?|MANUFACTURING)\s*$/ig, '')
+      .replace(/,?\s*(INC\.?|LLC\.?|CORP\.?|CO\.?|LTD\.?)\s*$/ig, '') // second pass for "HOLDINGS INC"
+      .replace(/[,.\s]+$/, '')
       .trim();
 
     try {
