@@ -141,7 +141,8 @@ export default function Contacts({ identity, callState, twilioStatus }) {
   const fetchSignal = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getSignalContacts({ signal_tier: tier || undefined, geo_state: state || undefined, limit: 200 });
+      // Show all contacts — phone numbers populate as Apollo enrichment runs
+      const data = await getSignalContacts({ signal_tier: tier || undefined, geo_state: state || undefined, has_phone: false, limit: 200 });
       setCompanies(data.companies || []);
     } catch (err) { console.error('Signal contacts fetch failed:', err); setCompanies([]); }
     finally { setLoading(false); }
