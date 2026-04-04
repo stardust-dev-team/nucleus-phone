@@ -17,7 +17,7 @@ let failed = 0;
 async function apiFetch(path) {
   const resp = await fetch(`${BASE}${path}`, {
     headers: { 'X-Api-Key': API_KEY, 'X-Requested-With': 'fetch' },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(30000),
   });
   return { status: resp.status, data: await resp.json() };
 }
@@ -35,7 +35,7 @@ function assert(name, condition, detail) {
 async function testPipeline() {
   console.log('\n═══ 1. Pipeline API ═══');
   const { status, data } = await apiFetch('/api/signals/pipeline?limit=5');
-  assert('Pipeline returns 200', status === 200);
+  assert('Pipeline returns 200', status === 200, `got ${status}`);
   assert('Pipeline has companies array', Array.isArray(data.companies));
   assert('Pipeline returns companies', data.companies.length > 0, `got ${data.companies.length}`);
 

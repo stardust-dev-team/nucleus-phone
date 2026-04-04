@@ -247,21 +247,30 @@ async function lookupPbContact(company, name) {
  * but Dropcontact enriched them with a phone number in v35_pb_contacts.
  */
 async function lookupPbContactByPhone(phone) {
-  // Normalize: strip formatting, match last 7+ digits to handle format differences
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 7) return null;
-  const suffix = digits.slice(-10); // last 10 digits (US numbers)
-
+  // Try exact match first (uses idx_pbc_phone index), then fuzzy suffix match
   const { rows } = await pool.query(`
     SELECT full_name, first_name, last_name, title, company_name, phone,
            linkedin_profile_url
     FROM v35_pb_contacts
-    WHERE phone IS NOT NULL
-      AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || $1
+    WHERE phone = $1
     LIMIT 1
-  `, [suffix]);
+  `, [phone]);
 
-  return rows[0] || null;
+  if (rows.length > 0) return rows[0];
+
+  // Fuzzy: strip to digits, match by suffix (handles format differences like +1 vs 1)
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+
+  const { rows: fuzzyRows } = await pool.query(`
+    SELECT full_name, first_name, last_name, title, company_name, phone,
+           linkedin_profile_url
+    FROM v35_pb_contacts
+    WHERE phone IS NOT NULL AND phone LIKE '%' || $1
+    LIMIT 1
+  `, [digits.slice(-7)]);
+
+  return fuzzyRows[0] || null;
 }
 
 function unresolved(identifier) {
