@@ -1,3 +1,5 @@
+import Tooltip from '../ui/Tooltip';
+
 export default function ContactIdentity({ identity }) {
   const name = identity?.name || 'Unknown Contact';
   const title = identity?.title || '';
@@ -39,6 +41,25 @@ export default function ContactIdentity({ identity }) {
         <span className="text-sm text-cp-text-secondary leading-tight">
           {title}{title && company ? ' · ' : ''}{company}
         </span>
+        {identity?.pbContactData?.durationInRole && (
+          <span className="text-xs text-cp-text-muted leading-tight block mt-0.5">
+            {identity.pbContactData.durationInRole}
+            {identity.pbContactData.pastExperience && (
+              <Tooltip content={
+                typeof identity.pbContactData.pastExperience === 'object'
+                  ? `${identity.pbContactData.pastExperience.title} at ${identity.pbContactData.pastExperience.company}${identity.pbContactData.pastExperience.duration ? ` (${identity.pbContactData.pastExperience.duration})` : ''}`
+                  : identity.pbContactData.pastExperience
+              }>
+                <span className="cursor-help">
+                  {' · Prev: '}
+                  {typeof identity.pbContactData.pastExperience === 'object'
+                    ? `${identity.pbContactData.pastExperience.title} at ${identity.pbContactData.pastExperience.company}`
+                    : identity.pbContactData.pastExperience}
+                </span>
+              </Tooltip>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );
