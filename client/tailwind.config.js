@@ -44,5 +44,10 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    function({ addVariant }) {
+      addVariant('radix-open', '&[data-state="open"]');
+      addVariant('radix-closed', '&[data-state="closed"]');
+    },
+  ],
 };
