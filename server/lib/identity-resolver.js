@@ -71,15 +71,18 @@ async function resolve(identifier) {
     }
   }
 
-  // Step 3: Apollo people match (credit-gated, only if name known but need more data)
+  // Step 3: Apollo people match (credit-gated)
+  // Trigger if: no LinkedIn URL, OR last name is truncated (e.g., "P." from Sales Navigator)
+  const lastNameParts = (name || '').split(/\s+/).slice(1);
+  const lastNameTruncated = lastNameParts.length > 0 && /^\w\.$/.test(lastNameParts[lastNameParts.length - 1]);
   let apolloData = null;
-  if (name && company && !pbData?.linkedinUrl) {
+  if (name && company && (!pbData?.linkedinUrl || lastNameTruncated)) {
     try {
       if (await checkCreditBudget('apollo')) {
         const nameParts = name.split(/\s+/);
         const person = await matchPerson({
           firstName: nameParts[0],
-          lastName: nameParts.slice(1).join(' '),
+          lastName: lastNameTruncated ? undefined : nameParts.slice(1).join(' '),
           organization: company,
           email: props.email || undefined,
         });
@@ -88,7 +91,13 @@ async function resolve(identifier) {
             linkedinUrl: person.linkedin_url || null,
             title: person.title || null,
             email: person.email || null,
+            fullName: person.first_name && person.last_name
+              ? `${person.first_name} ${person.last_name}` : null,
           };
+          // Resolve truncated name from Apollo
+          if (lastNameTruncated && apolloData.fullName) {
+            name = apolloData.fullName;
+          }
         }
       }
     } catch (err) {
