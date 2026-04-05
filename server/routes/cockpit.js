@@ -77,7 +77,7 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       // 3: ICP score + signal metadata (single query via LEFT JOIN, avoids duplicate reservoir lookup)
       identity.company
         ? pool.query(
-            `SELECT lr.domain, lr.company_name AS lr_company_name,
+            `SELECT lr.domain,
                     lr.icp_score, lr.prequalify_class, lr.prequalify_reasoning,
                     lr.industry_naics, lr.industry_description,
                     lr.employee_range, lr.revenue_range,

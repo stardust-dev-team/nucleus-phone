@@ -124,11 +124,7 @@ function buildFallback(contactData) {
     // DoD / government contracts
     if (signal.dod_flag) {
       const contractStr = signal.contract_total
-        ? signal.contract_total >= 1e6
-          ? ` ($${(signal.contract_total / 1e6).toFixed(1)}M in contracts)`
-          : signal.contract_total >= 1e3
-            ? ` ($${Math.round(signal.contract_total / 1e3)}K in contracts)`
-            : ` ($${signal.contract_total.toLocaleString('en-US')} in contracts)`
+        ? ` (${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(signal.contract_total)} in contracts)`
         : '';
       nuggets.push(`Active DoD contractor${contractStr} — mil-spec and ITAR compliance likely matter`);
       starters.push('Reference their government/defense work — ask about compliance requirements for shop floor equipment');
@@ -235,7 +231,8 @@ function trimForClaude(contactData) {
       contract_total: contactData.signalMetadata.contract_total,
       dod_flag: contactData.signalMetadata.dod_flag,
       source_count: contactData.signalMetadata.source_count,
-      signal_sources: contactData.signalMetadata.signal_sources,
+      signal_sources: Array.isArray(contactData.signalMetadata.signal_sources)
+        ? contactData.signalMetadata.signal_sources : null,
     } : null,
   };
 }

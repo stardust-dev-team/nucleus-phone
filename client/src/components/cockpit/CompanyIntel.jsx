@@ -10,6 +10,7 @@ function formatCurrency(amount) {
 
 function buildRows(companyData, icpScore, pipelineData, signalMetadata, pbContactData) {
   const rows = [];
+  if (!companyData && !icpScore && !signalMetadata && !pbContactData) return rows;
 
   if (companyData) {
     if (companyData.name) rows.push(['Company', companyData.name]);
@@ -17,7 +18,7 @@ function buildRows(companyData, icpScore, pipelineData, signalMetadata, pbContac
     const location = [companyData.city, companyData.state].filter(Boolean).join(', ');
     if (location) rows.push(['Location', location]);
     if (companyData.numberofemployees) rows.push(['Employees', companyData.numberofemployees]);
-    if (companyData.annualrevenue) rows.push(['Revenue', companyData.annualrevenue]);
+    if (companyData.annualrevenue) rows.push(['Revenue', formatCurrency(companyData.annualrevenue)]);
     if (companyData.company_vernacular) rows.push(['Internal note', companyData.company_vernacular]);
   }
 
@@ -51,10 +52,18 @@ function buildRows(companyData, icpScore, pipelineData, signalMetadata, pbContac
     }
   }
 
+  // Lead reservoir enrichment — fills gaps when HubSpot company data is absent
   if (icpScore) {
-    if (icpScore.fit_score) rows.push(['ICP Score', icpScore.fit_score]);
-    if (icpScore.persona) rows.push(['Persona', icpScore.persona]);
-    if (icpScore.fit_reason) rows.push(['Fit Reason', icpScore.fit_reason]);
+    if (!companyData?.industry && !pbContactData?.industry && icpScore.industry_description)
+      rows.push(['Industry', icpScore.industry_description]);
+    if (icpScore.employee_range && !companyData?.numberofemployees)
+      rows.push(['Employees', icpScore.employee_range]);
+    if (icpScore.revenue_range && !companyData?.annualrevenue)
+      rows.push(['Revenue', icpScore.revenue_range]);
+    if (icpScore.geo_city && icpScore.geo_state && !companyData?.city)
+      rows.push(['Location', `${icpScore.geo_city}, ${icpScore.geo_state}`]);
+    if (icpScore.icp_score != null) rows.push(['ICP Score', icpScore.icp_score]);
+    if (icpScore.prequalify_class) rows.push(['Pre-qualify', icpScore.prequalify_class]);
   }
 
   if (pipelineData?.length) {
