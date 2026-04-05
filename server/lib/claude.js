@@ -11,6 +11,7 @@ const FETCH_TIMEOUT = 6000; // 6 seconds
 
 // Compact product catalog for Claude prompt — confirmed-pricing SKUs only.
 // Source: compressor-catalog.js + sizing-engine.js (read-only, not imported to avoid coupling)
+// Last synced: 2026-04-04. If prices change in source files, update this string.
 const PRODUCT_CATALOG = `Joruva Industrial products (confirmed pricing):
 Compressors: JRS-7.5E 7.5HP 28CFM $7,495 | JRS-10E 10HP 38CFM $9,495 | JRS-30 30HP 125CFM $19,500 (direct)
 Dryers (refrigerated): JRD-30 $2,195 | JRD-40 $2,495 | JRD-60 $2,895 | JRD-80 $3,195 | JRD-100 $3,595
@@ -200,10 +201,12 @@ function buildFallback(contactData) {
   // Career context from PB data
   if (pb?.durationInRole) {
     const months = parseInt(pb.durationInRole, 10);
-    const tenure = months && months <= 12
+    const tenure = !isNaN(months) && months <= 12
       ? 'relatively new — may be evaluating vendors'
-      : 'established — knows the operation well';
-    starters.push(`${pb.durationInRole} in current role — ${tenure}`);
+      : !isNaN(months)
+        ? 'established — knows the operation well'
+        : '';
+    starters.push(`${pb.durationInRole} in current role${tenure ? ` — ${tenure}` : ''}`);
   }
   if (pb?.pastExperience) {
     const past = typeof pb.pastExperience === 'object'
@@ -221,7 +224,7 @@ function buildFallback(contactData) {
     nuggets.push(`Known pain: ${vern.painPoints.slice(0, 3).join(', ')}`);
   }
   if (vern?.competitorsMentioned?.length) {
-    nuggets.push(`Competitors mentioned: ${vern.competitorsMentioned.join(', ')}`);
+    nuggets.push(`Competitors mentioned: ${vern.competitorsMentioned.slice(0, 3).join(', ')}`);
   }
   if (vern?.leadershipStrategy) {
     starters.push(`Company strategy: ${vern.leadershipStrategy}`);
@@ -305,7 +308,14 @@ function trimForClaude(contactData) {
     name: contactData.name,
     company: contactData.company,
     title: contactData.title,
-    pbContactData: contactData.pbContactData ?? null,
+    pbContactData: contactData.pbContactData ? {
+      summary: truncate(contactData.pbContactData.summary, 200),
+      industry: contactData.pbContactData.industry ?? null,
+      location: contactData.pbContactData.location ?? null,
+      durationInRole: contactData.pbContactData.durationInRole ?? null,
+      pastExperience: contactData.pbContactData.pastExperience ?? null,
+      connectionDegree: contactData.pbContactData.connectionDegree ?? null,
+    } : null,
     icpScore: contactData.icpScore ? {
       icp_score: contactData.icpScore.icp_score ?? null,
       prequalify_class: contactData.icpScore.prequalify_class ?? null,
