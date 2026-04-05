@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useCockpit from '../hooks/useCockpit';
 import useCockpitTheme from '../hooks/useCockpitTheme';
@@ -23,7 +23,6 @@ import EmailEngagement from '../components/cockpit/EmailEngagement';
 import CareerContext from '../components/cockpit/CareerContext';
 import CompanyVernacular from '../components/cockpit/CompanyVernacular';
 import DataSourceIndicator from '../components/ui/DataSourceIndicator';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
 import useLiveAnalysis from '../hooks/useLiveAnalysis';
 
 function deriveCallPhase(twilioStatus, callData) {
@@ -85,44 +84,9 @@ function dataSources(d) {
 }
 
 function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId }) {
-  const [tab, setTab] = useState('briefing');
-  const [userOverride, setUserOverride] = useState(false);
-  const prevPhaseRef = useRef(callPhase);
-  const contactIdRef = useRef(d.identity?.hubspotContactId || d.identity?.phone);
-
-  // Reset override when contact changes (navigated to different contact)
-  const currentContactId = d.identity?.hubspotContactId || d.identity?.phone;
-  useEffect(() => {
-    if (currentContactId !== contactIdRef.current) {
-      contactIdRef.current = currentContactId;
-      setUserOverride(false);
-      setTab('briefing');
-    }
-  }, [currentContactId]);
-
-  // Auto-switch tabs based on call phase — suppressed if user manually changed tab
-  useEffect(() => {
-    const prevPhase = prevPhaseRef.current;
-    prevPhaseRef.current = callPhase;
-
-    // Reset override when returning to pre-call after post-call completes
-    if (callPhase === 'pre' && prevPhase === 'post') {
-      setUserOverride(false);
-    }
-
-    if (userOverride) return;
-    if (callPhase === 'active') setTab('live');
-    else setTab('briefing');
-  }, [callPhase, userOverride]);
-
-  function handleTabChange(value) {
-    setTab(value);
-    setUserOverride(true);
-  }
-
   return (
     <>
-      {/* Contact identity + signal badges — always visible above tabs */}
+      {/* Contact identity + signal context — ship status bar */}
       <div className="px-5 pt-3 pb-1">
         <ContactIdentity identity={d.identity} />
         <div className="flex items-center justify-between">
@@ -131,52 +95,47 @@ function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId }) {
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={handleTabChange} className="flex-1 flex flex-col min-h-0">
-        <div className="px-5">
-          <TabsList>
-            <TabsTrigger value="briefing">Briefing</TabsTrigger>
-            <TabsTrigger value="company">Company</TabsTrigger>
-            <TabsTrigger value="live">Live</TabsTrigger>
-          </TabsList>
-        </div>
+      {/* Bridge layout: 3-column — matches practice mode exactly */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-3 px-5 pb-3" style={{ minHeight: '320px' }}>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
-          {/* ── Tab 1: Briefing (pre-call intelligence) ── */}
-          <TabsContent value="briefing">
-            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-4">
-              <div className="min-w-0">
-                <RapportOpener openingLine={d.rapport?.opening_line} />
-                <RapportTags tags={d.rapport?.rapport_starters} />
-                <IntelNuggets nuggets={d.rapport?.intel_nuggets} watchOuts={d.rapport?.watch_outs} />
-                <ProductReference productReference={d.rapport?.product_reference} />
-              </div>
-              <div className="min-w-0">
-                <CareerContext pbContactData={d.identity?.pbContactData} />
-                <InteractionTimeline interactionHistory={d.interactionHistory} priorCalls={d.priorCalls} />
-                <EmailEngagement emailEngagement={d.emailEngagement} />
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* ── Tab 2: Company (company-level intelligence) ── */}
-          <TabsContent value="company">
-            <CompanyVernacular vernacular={d.companyVernacular} />
-            <CompanyIntel
-              companyData={d.companyData}
-              icpScore={d.icpScore}
-              pipelineData={d.pipelineData}
-              signalMetadata={d.signalMetadata}
-              pbContactData={d.identity?.pbContactData}
-            />
-          </TabsContent>
-
-          {/* ── Tab 3: Live (during-call tools) ── */}
-          <TabsContent value="live">
-            <LiveAnalysis data={liveAnalysis} active={callPhase === 'active'} contact={d.identity} callId={liveCallId} />
+        {/* Left stations — Rapport + Discovery */}
+        <div className="min-w-0 flex flex-col gap-0">
+          <ScoreSection label="Rapport" weight="20%" color="amber">
+            <RapportOpener openingLine={d.rapport?.opening_line} />
+            <RapportTags tags={d.rapport?.rapport_starters} />
+          </ScoreSection>
+          <ScoreSection label="Discovery" weight="25%" color="blue">
             <QualScript adaptedScript={d.rapport?.adapted_script} />
-          </TabsContent>
+            <IntelNuggets nuggets={d.rapport?.intel_nuggets} />
+          </ScoreSection>
+          <CareerContext pbContactData={d.identity?.pbContactData} />
+          <EmailEngagement emailEngagement={d.emailEngagement} />
         </div>
-      </Tabs>
+
+        {/* CENTER — Main Viewscreen */}
+        <div className="min-w-0 flex flex-col">
+          <LiveAnalysis data={liveAnalysis} active={callPhase === 'active'} contact={d.identity} callId={liveCallId} />
+          <CompanyVernacular vernacular={d.companyVernacular} />
+          <CompanyIntel
+            companyData={d.companyData}
+            icpScore={d.icpScore}
+            pipelineData={d.pipelineData}
+            signalMetadata={d.signalMetadata}
+            pbContactData={d.identity?.pbContactData}
+          />
+        </div>
+
+        {/* Right stations — Objections + Product */}
+        <div className="min-w-0 flex flex-col gap-0">
+          <ScoreSection label="Objection Handling" weight="25%" color="orange">
+            <IntelNuggets watchOuts={d.rapport?.watch_outs} />
+          </ScoreSection>
+          <ScoreSection label="Product & Close" weight="30%" color="green">
+            <ProductReference productReference={d.rapport?.product_reference} />
+          </ScoreSection>
+          <InteractionTimeline interactionHistory={d.interactionHistory} priorCalls={d.priorCalls} />
+        </div>
+      </div>
     </>
   );
 }
