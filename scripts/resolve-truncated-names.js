@@ -39,12 +39,19 @@ async function main() {
         continue;
       }
 
+      // Pass the truncated initial as last_name hint (e.g., "P" from "P.")
+      // Apollo uses it for matching even if it can't display the full name in search
+      const lastInitial = row.last_name?.replace('.', '') || undefined;
       const person = await matchPerson({
         firstName: first_name,
+        lastName: lastInitial,
         organization: company_name,
         email: email || undefined,
       });
 
+      if (person) {
+        console.log(`    Apollo returned: ${person.first_name} ${person.last_name} (${person.organization?.name || 'no org'})`);
+      }
       if (person?.first_name && person?.last_name && !/^\w\.$/.test(person.last_name)) {
         const fullName = `${person.first_name} ${person.last_name}`;
         await pool.query(`
