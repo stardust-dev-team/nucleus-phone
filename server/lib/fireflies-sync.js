@@ -235,12 +235,13 @@ async function sync() {
         productsDiscussed: analysis?.products_discussed || [],
         disposition: analysis?.disposition || 'connected',
         transcript: transcriptText || null,
+        sentiment: analysis?.sentiment ? { overall: analysis.sentiment } : null,
+        competitiveIntel: analysis?.competitive_mentions?.length
+          ? { mentions: analysis.competitive_mentions } : null,
         sourceMetadata: {
           firefliesId: transcript.id,
           title: transcript.title,
           duration: transcript.duration,
-          sentiment: analysis?.sentiment,
-          competitiveMentions: analysis?.competitive_mentions,
         },
       });
 

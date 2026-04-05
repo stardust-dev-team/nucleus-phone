@@ -37,14 +37,14 @@ async function syncInteraction(payload) {
     console.warn('Prior lookup failed, continuing without:', err.message);
   }
 
-  // Upsert into customer_interactions
+  // Upsert into customer_interactions (includes Phase 8 intelligence columns)
   const result = await pool.query(`
     INSERT INTO customer_interactions (
       contact_id, email, phone, company_name, contact_name, channel, session_id,
       direction, agent_name, recording_url, voice_id, intent, products_discussed,
       sizing_data, qualification, source_metadata, summary, transcript,
-      disposition, next_action, slack_notified
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      disposition, next_action, sentiment, competitive_intel, slack_notified
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     ON CONFLICT (session_id, channel) DO UPDATE SET
       contact_id = COALESCE(EXCLUDED.contact_id, customer_interactions.contact_id),
       email = COALESCE(EXCLUDED.email, customer_interactions.email),
@@ -63,6 +63,8 @@ async function syncInteraction(payload) {
       transcript = COALESCE(EXCLUDED.transcript, customer_interactions.transcript),
       disposition = COALESCE(EXCLUDED.disposition, customer_interactions.disposition),
       next_action = COALESCE(EXCLUDED.next_action, customer_interactions.next_action),
+      sentiment = COALESCE(EXCLUDED.sentiment, customer_interactions.sentiment),
+      competitive_intel = COALESCE(EXCLUDED.competitive_intel, customer_interactions.competitive_intel),
       slack_notified = EXCLUDED.slack_notified
     RETURNING id, contact_id
   `, [
@@ -86,6 +88,8 @@ async function syncInteraction(payload) {
     payload.transcript || null,
     payload.disposition || null,
     payload.nextAction || null,
+    payload.sentiment ? JSON.stringify(payload.sentiment) : null,
+    payload.competitiveIntel ? JSON.stringify(payload.competitiveIntel) : null,
     false,
   ]);
 

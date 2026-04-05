@@ -5,6 +5,7 @@ const { resolve } = require('../lib/identity-resolver');
 const { lookupCustomer } = require('../lib/customer-lookup');
 const { getCompany } = require('../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../lib/claude');
+const { buildVernacular } = require('../lib/company-vernacular');
 const { normalizePhone } = require('../lib/phone');
 const { TEST_COCKPIT_DATA } = require('../lib/test-cockpit-data');
 const SIM_MIKE_GARZA = require('../config/sim-contacts/mike-garza.json');
@@ -157,7 +158,15 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
           signal_sources: icpAndSignal.signal_sources }
       : null;
 
-    // Step 3: Claude rapport intelligence
+    // Step 3: Company vernacular aggregation
+    const companyVernacular = buildVernacular({
+      icpAndSignal,
+      interactionHistory,
+      priorCalls,
+      companyData,
+    });
+
+    // Step 4: Claude rapport intelligence
     const assembled = {
       ...identity,
       interactionHistory,
@@ -168,11 +177,12 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       emailEngagement,
       companyData: companyData?.properties || null,
       signalMetadata,
+      companyVernacular,
     };
 
     const rapport = await generateRapportIntel(assembled);
 
-    // Step 4: Return full cockpit payload
+    // Step 5: Return full cockpit payload
     res.json({
       identity,
       rapport,
@@ -184,6 +194,7 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       emailEngagement,
       companyData: companyData?.properties || null,
       signalMetadata,
+      companyVernacular,
     });
   } catch (err) {
     console.error('Cockpit assembly failed:', err.message);
