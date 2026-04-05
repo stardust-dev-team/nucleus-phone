@@ -110,17 +110,19 @@ async function resolve(identifier) {
 
   // Step 2c: If last name is truncated ("P." from Sales Navigator), try URL slug first (free)
   const lastNameParts = (name || '').split(/\s+/).slice(1);
-  const lastNameTruncated = lastNameParts.length > 0 && /^\w\.$/.test(lastNameParts[lastNameParts.length - 1]);
+  let lastNameTruncated = lastNameParts.length > 0 && /^\w\.$/.test(lastNameParts[lastNameParts.length - 1]);
   if (lastNameTruncated && name) {
     const resolved = resolveNameFromSlug(pbData?.linkedinUrl || pbData?.defaultProfileUrl, name.split(/\s+/)[0]);
     if (resolved) {
       name = `${resolved.firstName} ${resolved.lastName}`;
+      lastNameTruncated = false; // Resolved — skip Apollo
       // Persist the fix back to PB contacts so we don't re-resolve every load
+      const companyNorm = normalizeCompanyName(company);
       pool.query(
         `UPDATE v35_pb_contacts SET full_name = $1, first_name = $2, last_name = $3
-         WHERE LOWER(full_name) = LOWER($4) AND company_name_norm = $5`,
-        [name, resolved.firstName, resolved.lastName, `${resolved.firstName} ${lastNameParts[0]}`, normalizeCompanyName(company)]
-      ).catch(() => {}); // fire-and-forget
+         WHERE first_name = $4 AND last_name ~ '^\\w\\.$' AND company_name_norm = $5`,
+        [name, resolved.firstName, resolved.lastName, resolved.firstName, companyNorm]
+      ).catch(err => console.warn('identity-resolver: slug name persist failed:', err.message));
     }
   }
 

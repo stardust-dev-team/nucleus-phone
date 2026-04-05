@@ -155,7 +155,7 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
           [companyDomain]
         );
         enrichedContacts = rows;
-      } catch { /* table may not exist */ }
+      } catch (err) { console.warn('enrichedContacts query failed:', err.message); }
     }
 
     // Split combined query #3 into ICP score (with company enrichment) and signal metadata
