@@ -179,7 +179,21 @@ async function createDeal({ contactId, dealName, notes, stage, ucilSource = 'nuc
  * Fetch company properties by ID.
  */
 async function getCompany(companyId) {
-  const props = 'name,domain,industry,city,state,country,numberofemployees,company_vernacular';
+  const props = [
+    // Firmographics
+    'name', 'domain', 'industry', 'city', 'state', 'country',
+    'numberofemployees', 'annualrevenue', 'description', 'phone', 'website',
+    // Intelligence (populated for ~60 companies)
+    'company_vernacular', 'ten_k_insights', 'ten_k_ticker', 'ten_k_filing_date',
+    'leadership_ceo_strategy', 'capital_equipment_insights',
+    'recent_ma_activity', 'sustainability_commitments',
+    // Compliance
+    'compliance_violation_type', 'compliance_violation_date',
+    'compliance_violation_authority', 'environmental_compliance_budget',
+    'compliance_overview',
+    // Scoring
+    'account_qualification_score', 'account_tier',
+  ].join(',');
   return hubspotFetch(`/crm/v3/objects/companies/${companyId}?properties=${props}`);
 }
 

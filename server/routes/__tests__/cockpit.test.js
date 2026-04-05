@@ -111,9 +111,10 @@ describe('GET /api/cockpit/:identifier', () => {
         rows: [{ domain: 'acme.com', company_name: 'Acme Corp', segment: 'cnc' }],
         rowCount: 1,
       })
-      // ICP score
+      // ICP score + company enrichment (expanded Query 3)
       .mockResolvedValueOnce({
-        rows: [{ fit_score: '88', fit_reason: 'good fit' }],
+        rows: [{ domain: 'acme.com', icp_score: 88, prequalify_class: 'MANUFACTURING',
+                 industry_naics: '332710', geo_city: 'Phoenix', geo_state: 'AZ' }],
         rowCount: 1,
       })
       // QA results
@@ -134,7 +135,7 @@ describe('GET /api/cockpit/:identifier', () => {
 
     expect(res.body.priorCalls).toHaveLength(1);
     expect(res.body.pipelineData).toHaveLength(1);
-    expect(res.body.icpScore).toMatchObject({ fit_score: '88' });
+    expect(res.body.icpScore).toMatchObject({ icp_score: 88, geo_city: 'Phoenix' });
     expect(res.body.companyData).toMatchObject({ name: 'Acme' });
     expect(lookupCustomer).toHaveBeenCalled();
     expect(generateRapportIntel).toHaveBeenCalled();

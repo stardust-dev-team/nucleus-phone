@@ -77,7 +77,12 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       // 3: ICP score + signal metadata (single query via LEFT JOIN, avoids duplicate reservoir lookup)
       identity.company
         ? pool.query(
-            `SELECT lr.domain, lr.fit_score, lr.fit_reason, lr.persona, lr.segment,
+            `SELECT lr.domain, lr.company_name AS lr_company_name,
+                    lr.icp_score, lr.prequalify_class, lr.prequalify_reasoning,
+                    lr.industry_naics, lr.industry_description,
+                    lr.employee_range, lr.revenue_range,
+                    lr.geo_city, lr.geo_state, lr.geo_country,
+                    lr.harvest_source, lr.contact_count, lr.signal_context,
                     sm.signal_tier, sm.signal_score, sm.source_count,
                     sm.cert_expiry_date, sm.cert_standard, sm.cert_body,
                     sm.contract_total, sm.dod_flag, sm.signal_sources
@@ -127,11 +132,22 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       companyData,
     ] = await Promise.all(queries);
 
-    // Split combined query #3 into ICP score and signal metadata
+    // Split combined query #3 into ICP score (with company enrichment) and signal metadata
     const icpScore = icpAndSignal
-      ? { domain: icpAndSignal.domain, fit_score: icpAndSignal.fit_score,
-          fit_reason: icpAndSignal.fit_reason, persona: icpAndSignal.persona,
-          segment: icpAndSignal.segment }
+      ? { domain: icpAndSignal.domain,
+          icp_score: icpAndSignal.icp_score,
+          prequalify_class: icpAndSignal.prequalify_class,
+          prequalify_reasoning: icpAndSignal.prequalify_reasoning,
+          industry_naics: icpAndSignal.industry_naics,
+          industry_description: icpAndSignal.industry_description,
+          employee_range: icpAndSignal.employee_range,
+          revenue_range: icpAndSignal.revenue_range,
+          geo_city: icpAndSignal.geo_city,
+          geo_state: icpAndSignal.geo_state,
+          geo_country: icpAndSignal.geo_country,
+          harvest_source: icpAndSignal.harvest_source,
+          contact_count: icpAndSignal.contact_count,
+          signal_context: icpAndSignal.signal_context }
       : null;
     const signalMetadata = icpAndSignal?.signal_tier
       ? { signal_tier: icpAndSignal.signal_tier, signal_score: icpAndSignal.signal_score,

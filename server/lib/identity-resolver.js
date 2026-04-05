@@ -140,6 +140,7 @@ async function resolve(identifier) {
       summary: pbData.summary,
       industry: pbData.industry,
       location: pbData.location,
+      companyLocation: pbData.companyLocation,
       durationInRole: pbData.durationInRole,
       durationInCompany: pbData.durationInCompany,
       pastExperience: pbData.pastExperience,
@@ -188,7 +189,9 @@ async function lookupPbContact(company, name) {
            raw_data->>'durationInCompany' AS duration_in_company,
            raw_data->>'connectionDegree' AS connection_degree,
            raw_data->>'pastExperienceCompanyName' AS past_company,
-           raw_data->>'pastExperienceCompanyTitle' AS past_title
+           raw_data->>'pastExperienceCompanyTitle' AS past_title,
+           raw_data->>'pastExperienceDuration' AS past_experience_duration,
+           raw_data->>'companyLocation' AS company_location
     FROM v35_pb_contacts
     WHERE company_name_norm = $1
     LIMIT 20
@@ -240,9 +243,11 @@ async function lookupPbContact(company, name) {
     durationInRole: best.duration_in_role,
     durationInCompany: best.duration_in_company,
     connectionDegree: best.connection_degree,
+    companyLocation: best.company_location,
     pastExperience: best.past_company ? {
       company: best.past_company,
       title: best.past_title,
+      duration: best.past_experience_duration,
     } : null,
   };
 }
