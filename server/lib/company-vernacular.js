@@ -9,7 +9,7 @@
  * counts to 0. Consumers can trust the shape without null-checking.
  */
 
-const PAIN_KEYWORDS = /\b(moisture|short[- ]?cycling|downtime|leak|pressure drop|overheating|vibration|oil carry[- ]?over|condensat|noise|energy cost|maintenance cost|failing|broke|rental)\b/gi;
+const PAIN_KEYWORDS = /\b(moisture|short[- ]?cycling|downtime|leak|pressure drop|overheating|vibration|oil carry[- ]?over|condensat\w*|noise|energy cost|maintenance cost|failing|broke|rental)\b/gi;
 
 /**
  * @param {{ icpAndSignal, interactionHistory, priorCalls, companyData }} opts
@@ -114,7 +114,7 @@ function buildVernacular({ icpAndSignal, interactionHistory, priorCalls, company
   if (signal?.cert_standard) {
     sources++;
     const expiry = signal.cert_expiry_date ? new Date(signal.cert_expiry_date) : null;
-    const isExpired = expiry && expiry < Date.now();
+    const isExpired = expiry && expiry.getTime() < Date.now();
     const expiryStr = expiry
       ? expiry.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
       : null;
@@ -124,20 +124,23 @@ function buildVernacular({ icpAndSignal, interactionHistory, priorCalls, company
       + (isExpired ? `, EXPIRED ${expiryStr}` : expiryStr ? `, expires ${expiryStr}` : '');
   }
 
-  // --- HubSpot company properties ---
+  // --- HubSpot company properties (count as one source) ---
   const props = companyData?.properties || companyData || {};
+  let hasHubspotIntel = false;
   if (props.company_vernacular) {
-    sources++;
+    hasHubspotIntel = true;
     result.hubspotVernacular = props.company_vernacular;
   }
   if (props.ten_k_insights) {
-    sources++;
+    hasHubspotIntel = true;
     result.tenKInsights = props.ten_k_insights;
   }
   if (props.leadership_ceo_strategy) {
+    hasHubspotIntel = true;
     result.leadershipStrategy = props.leadership_ceo_strategy;
   }
   if (props.capital_equipment_insights) {
+    hasHubspotIntel = true;
     result.capitalEquipment = props.capital_equipment_insights;
   }
 
@@ -145,12 +148,13 @@ function buildVernacular({ icpAndSignal, interactionHistory, priorCalls, company
   const violation = [
     props.compliance_violation_type && `Violation: ${props.compliance_violation_type}`,
     props.compliance_violation_date && `on ${props.compliance_violation_date}`,
-    props.environmental_compliance_budget && `Env budget: ${props.environmental_compliance_budget.substring(0, 200)}`,
+    props.environmental_compliance_budget && `Env budget: ${String(props.environmental_compliance_budget).substring(0, 200)}`,
   ].filter(Boolean);
   if (violation.length) {
-    sources++;
+    hasHubspotIntel = true;
     result.complianceContext = violation.join(' ');
   }
+  if (hasHubspotIntel) sources++;
 
   // Dedupe and cap arrays
   result.equipment = [...new Set(result.equipment)].slice(0, 5);

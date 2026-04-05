@@ -118,7 +118,7 @@ describe('buildVernacular', () => {
     expect(v.complianceContext).toContain('Wastewater');
     expect(v.complianceContext).toContain('2025-08-13');
     expect(v.complianceContext).toContain('$88M');
-    expect(v.sourceCount).toBe(3); // vernacular + 10-K + compliance
+    expect(v.sourceCount).toBe(1); // all HubSpot properties count as one source
   });
 
   test('caps arrays at limits', () => {
@@ -142,7 +142,7 @@ describe('buildVernacular', () => {
       priorCalls: [{ products_discussed: ['JDD-40'], notes: 'Mentioned downtime concerns' }],
       companyData: { properties: { company_vernacular: 'Internal facility naming' } },
     });
-    expect(v.sourceCount).toBe(4); // interactions + calls + cert + vernacular
+    expect(v.sourceCount).toBe(4); // interactions + calls + cert + hubspot
     expect(v.productsDiscussed).toEqual(['JRS-10E', 'JDD-40']);
     expect(v.painPoints).toContain('moisture');
     expect(v.painPoints).toContain('downtime');
