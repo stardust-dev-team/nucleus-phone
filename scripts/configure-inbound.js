@@ -29,7 +29,7 @@ async function main() {
   const number = await client.incomingPhoneNumbers(phoneNumberSid).update({
     voiceUrl,
     voiceMethod: 'POST',
-    voiceFallbackUrl: '',
+    voiceFallbackUrl: `${appUrl}/api/voice/incoming/fallback`,
     voiceFallbackMethod: 'POST',
   });
 

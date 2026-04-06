@@ -298,6 +298,7 @@ async function initSchema() {
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS lead_email TEXT;
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS follow_up_email_sent BOOLEAN DEFAULT FALSE;
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS follow_up_email_error TEXT;
+      ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS voicemail_url TEXT;
     `);
     console.log('msal_token_cache + email columns ready');
 
