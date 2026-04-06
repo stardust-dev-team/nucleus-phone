@@ -66,17 +66,21 @@ app.get('*', (req, res) => {
 
 app.use(errorHandler);
 
+let httpServer;
+
 async function start() {
   await initSchema();
   startSweep();
   startCurator();
-  const httpServer = app.listen(PORT, () => {
+  httpServer = app.listen(PORT, () => {
     console.log(`nucleus-phone listening on :${PORT}`);
   });
   attachWebSocket(httpServer);
 }
 
 if (require.main === module) {
+  const { drain } = require('./lib/inflight');
+
   start().catch((err) => {
     console.error('Failed to start:', err);
     process.exit(1);
@@ -85,7 +89,7 @@ if (require.main === module) {
   // Graceful shutdown — Render gives 10s after SIGTERM
   process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
-    const { drain } = require('./lib/inflight');
+    if (httpServer) httpServer.close(); // stop accepting new connections
     await drain(8000); // 8s budget, 2s margin for cleanup
     process.exit(0);
   });

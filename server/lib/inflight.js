@@ -26,7 +26,7 @@ async function drain(timeoutMs = 8000) {
   if (pending.size === 0) return;
   console.log(`inflight: draining ${pending.size} operations (${timeoutMs}ms budget)`);
 
-  const deadline = new Promise(r => setTimeout(r, timeoutMs));
+  const deadline = new Promise(r => { const t = setTimeout(r, timeoutMs); t.unref(); });
   const allSettled = Promise.allSettled([...pending]);
 
   await Promise.race([allSettled, deadline]);
@@ -38,7 +38,4 @@ async function drain(timeoutMs = 8000) {
   }
 }
 
-/** Current count of in-flight operations. */
-function count() { return pending.size; }
-
-module.exports = { track, drain, count };
+module.exports = { track, drain };
