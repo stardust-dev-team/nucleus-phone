@@ -12,7 +12,9 @@
  *   4. TwiML: "Please hold" → caller joins conference with recording + RT transcription
  *   5. Status callback (existing /api/call/status) dials the rep into the conference
  *   6. If rep answers: endConferenceOnExit enabled, full pipeline runs
- *   7. If rep doesn't answer: caller redirected to voicemail
+ *   7. If rep doesn't answer (25s): rep-status redirects caller to voicemail
+ *   8. If rep-status redirect fails: <Dial timeout=35> expires, dial-complete
+ *      action URL catches the caller and serves voicemail (safety net)
  *
  * Config: INBOUND_FORWARD_NUMBER env var (E.164 format).
  */
@@ -28,12 +30,36 @@ const { sendSlackAlert } = require('../lib/slack');
 const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
-const twilioWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/voice/incoming`,
-});
 
-router.post('/', twilioWebhook, async (req, res) => {
+function makeTwilioWebhook(path) {
+  return twilio.webhook({
+    validate: process.env.NODE_ENV === 'production',
+    url: `${baseUrl}${path}`,
+  });
+}
+
+/**
+ * Append voicemail TwiML (say + record + goodbye) to a VoiceResponse.
+ * Used by three paths: inline safety net, dial-complete fallback, and
+ * rep-status redirect. Kept in one place to avoid drift.
+ */
+function appendVoicemailTwiml(twiml, callerPhone) {
+  twiml.say({
+    voice: 'Polly.Joanna',
+  }, 'Thank you for calling Joruva Industrial. No one is available to take your call right now. Please leave a message after the tone and we will get back to you as soon as possible.');
+  twiml.record({
+    maxLength: 180,
+    playBeep: true,
+    recordingStatusCallback: `${baseUrl}/api/voice/incoming/voicemail-complete?from=${encodeURIComponent(callerPhone)}`,
+    recordingStatusCallbackEvent: 'completed',
+    recordingStatusCallbackMethod: 'POST',
+  });
+  twiml.say('We did not receive a message. Goodbye.');
+}
+
+// ─── POST / — Initial inbound call handler ──────────────────────────
+
+router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
   const forwardTo = process.env.INBOUND_FORWARD_NUMBER;
   const twiml = new VoiceResponse();
 
@@ -54,7 +80,7 @@ router.post('/', twilioWebhook, async (req, res) => {
 
   const conferenceName = `nucleus-inbound-${uuidv4()}`;
 
-  console.log(`incoming: ${callerPhone} → conference ${conferenceName} → dial ${forwardTo}`);
+  console.log(`incoming: ${callerPhone} calling in — conference ${conferenceName}`);
 
   // Create DB row — same schema as outbound, but direction='inbound' and
   // lead_phone stores the CALLER's number (for identity resolution).
@@ -87,7 +113,7 @@ router.post('/', twilioWebhook, async (req, res) => {
     dbRowId,
   });
 
-  // Hold message while rep's phone rings
+  // Hold message so the caller doesn't hear silence while rep's phone rings
   twiml.say({
     voice: 'Polly.Joanna',
   }, 'Thank you for calling Joruva Industrial. Please hold while we connect you.');
@@ -107,12 +133,14 @@ router.post('/', twilioWebhook, async (req, res) => {
   start.transcription(txOpts);
 
   // Put the inbound caller into a conference with recording.
-  // startConferenceOnEnter=true → conference starts when caller joins.
-  // Status callback will fire conference-start → dials the rep in.
+  // startConferenceOnEnter=true → conference starts immediately.
+  // Status callback fires conference-start → dials the rep (25s timeout).
   //
-  // Safety: the <Dial> has a 35s timeout. If the rep-status callback
-  // fails to redirect the caller, the conference dial will time out
-  // and fall through to the voicemail TwiML below.
+  // The <Dial timeout=35> is a SAFETY NET, not the primary voicemail trigger.
+  // Primary path: rep's 25s timeout fires → rep-status callback redirects
+  // caller to voicemail via Twilio REST API. If that redirect fails, the
+  // caller sits in an empty conference for ~10 more seconds until this 35s
+  // <Dial> expires, then dial-complete action URL serves voicemail TwiML.
   const dial = twiml.dial({
     callerId: callerPhone,
     timeout: 35,
@@ -127,80 +155,42 @@ router.post('/', twilioWebhook, async (req, res) => {
     startConferenceOnEnter: true,
     endConferenceOnExit: false,
     beep: false,
-    waitUrl: '',
+    waitUrl: '', // Twilio default hold music while waiting for rep
   }, conferenceName);
 
-  // If the <Dial> times out or completes without the rep, Twilio
-  // continues to the next TwiML verb. This is the safety net.
-  twiml.say({
-    voice: 'Polly.Joanna',
-  }, 'Thank you for calling Joruva Industrial. No one is available to take your call right now. Please leave a message after the tone and we will get back to you as soon as possible.');
-  twiml.record({
-    maxLength: 180,
-    playBeep: true,
-    recordingStatusCallback: `${baseUrl}/api/voice/incoming/voicemail-complete?from=${encodeURIComponent(callerPhone)}`,
-    recordingStatusCallbackEvent: 'completed',
-    recordingStatusCallbackMethod: 'POST',
-  });
-  twiml.say('We did not receive a message. Goodbye.');
+  // Inline voicemail TwiML after <Dial> — tertiary safety net if both
+  // the rep-status redirect AND dial-complete action URL somehow fail.
+  appendVoicemailTwiml(twiml, callerPhone);
 
-  // Slack notification for inbound call
+  // Slack: caller has entered the conference, rep dial is pending
   sendSlackAlert({
-    text: `:telephone_receiver: Inbound call from ${callerPhone} — forwarding to rep`,
+    text: `:telephone_receiver: Inbound call from ${callerPhone} — dialing rep`,
   }).catch(() => {});
 
   res.type('text/xml').send(twiml.toString());
 });
 
-// POST /api/voice/incoming/dial-complete — Twilio calls this when the
-// <Dial><Conference> completes (rep answered + hung up, or timeout).
-// If the call was completed normally, just end. If it timed out or
-// failed, Twilio continues to the next TwiML verb (voicemail) which
-// was already included in the original TwiML response above.
-// This action URL is required to prevent Twilio from hanging up after <Dial>.
-const dialCompleteWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/voice/incoming/dial-complete`,
-});
+// ─── POST /dial-complete — <Dial> action URL (safety net) ───────────
 
-router.post('/dial-complete', dialCompleteWebhook, (req, res) => {
+router.post('/dial-complete', makeTwilioWebhook('/api/voice/incoming/dial-complete'), (req, res) => {
   const { DialCallStatus } = req.body;
   const conferenceName = req.query.conf;
   const callerPhone = req.query.from || 'unknown';
   const twiml = new VoiceResponse();
 
   if (DialCallStatus === 'completed') {
-    // Normal call completion — rep answered and conversation happened
     twiml.hangup();
   } else {
-    // Rep didn't answer, busy, or failed — play voicemail
     console.log(`incoming: dial-complete fallback (${DialCallStatus}) for ${conferenceName}`);
-    twiml.say({
-      voice: 'Polly.Joanna',
-    }, 'Thank you for calling Joruva Industrial. No one is available to take your call right now. Please leave a message after the tone and we will get back to you as soon as possible.');
-    twiml.record({
-      maxLength: 180,
-      playBeep: true,
-      recordingStatusCallback: `${baseUrl}/api/voice/incoming/voicemail-complete?from=${encodeURIComponent(callerPhone)}`,
-      recordingStatusCallbackEvent: 'completed',
-      recordingStatusCallbackMethod: 'POST',
-    });
-    twiml.say('We did not receive a message. Goodbye.');
+    appendVoicemailTwiml(twiml, callerPhone);
   }
 
   res.type('text/xml').send(twiml.toString());
 });
 
-// POST /api/voice/incoming/rep-status — Twilio calls this when the rep's
-// participant leg changes state. If the rep answers, enable
-// endConferenceOnExit so the conference ends cleanly when either party
-// hangs up. If the rep doesn't answer, redirect the caller to voicemail.
-const repStatusWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/voice/incoming/rep-status`,
-});
+// ─── POST /rep-status — Rep's participant leg status changes ────────
 
-router.post('/rep-status', repStatusWebhook, async (req, res) => {
+router.post('/rep-status', makeTwilioWebhook('/api/voice/incoming/rep-status'), async (req, res) => {
   res.sendStatus(204);
 
   const { CallStatus, CallSid, ConferenceSid } = req.body;
@@ -208,7 +198,7 @@ router.post('/rep-status', repStatusWebhook, async (req, res) => {
   if (!conferenceName) return;
 
   // Rep answered — enable endConferenceOnExit so hangup by either party
-  // cleanly ends the conference (fixes orphaned conference issue).
+  // cleanly ends the conference (no orphaned conferences).
   if (CallStatus === 'in-progress' && CallSid && ConferenceSid) {
     try {
       await client.conferences(ConferenceSid)
@@ -226,7 +216,6 @@ router.post('/rep-status', repStatusWebhook, async (req, res) => {
 
   console.log(`incoming: rep did not answer (${CallStatus}) for ${conferenceName} — redirecting to voicemail`);
 
-  // Look up the caller's CallSid so we can redirect their leg
   try {
     const { rows } = await pool.query(
       'SELECT caller_call_sid, lead_phone FROM nucleus_phone_calls WHERE conference_name = $1',
@@ -239,7 +228,6 @@ router.post('/rep-status', repStatusWebhook, async (req, res) => {
       return;
     }
 
-    // Redirect the caller's call leg to voicemail TwiML
     await client.calls(callerSid).update({
       url: `${baseUrl}/api/voice/incoming/voicemail?from=${encodeURIComponent(callerPhone)}`,
       method: 'POST',
@@ -251,48 +239,25 @@ router.post('/rep-status', repStatusWebhook, async (req, res) => {
   }
 });
 
-// POST /api/voice/incoming/voicemail — TwiML that plays a message and records.
-// The caller lands here when redirected out of the conference.
-const voicemailWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/voice/incoming/voicemail`,
-});
+// ─── POST /voicemail — Voicemail TwiML (redirect target) ────────────
 
-router.post('/voicemail', voicemailWebhook, (req, res) => {
+router.post('/voicemail', makeTwilioWebhook('/api/voice/incoming/voicemail'), (req, res) => {
   const callerPhone = req.query.from || 'unknown';
   const twiml = new VoiceResponse();
-
-  twiml.say({
-    voice: 'Polly.Joanna',
-  }, 'Thank you for calling Joruva Industrial. No one is available to take your call right now. Please leave a message after the tone and we will get back to you as soon as possible.');
-
-  twiml.record({
-    maxLength: 180,
-    playBeep: true,
-    recordingStatusCallback: `${baseUrl}/api/voice/incoming/voicemail-complete?from=${encodeURIComponent(callerPhone)}`,
-    recordingStatusCallbackEvent: 'completed',
-    recordingStatusCallbackMethod: 'POST',
-  });
-
-  twiml.say('We did not receive a message. Goodbye.');
-
+  appendVoicemailTwiml(twiml, callerPhone);
   res.type('text/xml').send(twiml.toString());
 });
 
-// POST /api/voice/incoming/voicemail-complete — saves voicemail recording URL to the call record
-const vmCompleteWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/voice/incoming/voicemail-complete`,
-});
+// ─── POST /voicemail-complete — Save recording URL to DB ────────────
 
-router.post('/voicemail-complete', vmCompleteWebhook, async (req, res) => {
+router.post('/voicemail-complete', makeTwilioWebhook('/api/voice/incoming/voicemail-complete'), async (req, res) => {
   res.sendStatus(204);
 
-  const { RecordingUrl, RecordingSid, RecordingDuration, CallSid } = req.body;
+  const { RecordingUrl, RecordingDuration, CallSid } = req.body;
   const callerPhone = req.query.from || 'unknown';
   if (!RecordingUrl) return;
 
-  console.log(`incoming: voicemail from ${callerPhone} (${RecordingDuration}s) — ${RecordingSid}`);
+  console.log(`incoming: voicemail from ${callerPhone} (${RecordingDuration}s)`);
 
   try {
     await pool.query(
@@ -310,9 +275,9 @@ router.post('/voicemail-complete', vmCompleteWebhook, async (req, res) => {
   }
 });
 
-// POST /api/voice/incoming/fallback — Twilio hits this if the primary
-// voice URL is down. Better than Twilio's generic error message.
-router.post('/fallback', (req, res) => {
+// ─── POST /fallback — Twilio voice URL fallback ─────────────────────
+
+router.post('/fallback', makeTwilioWebhook('/api/voice/incoming/fallback'), (req, res) => {
   const twiml = new VoiceResponse();
   twiml.say({
     voice: 'Polly.Joanna',
