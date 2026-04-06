@@ -6,6 +6,7 @@ const { addNoteToContact, getContact } = require('../lib/hubspot');
 const { formatDuration } = require('../lib/format');
 const { syncInteraction } = require('../lib/interaction-sync');
 const { sendFollowUpEmail } = require('../lib/email-sender');
+const { track } = require('../lib/inflight');
 
 const router = Router();
 
@@ -131,14 +132,15 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
         productsDiscussed: products_discussed,
       });
 
-      sendSlackAlert(alert)
-        .then((sent) => {
-          if (sent) {
-            pool.query('UPDATE nucleus_phone_calls SET slack_notified = TRUE WHERE id = $1', [call.id])
-              .catch((err) => console.error('Failed to update slack_notified flag:', err.message));
-          }
-        })
-        .catch((err) => console.error('Slack alert failed:', err.message));
+      track(
+        sendSlackAlert(alert)
+          .then((sent) => {
+            if (sent) {
+              return pool.query('UPDATE nucleus_phone_calls SET slack_notified = TRUE WHERE id = $1', [call.id]);
+            }
+          })
+          .catch((err) => console.error('Slack alert failed:', err.message))
+      );
     }
 
     // Sync to HubSpot — add note to contact timeline (async, non-blocking)
@@ -151,41 +153,44 @@ router.post('/:id/disposition', apiKeyAuth, async (req, res) => {
         ...(notes ? [`Notes: ${notes}`] : []),
       ].join('\n');
 
-      addNoteToContact(call.hubspot_contact_id, noteBody)
-        .then(() => {
-          pool.query('UPDATE nucleus_phone_calls SET hubspot_synced = TRUE WHERE id = $1', [call.id])
-            .catch((err) => console.error('Failed to update hubspot_synced flag:', err.message));
-        })
-        .catch((err) => console.error('HubSpot sync failed:', err.message));
+      track(
+        addNoteToContact(call.hubspot_contact_id, noteBody)
+          .then(() => {
+            return pool.query('UPDATE nucleus_phone_calls SET hubspot_synced = TRUE WHERE id = $1', [call.id]);
+          })
+          .catch((err) => console.error('HubSpot sync failed:', err.message))
+      );
     }
 
     // Sync to customer_interactions — include AI data if available
     const aiSummary = call.ai_summary || null;
     const aiItems = call.ai_action_items || null;
-    syncInteraction({
-      channel: 'voice',
-      direction: 'outbound',
-      sessionId: `npc_${call.conference_name || call.id}`,
-      phone: call.lead_phone,
-      contactName: call.lead_name,
-      companyName: call.lead_company,
-      agentName: call.caller_identity,
-      recordingUrl: call.recording_url,
-      transcript: call.transcript || null,
-      summary: aiSummary || notes || '',
-      productsDiscussed: aiItems?.products_discussed?.length
-        ? aiItems.products_discussed : (products_discussed || []),
-      disposition: qualification === 'hot' ? 'qualified_hot'
-        : qualification === 'warm' ? 'qualified_warm'
-        : disposition,
-      qualification: qualification
-        ? { stage: qualification, score: qualification === 'hot' ? 90 : 60 }
-        : undefined,
-      sentiment: aiItems?.objections_raised?.length
-        ? { overall: 'mixed', objections: aiItems.objections_raised } : null,
-      competitiveIntel: aiItems?.equipment_mentioned?.length
-        ? { equipment: aiItems.equipment_mentioned } : null,
-    }).catch(err => console.error('Interaction sync failed:', err.message));
+    track(
+      syncInteraction({
+        channel: 'voice',
+        direction: 'outbound',
+        sessionId: `npc_${call.conference_name || call.id}`,
+        phone: call.lead_phone,
+        contactName: call.lead_name,
+        companyName: call.lead_company,
+        agentName: call.caller_identity,
+        recordingUrl: call.recording_url,
+        transcript: call.transcript || null,
+        summary: aiSummary || notes || '',
+        productsDiscussed: aiItems?.products_discussed?.length
+          ? aiItems.products_discussed : (products_discussed || []),
+        disposition: qualification === 'hot' ? 'qualified_hot'
+          : qualification === 'warm' ? 'qualified_warm'
+          : disposition,
+        qualification: qualification
+          ? { stage: qualification, score: qualification === 'hot' ? 90 : 60 }
+          : undefined,
+        sentiment: aiItems?.objections_raised?.length
+          ? { overall: 'mixed', objections: aiItems.objections_raised } : null,
+        competitiveIntel: aiItems?.equipment_mentioned?.length
+          ? { equipment: aiItems.equipment_mentioned } : null,
+      }).catch(err => console.error('Interaction sync failed:', err.message))
+    );
 
     // ── Follow-up email from rep's mailbox ────────────────────────
     let emailResult = {};

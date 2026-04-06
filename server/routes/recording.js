@@ -2,6 +2,7 @@ const { Router } = require('express');
 const twilio = require('twilio');
 const { pool } = require('../db');
 const { uploadToFireflies } = require('../lib/fireflies');
+const { track } = require('../lib/inflight');
 
 const router = Router();
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
@@ -52,18 +53,19 @@ router.post('/', twilioWebhook, async (req, res) => {
     );
     if (callRows[0]) {
       const c = callRows[0];
-      uploadToFireflies(RecordingUrl, {
-        callerIdentity: c.caller_identity,
-        leadName: c.lead_name,
-        leadCompany: c.lead_company,
-        leadPhone: c.lead_phone,
-        leadEmail: c.lead_email,
-      }).then(result => {
-        if (result.success) {
-          pool.query('UPDATE nucleus_phone_calls SET fireflies_uploaded = TRUE WHERE id = $1', [call.id])
-            .catch(err => console.error('Failed to update fireflies_uploaded:', err.message));
-        }
-      }).catch(err => console.error('Fireflies upload failed:', err.message));
+      track(
+        uploadToFireflies(RecordingUrl, {
+          callerIdentity: c.caller_identity,
+          leadName: c.lead_name,
+          leadCompany: c.lead_company,
+          leadPhone: c.lead_phone,
+          leadEmail: c.lead_email,
+        }).then(result => {
+          if (result.success) {
+            return pool.query('UPDATE nucleus_phone_calls SET fireflies_uploaded = TRUE WHERE id = $1', [call.id]);
+          }
+        }).catch(err => console.error('Fireflies upload failed:', err.message))
+      );
     }
   } catch (err) {
     console.error('Recording processing failed:', err.message);

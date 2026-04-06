@@ -18,6 +18,7 @@ const { Router } = require('express');
 const twilio = require('twilio');
 const { pool } = require('../db');
 const { broadcast } = require('../lib/live-analysis');
+const { track } = require('../lib/inflight');
 const { processEquipmentChunk } = require('../lib/equipment-pipeline');
 const { summarizeCall, MIN_TRANSCRIPT_LENGTH } = require('../lib/call-summarizer');
 
@@ -46,9 +47,11 @@ router.post('/', twilioWebhook, async (req, res) => {
   // Twilio sends transcription-stopped when all chunks are delivered —
   // trigger post-call summarization here instead of racing in recording.js.
   if (TranscriptionEvent === 'transcription-stopped' && CallSid) {
-    runPostCallSummary(CallSid).catch(err => {
-      console.error('transcription: post-call summary failed:', err.message);
-    });
+    track(
+      runPostCallSummary(CallSid).catch(err => {
+        console.error('transcription: post-call summary failed:', err.message);
+      })
+    );
     return;
   }
 

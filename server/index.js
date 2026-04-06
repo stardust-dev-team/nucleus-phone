@@ -82,9 +82,11 @@ if (require.main === module) {
     process.exit(1);
   });
 
-  // Graceful shutdown — Render sends SIGTERM before killing the process
-  process.on('SIGTERM', () => {
+  // Graceful shutdown — Render gives 10s after SIGTERM
+  process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
+    const { drain } = require('./lib/inflight');
+    await drain(8000); // 8s budget, 2s margin for cleanup
     process.exit(0);
   });
 }
