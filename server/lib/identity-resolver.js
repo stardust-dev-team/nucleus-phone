@@ -49,6 +49,15 @@ function resolveNameFromSlug(url, firstName) {
 
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
 
+/** Convert normalized 10-digit phone to E.164 (+1XXXXXXXXXX) */
+function toE164(phone) {
+  if (!phone) return null;
+  if (phone.startsWith('+')) return phone;
+  if (phone.length === 10) return `+1${phone}`;
+  if (phone.length === 11 && phone.startsWith('1')) return `+${phone}`;
+  return `+${phone}`;
+}
+
 /**
  * Resolve an identifier (phone, email, or HubSpot contact ID) into a
  * unified identity with rapport data from HubSpot + PB contacts.
@@ -220,7 +229,7 @@ async function resolve(identifier) {
     hubspotCompanyId: props.associatedcompanyid || null,
     name,
     email: resolvedEmail || dropcontactEmail || null,
-    phone,
+    phone: toE164(phone),
     company,
     title: pbData?.title || apolloData?.title || props.jobtitle || null,
     linkedinUrl: pbData?.linkedinUrl || apolloData?.linkedinUrl || null,
@@ -381,7 +390,7 @@ function unresolved(identifier) {
     hubspotCompanyId: null,
     name: null,
     email: null,
-    phone: normalizePhone(identifier),
+    phone: toE164(normalizePhone(identifier)),
     company: null,
     title: null,
     linkedinUrl: null,
