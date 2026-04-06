@@ -241,12 +241,12 @@ async function sync() {
         // NPC upload — enrich existing customer_interactions row with AI analysis
         await pool.query(`
           UPDATE customer_interactions SET
-            transcript = COALESCE($1, transcript),
-            summary = CASE WHEN $2 IS NOT NULL THEN $2 ELSE summary END,
+            transcript = COALESCE($1::text, transcript),
+            summary = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE summary END,
             products_discussed = CASE WHEN $3::jsonb != '[]'::jsonb THEN $3 ELSE products_discussed END,
-            sentiment = COALESCE($4, sentiment),
-            competitive_intel = COALESCE($5, competitive_intel),
-            source_metadata = source_metadata || $6::jsonb
+            sentiment = COALESCE($4::jsonb, sentiment),
+            competitive_intel = COALESCE($5::jsonb, competitive_intel),
+            source_metadata = COALESCE(source_metadata, '{}'::jsonb) || $6::jsonb
           WHERE id = $7
         `, [
           transcriptText || null,
