@@ -13,6 +13,65 @@ const { logSighting } = require('./equipment-db');
 const { broadcast, getCallEquipment } = require('./live-analysis');
 const { addVariant } = require('./equipment-curator');
 
+// Default CFM estimates for equipment categories when no specific model is matched.
+// Based on manufacturer pre-install guides, industry standards, and forum data.
+// Conservative midpoints — better to slightly undersize than miss entirely (0 CFM).
+const CATEGORY_DEFAULTS = {
+  // CNC metalworking
+  cnc:          { cfm_typical: 8,   psi_required: 90,  duty_cycle_pct: 75, air_quality_class: 'general' },
+  mill:         { cfm_typical: 8,   psi_required: 90,  duty_cycle_pct: 75, air_quality_class: 'general' },
+  vmc:          { cfm_typical: 8,   psi_required: 90,  duty_cycle_pct: 75, air_quality_class: 'general' },
+  hmc:          { cfm_typical: 10,  psi_required: 90,  duty_cycle_pct: 75, air_quality_class: 'general' },
+  lathe:        { cfm_typical: 5,   psi_required: 90,  duty_cycle_pct: 70, air_quality_class: 'general' },
+  turning:      { cfm_typical: 5,   psi_required: 90,  duty_cycle_pct: 70, air_quality_class: 'general' },
+  // CNC woodworking / routing
+  router:       { cfm_typical: 15,  psi_required: 90,  duty_cycle_pct: 80, air_quality_class: 'general' },
+  // Surface treatment
+  paint:        { cfm_typical: 20,  psi_required: 50,  duty_cycle_pct: 60, air_quality_class: 'paint_grade' },
+  booth:        { cfm_typical: 20,  psi_required: 50,  duty_cycle_pct: 60, air_quality_class: 'paint_grade' },
+  spray:        { cfm_typical: 15,  psi_required: 50,  duty_cycle_pct: 60, air_quality_class: 'paint_grade' },
+  blast:        { cfm_typical: 100, psi_required: 100, duty_cycle_pct: 50, air_quality_class: 'general' },
+  sandblast:    { cfm_typical: 100, psi_required: 100, duty_cycle_pct: 50, air_quality_class: 'general' },
+  // Packaging
+  packaging:    { cfm_typical: 10,  psi_required: 80,  duty_cycle_pct: 60, air_quality_class: 'general' },
+  erector:      { cfm_typical: 8,   psi_required: 80,  duty_cycle_pct: 60, air_quality_class: 'general' },
+  // General pneumatic
+  press:        { cfm_typical: 10,  psi_required: 90,  duty_cycle_pct: 50, air_quality_class: 'general' },
+  grinder:      { cfm_typical: 6,   psi_required: 90,  duty_cycle_pct: 60, air_quality_class: 'general' },
+  welder:       { cfm_typical: 5,   psi_required: 80,  duty_cycle_pct: 40, air_quality_class: 'general' },
+};
+
+// Known CNC manufacturers — when we see "Haas" with no model, apply CNC defaults
+const CNC_MANUFACTURERS = new Set([
+  'haas', 'mazak', 'okuma', 'dmg', 'mori', 'doosan', 'fanuc', 'hurco',
+  'kitamura', 'makino', 'matsuura', 'brother', 'hyundai', 'hardinge',
+  'nakamura', 'samsung', 'spinner', 'takisawa', 'tsugami', 'miyano',
+  'citizen', 'star', 'tornos', 'daewoo', 'bridgeport',
+]);
+
+/**
+ * Get default specs for an equipment entity that didn't match the catalog.
+ * Uses manufacturer name, model keywords, and raw mention to infer category.
+ */
+function getCategoryDefault(entity) {
+  const text = [entity.manufacturer, entity.model, entity.raw_mention]
+    .filter(Boolean).join(' ').toLowerCase();
+
+  // Check known CNC manufacturers first
+  if (entity.manufacturer && CNC_MANUFACTURERS.has(entity.manufacturer.toLowerCase())) {
+    return { ...CATEGORY_DEFAULTS.cnc, confidence: 'category_default' };
+  }
+
+  // Match keywords in the combined text
+  for (const [keyword, defaults] of Object.entries(CATEGORY_DEFAULTS)) {
+    if (text.includes(keyword)) {
+      return { ...defaults, confidence: 'category_default' };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Process a transcript chunk through the equipment detection pipeline.
  *
@@ -35,12 +94,22 @@ async function processEquipmentChunk(callId, callType, dbCallId, text) {
         result = await lookupEquipment(entity.manufacturer, entity.model);
       }
 
+      // If no catalog match, apply category defaults based on equipment type.
+      // "4 CNC machines" with no model → 8 CFM each instead of 0 CFM.
+      const categoryFallback = !result ? getCategoryDefault(entity) : null;
+
       const specs = result ? {
         cfm_typical: result.cfm_typical,
         psi_required: result.psi_required,
         duty_cycle_pct: result.duty_cycle_pct,
         air_quality_class: result.air_quality_class,
         confidence: result.confidence,
+      } : categoryFallback ? {
+        cfm_typical: categoryFallback.cfm_typical,
+        psi_required: categoryFallback.psi_required,
+        duty_cycle_pct: categoryFallback.duty_cycle_pct,
+        air_quality_class: categoryFallback.air_quality_class,
+        confidence: categoryFallback.confidence,
       } : null;
 
       // Learn variant: if lookup matched but extracted model differs from canonical,
