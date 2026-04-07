@@ -180,6 +180,7 @@ router.get('/active', apiKeyAuth, async (req, res) => {
         leadName: conf.leadName,
         leadCompany: conf.leadCompany,
         leadPhone: conf.leadPhone,
+        direction: conf.direction || 'outbound',
         participants,
         duration,
       };

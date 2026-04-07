@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useCockpit from '../hooks/useCockpit';
 import useCockpitTheme from '../hooks/useCockpitTheme';
 import useScoreboard from '../hooks/useScoreboard';
@@ -89,7 +89,7 @@ function isTestCompany(d) {
   return company.includes('joruva');
 }
 
-function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, onTestCallId }) {
+function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, onTestCallId, confParam }) {
   return (
     <>
       {/* Contact identity + signal context — ship status bar */}
@@ -120,7 +120,7 @@ function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, on
         {/* CENTER — Viewscreen fills height, Company Intel anchored to bottom */}
         <div className="min-w-0 flex flex-col">
           <div className="cockpit-viewscreen">
-            <LiveAnalysis data={liveAnalysis} active={callPhase === 'active' || !!testCallId} contact={d.identity} callId={liveCallId} isPractice={false} />
+            <LiveAnalysis data={liveAnalysis} active={callPhase === 'active' || !!testCallId || !!confParam} contact={d.identity} callId={liveCallId} isPractice={false} />
           </div>
           {isTestCompany(d) && (
             <div className="flex items-center gap-2 mt-1">
@@ -166,8 +166,10 @@ function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, on
 
 export default function Cockpit({ identity, callState, twilioStatus, forcedId, onSendDigits, onToggleMute, muted }) {
   const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const id = forcedId || params.id;
   const navigate = useNavigate();
+  const confParam = searchParams.get('conf');
   const isPractice = id?.startsWith(SIM_ID_PREFIX);
   const [practiceDifficulty, setPracticeDifficulty] = useState(null);
   const { data, loading, error, refreshing, refresh } = useCockpit(id, {
@@ -182,12 +184,22 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId, o
 
   const callPhase = deriveCallPhase(twilioStatus, callState.callData);
 
-  // Live analysis: subscribe by test scenario, practice sim ID, or real call conference name
+  // Live analysis: subscribe by test scenario, practice sim ID, conf query param (inbound deep link), or real call conference name
   const liveCallId = testCallId
     || (isPractice
       ? (activeSimCallId ? `sim-${activeSimCallId}` : null)
-      : callState.callData?.conferenceName || null);
-  const liveAnalysis = useLiveAnalysis(liveCallId, !!testCallId || callPhase === 'active' || !!activeSimCallId);
+      : confParam || callState.callData?.conferenceName || null);
+  const liveAnalysis = useLiveAnalysis(liveCallId, !!testCallId || callPhase === 'active' || !!activeSimCallId || !!confParam);
+
+  // Clear conf search param when observed conference ends (WebSocket disconnects after being connected)
+  const wasConnected = useRef(false);
+  useEffect(() => {
+    if (liveAnalysis.connected) wasConnected.current = true;
+    else if (wasConnected.current && confParam) {
+      wasConnected.current = false;
+      setSearchParams(prev => { prev.delete('conf'); return prev; }, { replace: true });
+    }
+  }, [liveAnalysis.connected, confParam, setSearchParams]);
 
   // Find current user's practice stats from the leaderboard
   const myPracticeStats = practiceBoard.data?.leaderboard?.find(e => e.identity === identity);
@@ -317,6 +329,7 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId, o
                 liveCallId={liveCallId}
                 testCallId={testCallId}
                 onTestCallId={setTestCallId}
+                confParam={confParam}
               />
             )}
           </div>

@@ -104,6 +104,11 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
                       Practice
                     </span>
                   )}
+                  {call.direction === 'inbound' && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-jv-amber/20 text-jv-amber">
+                      Inbound
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-jv-muted">{call.leadCompany || ''}</p>
               </div>
@@ -137,6 +142,15 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
               )
             ) : (
               <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const cockpitId = (call.direction === 'inbound' ? call.leadName : call.leadPhone) || call.conferenceName;
+                    navigate(`/cockpit/${encodeURIComponent(cockpitId)}?conf=${encodeURIComponent(call.conferenceName)}`);
+                  }}
+                  className="flex-1 py-2.5 rounded-sentinel bg-jv-elevated border border-jv-border text-sm font-medium hover:bg-jv-card transition-colors"
+                >
+                  Open Cockpit
+                </button>
                 <button
                   onClick={() => handleJoin(call, true)}
                   disabled={twilioHook.status !== 'ready'}

@@ -112,6 +112,7 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
     companyName: null,
     contactId: null,
     dbRowId,
+    direction: 'inbound',
   });
 
   // Hold message so the caller doesn't hear silence while rep's phone rings

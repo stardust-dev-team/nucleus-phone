@@ -12,6 +12,7 @@ function createConference(conferenceName, data) {
     leadCompany: data.companyName,
     contactId: data.contactId,
     dbRowId: data.dbRowId,
+    direction: data.direction || 'outbound',
     participants: [],
     leadDialed: false,
   });
