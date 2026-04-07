@@ -25,7 +25,7 @@ const twilio = require('twilio');
 const { VoiceResponse, client } = require('../lib/twilio');
 const { pool } = require('../db');
 const { createConference } = require('../lib/conference');
-const { sendSlackAlert } = require('../lib/slack');
+const { sendSlackAlert, sendSlackDM } = require('../lib/slack');
 
 const router = Router();
 
@@ -162,10 +162,18 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
   // the rep-status redirect AND dial-complete action URL somehow fail.
   appendVoicemailTwiml(twiml, callerPhone);
 
-  // Slack: caller has entered the conference, rep dial is pending
+  // Slack: alert admin channel + DM the rep with cockpit deep link
+  const cockpitUrl = `${baseUrl}/cockpit/${encodeURIComponent(callerPhone)}?conf=${encodeURIComponent(conferenceName)}`;
   sendSlackAlert({
     text: `:telephone_receiver: Inbound call from ${callerPhone} — dialing rep`,
   }).catch(() => {});
+
+  const repSlackChannel = process.env.INBOUND_REP_SLACK_DM;
+  if (repSlackChannel) {
+    sendSlackDM(repSlackChannel,
+      `:telephone_receiver: Inbound call from ${callerPhone}\n<${cockpitUrl}|Open Cockpit>`
+    ).catch(() => {});
+  }
 
   res.type('text/xml').send(twiml.toString());
 });
@@ -270,6 +278,13 @@ router.post('/voicemail-complete', makeTwilioWebhook('/api/voice/incoming/voicem
     sendSlackAlert({
       text: `:mailbox_with_mail: Voicemail from ${callerPhone} (${RecordingDuration}s) — check call history`,
     }).catch(() => {});
+
+    const repDm = process.env.INBOUND_REP_SLACK_DM;
+    if (repDm) {
+      sendSlackDM(repDm,
+        `:mailbox_with_mail: Voicemail from ${callerPhone} (${RecordingDuration}s) — check call history`
+      ).catch(() => {});
+    }
   } catch (err) {
     console.error('incoming: voicemail save failed:', err.message);
   }

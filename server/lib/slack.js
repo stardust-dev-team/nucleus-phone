@@ -202,4 +202,37 @@ async function sendSystemAlert(text, blocks) {
   }
 }
 
-module.exports = { sendSlackAlert, sendAdminReport, sendSystemAlert, formatCallAlert, formatSimScorecard, formatAdminReport };
+/**
+ * Send a DM to a specific Slack user by their user or DM channel ID.
+ * Uses the bot token (chat:write scope).
+ */
+async function sendSlackDM(channelOrUserId, text, blocks) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    console.warn('SLACK_BOT_TOKEN not set — skipping DM');
+    return false;
+  }
+  try {
+    const payload = { channel: channelOrUserId, text };
+    if (blocks) payload.blocks = blocks;
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      console.error('Slack DM failed:', data.error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Slack DM error:', err.message);
+    return false;
+  }
+}
+
+module.exports = { sendSlackAlert, sendAdminReport, sendSystemAlert, sendSlackDM, formatCallAlert, formatSimScorecard, formatAdminReport };
