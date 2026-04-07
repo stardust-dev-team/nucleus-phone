@@ -107,6 +107,9 @@ function AppContent() {
             identity={identity}
             callState={callState}
             twilioStatus={twilioHook.status}
+            onSendDigits={twilioHook.sendDigits}
+            onToggleMute={twilioHook.toggleMute}
+            muted={twilioHook.muted}
           />
         }
       />

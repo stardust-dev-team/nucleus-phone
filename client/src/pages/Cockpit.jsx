@@ -164,7 +164,7 @@ function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, on
   );
 }
 
-export default function Cockpit({ identity, callState, twilioStatus, forcedId }) {
+export default function Cockpit({ identity, callState, twilioStatus, forcedId, onSendDigits, onToggleMute, muted }) {
   const params = useParams();
   const id = forcedId || params.id;
   const navigate = useNavigate();
@@ -346,6 +346,9 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId })
               onEndCall={handleEndCall}
               onSaveNext={handleSaveNext}
               disabled={twilioStatus !== 'ready'}
+              onSendDigits={onSendDigits}
+              onToggleMute={onToggleMute}
+              muted={muted}
             />
           )}
         </>
