@@ -17,6 +17,9 @@ const router = Router();
 // POST /api/apollo/phone-webhook — Apollo sends phone numbers here
 router.post('/', async (req, res) => {
   try {
+    // Log raw payload for webhook delivery validation (Phase 0b)
+    console.log('Apollo webhook raw:', JSON.stringify(req.body).substring(0, 500));
+
     const body = req.body;
 
     // Apollo webhook payload contains the person object with phone_numbers
@@ -76,6 +79,10 @@ router.post('/', async (req, res) => {
 
     if (updated > 0) {
       console.log(`Apollo phone webhook: updated ${updated} contact(s) — ${name || email} → ${phone}`);
+    } else {
+      console.warn('Apollo phone webhook: UNMATCHED — no contact row updated', {
+        apolloId, email, name, phone,
+      });
     }
 
     res.json({ received: true, updated });

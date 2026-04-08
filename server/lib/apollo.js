@@ -13,6 +13,7 @@
 
 const BASE_URL = 'https://api.apollo.io/api/v1';
 const TIMEOUT_MS = 15000;
+const PHONE_REVEAL_CREDIT_COST = 8; // Apollo charges 8 credits for mobile phone reveals
 
 // Title filters for CNC manufacturing personas (from North Star Spear sequence)
 const DEFAULT_TITLE_FILTERS = [
@@ -166,7 +167,7 @@ async function searchPeopleByCompany(domain, titleFilters = DEFAULT_TITLE_FILTER
   const searchData = await searchResp.json();
   const previews = searchData.people || [];
 
-  // Step 3: Reveal contacts that have phone numbers (1 credit each)
+  // Step 3: Reveal contacts that have phone numbers (8 credits each for phone reveal)
   const withPhone = previews.filter(p => p.has_direct_phone === 'Yes');
   const contacts = [];
   let creditsUsed = 0;
@@ -176,7 +177,7 @@ async function searchPeopleByCompany(domain, titleFilters = DEFAULT_TITLE_FILTER
       const revealed = await revealPerson(preview.id);
       if (revealed) {
         contacts.push(revealed);
-        creditsUsed++;
+        creditsUsed += PHONE_REVEAL_CREDIT_COST;
       }
     } catch (err) {
       console.error(`Failed to reveal ${preview.id}:`, err.message);
@@ -186,4 +187,4 @@ async function searchPeopleByCompany(domain, titleFilters = DEFAULT_TITLE_FILTER
   return { previews, contacts, creditsUsed };
 }
 
-module.exports = { matchPerson, revealPerson, searchPeopleByCompany, DEFAULT_TITLE_FILTERS };
+module.exports = { matchPerson, revealPerson, searchPeopleByCompany, DEFAULT_TITLE_FILTERS, PHONE_REVEAL_CREDIT_COST };

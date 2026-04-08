@@ -15,7 +15,7 @@ const { pool } = require('../db');
 const { searchPeopleByCompany } = require('./apollo');
 const { normalizeCompanyName } = require('./company-normalizer');
 
-const APOLLO_DAILY_BUDGET = 400; // Matches V3.5 CAPACITY.DAILY_BUDGET.apollo
+const APOLLO_DAILY_BUDGET = 50; // Matches V3.5 CAPACITY.DAILY_BUDGET.apollo (Basic plan: 1K credits/mo)
 const BUDGET_EXHAUSTED_PCT = 0.95; // Stop at 95% to leave headroom for V3.5 pipeline
 const VALID_TIERS = new Set(['spear', 'targeted', 'awareness']);
 

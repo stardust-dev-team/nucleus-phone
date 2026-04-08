@@ -7,8 +7,9 @@
  *
  * Credit model:
  *   - Search (free): finds anonymized contact previews at a domain
- *   - Reveal (1 credit): gets full name, email, phone, LinkedIn for one person
+ *   - Reveal with phone (8 credits): gets full name, email, phone, LinkedIn
  *   - Only reveals contacts flagged has_direct_phone === "Yes"
+ *   - Credits are tracked in shared v35_credit_daily_ledger
  *
  * Usage: node scripts/run-enrichment-uncapped.js [--dry-run] [--limit N] [--credit-cap N]
  */
@@ -26,6 +27,29 @@ const pool = new Pool({
   max: 3,
 });
 
+const APOLLO_DAILY_BUDGET = 50;
+
+async function incrementLedger(credits) {
+  if (credits <= 0) return;
+  await pool.query(
+    `INSERT INTO v35_credit_daily_ledger (ledger_date, service, budget_limit, consumed, last_increment_at)
+     VALUES (CURRENT_DATE, 'apollo', $1, $2, NOW())
+     ON CONFLICT (ledger_date, service) DO UPDATE SET
+       consumed = v35_credit_daily_ledger.consumed + $2,
+       last_increment_at = NOW()`,
+    [APOLLO_DAILY_BUDGET, credits],
+  );
+}
+
+async function checkLedger() {
+  const { rows } = await pool.query(
+    `SELECT consumed, remaining FROM v35_credit_daily_ledger
+     WHERE ledger_date = CURRENT_DATE AND service = 'apollo'`,
+  );
+  if (!rows.length) return { consumed: 0, remaining: APOLLO_DAILY_BUDGET };
+  return { consumed: parseInt(rows[0].consumed), remaining: parseInt(rows[0].remaining) };
+}
+
 const DRY_RUN = process.argv.includes('--dry-run');
 const LIMIT = (() => {
   const idx = process.argv.indexOf('--limit');
@@ -33,7 +57,7 @@ const LIMIT = (() => {
 })();
 const CREDIT_CAP = (() => {
   const idx = process.argv.indexOf('--credit-cap');
-  return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : 5000;
+  return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : 400; // ~50 phone reveals at 8 credits each
 })();
 
 async function upsertContact(contact, company, batchId) {
@@ -138,6 +162,15 @@ async function run() {
       break;
     }
 
+    // Shared ledger budget check
+    if (!DRY_RUN) {
+      const ledger = await checkLedger();
+      if (ledger.remaining <= 0) {
+        console.log(`\n⛔ Shared daily budget exhausted (${ledger.consumed} consumed). Stopping.`);
+        break;
+      }
+    }
+
     try {
       if (DRY_RUN) {
         console.log(`  [${i + 1}/${companies.length}] [${tier}] Would enrich: ${c.company_name} (${c.domain})`);
@@ -165,6 +198,7 @@ async function run() {
       }
 
       totalCredits += creditsUsed;
+      if (creditsUsed > 0) await incrementLedger(creditsUsed);
       companiesProcessed++;
 
       // Progress checkpoint every 25 companies
