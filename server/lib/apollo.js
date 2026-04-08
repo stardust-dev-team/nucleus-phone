@@ -17,6 +17,22 @@ const BASE_URL = 'https://api.apollo.io/api/v1';
 const TIMEOUT_MS = 15000;
 const PHONE_REVEAL_CREDIT_COST = 8; // Apollo charges 8 credits for mobile phone reveals
 
+/**
+ * Extract a direct/mobile phone from Apollo's phone_numbers array.
+ * Returns null if only corporate/HQ numbers are available.
+ * sanitized_phone on the person object is always the org's main line — never use it.
+ */
+function pickDirectPhone(phoneNumbers) {
+  if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) return null;
+  const direct = phoneNumbers.find(p =>
+    (p.type_cd === 'mobile' || p.type_cd === 'direct' || p.type === 'mobile' || p.type === 'direct')
+    && p.status_cd !== 'invalid_number',
+  );
+  if (direct?.sanitized_number) return direct.sanitized_number;
+  // Only fall back to non-corporate types — skip 'work'/'other' which are usually HQ lines
+  return null;
+}
+
 // Title filters for CNC manufacturing personas (from North Star Spear sequence)
 const DEFAULT_TITLE_FILTERS = [
   'VP Operations', 'Director of Operations',
@@ -104,7 +120,7 @@ async function revealPerson(apolloId, requestPhone = true) {
     first_name: p.first_name || null,
     last_name: p.last_name || null,
     title: p.title || null,
-    phone: p.sanitized_phone || p.primary_phone?.number || p.phone_numbers?.[0]?.sanitized_number || null,
+    phone: pickDirectPhone(p.phone_numbers),
     email: p.email || null,
     linkedin_url: p.linkedin_url || null,
   };

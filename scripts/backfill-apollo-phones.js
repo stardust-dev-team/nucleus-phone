@@ -35,6 +35,19 @@ const LIMIT = (() => {
   return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : 600;
 })();
 
+/**
+ * Extract a direct/mobile phone from Apollo's phone_numbers array.
+ * sanitized_phone on the person object is always the org's main line — never use it.
+ */
+function pickDirectPhone(phoneNumbers) {
+  if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) return null;
+  const direct = phoneNumbers.find(p =>
+    (p.type_cd === 'mobile' || p.type_cd === 'direct' || p.type === 'mobile' || p.type === 'direct')
+    && p.status_cd !== 'invalid_number',
+  );
+  return direct?.sanitized_number || null;
+}
+
 async function matchByEmail(email) {
   const body = { email };
   if (WITH_PHONE) {
@@ -56,7 +69,7 @@ async function matchByEmail(email) {
 
   return {
     apollo_person_id: p.id || null,
-    phone: p.sanitized_phone || p.primary_phone?.number || p.phone_numbers?.[0]?.sanitized_number || null,
+    phone: pickDirectPhone(p.phone_numbers),
   };
 }
 

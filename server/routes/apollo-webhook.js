@@ -70,11 +70,12 @@ router.post('/', async (req, res) => {
         continue;
       }
 
-      // Match by apollo_person_id — the only reliable key in the webhook payload
+      // Match by apollo_person_id — the only reliable key in the webhook payload.
+      // Always overwrite: sync path may have stored a corporate HQ number from sanitized_phone.
       const result = await pool.query(
         `UPDATE v35_pb_contacts
          SET phone = $1
-         WHERE apollo_person_id = $2 AND source = 'apollo' AND phone IS NULL
+         WHERE apollo_person_id = $2 AND source = 'apollo'
          RETURNING id`,
         [phone, apolloId],
       );
