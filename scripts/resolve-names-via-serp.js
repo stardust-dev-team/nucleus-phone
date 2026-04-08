@@ -7,7 +7,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
  *           where full names appear in titles and descriptions.
  *   Pass 2: Search LinkedIn profiles (sometimes non-truncated on Google).
  *
- * Cost: ~$0.002 per query (one query per contact). 155 contacts ≈ $0.31.
+ * Cost: ~$0.014 per query (one query per contact). 155 contacts ≈ $2.17.
  *
  * Usage: node scripts/resolve-names-via-serp.js [--dry-run] [--limit N]
  */

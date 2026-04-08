@@ -57,7 +57,7 @@ const LIMIT = (() => {
 })();
 const CREDIT_CAP = (() => {
   const idx = process.argv.indexOf('--credit-cap');
-  return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : 400; // ~50 phone reveals at 8 credits each
+  return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : APOLLO_DAILY_BUDGET;
 })();
 
 async function upsertContact(contact, company, batchId) {

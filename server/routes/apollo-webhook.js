@@ -17,7 +17,7 @@ const router = Router();
 // POST /api/apollo/phone-webhook — Apollo sends phone numbers here
 router.post('/', async (req, res) => {
   try {
-    // Log raw payload for webhook delivery validation (Phase 0b)
+    // TODO: Remove after Phase 0b validation complete (nucleus-phone-1jc)
     console.log('Apollo webhook raw:', JSON.stringify(req.body).substring(0, 500));
 
     const body = req.body;

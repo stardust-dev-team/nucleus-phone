@@ -61,7 +61,8 @@ const PHONE_WEBHOOK_URL = process.env.APOLLO_PHONE_WEBHOOK_URL
   || 'https://nucleus-phone.onrender.com/api/apollo/phone-webhook';
 
 /**
- * Reveal a person's full contact details by Apollo ID. Consumes 1 credit.
+ * Reveal a person's full contact details by Apollo ID.
+ * Consumes 1 credit (email only) or 8 credits (with phone reveal).
  * Phone numbers are delivered asynchronously via webhook — the synchronous
  * response contains name, email, title, LinkedIn but NOT phone.
  *
