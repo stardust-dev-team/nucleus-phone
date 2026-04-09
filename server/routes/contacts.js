@@ -11,10 +11,11 @@ const router = Router();
 // GET /api/contacts/signal — companies with nested contacts, ordered by signal_score
 router.get('/signal', apiKeyAuth, async (req, res) => {
   try {
-    const { signal_tier, geo_state, has_phone, limit = '50', offset = '0' } = req.query;
+    const { signal_tier, geo_state, timezone, has_phone, limit = '50', offset = '0' } = req.query;
     const result = await getSignalContacts({
       signal_tier: signal_tier || undefined,
       geo_state: geo_state || undefined,
+      timezone: timezone || undefined,
       has_phone: has_phone !== 'false', // default true
       limit: parseInt(limit, 10) || 50,
       offset: parseInt(offset, 10) || 0,

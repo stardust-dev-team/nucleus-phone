@@ -12,13 +12,14 @@
 
 const { pool } = require('../db');
 const { normalizeCompanyName } = require('./company-normalizer');
+const { statesForTimezone } = require('./timezones');
 
 /**
  * Build the shared WHERE clause for signal company queries.
  * Used by both getSignalContacts and the pipeline route.
  * Safe: conditions are built from hardcoded column names only.
  */
-function buildSignalWhere({ signal_tier, geo_state }) {
+function buildSignalWhere({ signal_tier, geo_state, timezone }) {
   const conditions = [];
   const values = [];
   let idx = 1;
@@ -27,7 +28,15 @@ function buildSignalWhere({ signal_tier, geo_state }) {
     conditions.push(`sm.signal_tier = $${idx++}`);
     values.push(signal_tier);
   }
-  if (geo_state) {
+
+  // timezone expands to multiple states via IN; geo_state is a single-state exact match
+  if (timezone) {
+    const states = statesForTimezone(timezone);
+    if (states && states.length > 0) {
+      conditions.push(`lr.geo_state = ANY($${idx++})`);
+      values.push(states);
+    }
+  } else if (geo_state) {
     conditions.push(`lr.geo_state = $${idx++}`);
     values.push(geo_state);
   }
@@ -47,9 +56,9 @@ function buildSignalWhere({ signal_tier, geo_state }) {
  * @returns {Promise<{ companies: Object[], total: number }>}
  */
 async function getSignalContacts({
-  signal_tier, geo_state, has_phone = true, limit = 50, offset = 0,
+  signal_tier, geo_state, timezone, has_phone = true, limit = 50, offset = 0,
 } = {}) {
-  const { where, values, idx } = buildSignalWhere({ signal_tier, geo_state });
+  const { where, values, idx } = buildSignalWhere({ signal_tier, geo_state, timezone });
   const lim = Math.max(1, Math.min(limit, 200));
   const off = Math.max(0, offset);
 

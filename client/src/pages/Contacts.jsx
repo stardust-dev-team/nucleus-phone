@@ -7,6 +7,44 @@ const TIER_BORDER = { spear: 'border-jv-red', targeted: 'border-jv-amber', aware
 const TIER_TEXT = { spear: 'text-jv-red', targeted: 'text-jv-amber', awareness: 'text-gray-400' };
 const STATES = ['OH', 'TX', 'CA', 'MI', 'PA', 'CT', 'WI', 'MN', 'NY', 'FL', 'AZ'];
 
+// Timezone filter groups + IANA mapping for local time display
+const TIMEZONE_OPTIONS = [
+  { value: 'eastern',  label: 'Eastern' },
+  { value: 'central',  label: 'Central' },
+  { value: 'mountain', label: 'Mountain' },
+  { value: 'pacific',  label: 'Pacific' },
+];
+
+const STATE_TO_IANA = {
+  CT: 'America/New_York', DE: 'America/New_York', FL: 'America/New_York',
+  GA: 'America/New_York', IN: 'America/New_York', KY: 'America/New_York',
+  MA: 'America/New_York', MD: 'America/New_York', ME: 'America/New_York',
+  MI: 'America/New_York', NC: 'America/New_York', NH: 'America/New_York',
+  NJ: 'America/New_York', NY: 'America/New_York', OH: 'America/New_York',
+  PA: 'America/New_York', RI: 'America/New_York', SC: 'America/New_York',
+  TN: 'America/New_York', VA: 'America/New_York', VT: 'America/New_York',
+  WV: 'America/New_York', DC: 'America/New_York',
+  AL: 'America/Chicago', AR: 'America/Chicago', IA: 'America/Chicago',
+  IL: 'America/Chicago', KS: 'America/Chicago', LA: 'America/Chicago',
+  MN: 'America/Chicago', MO: 'America/Chicago', MS: 'America/Chicago',
+  NE: 'America/Chicago', ND: 'America/Chicago', OK: 'America/Chicago',
+  SD: 'America/Chicago', TX: 'America/Chicago', WI: 'America/Chicago',
+  CO: 'America/Denver', ID: 'America/Denver', MT: 'America/Denver',
+  NM: 'America/Denver', UT: 'America/Denver', WY: 'America/Denver',
+  AZ: 'America/Phoenix',
+  CA: 'America/Los_Angeles', NV: 'America/Los_Angeles',
+  OR: 'America/Los_Angeles', WA: 'America/Los_Angeles',
+  AK: 'America/Anchorage', HI: 'Pacific/Honolulu',
+};
+
+function localTimeStr(geoState, now) {
+  const iana = STATE_TO_IANA[geoState];
+  if (!iana) return null;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: iana, hour: 'numeric', minute: '2-digit', hour12: true,
+  }).format(now);
+}
+
 function TierBadge({ tier }) {
   return (
     <span className={`${TIER_COLORS[tier] || 'bg-gray-500'} text-white px-1.5 py-0.5 rounded text-[10px] font-bold uppercase`}>
@@ -61,7 +99,7 @@ function certBadge(expiryDate, standard) {
   return null; // Not urgent enough to badge
 }
 
-function CompanyCard({ company, navigate, twilioStatus }) {
+function CompanyCard({ company, navigate, twilioStatus, now }) {
   const contract = formatCurrency(company.contract_total);
   const cert = certBadge(company.cert_expiry_date, company.cert_standard);
   const certStr = formatExpiry(company.cert_expiry_date);
@@ -89,6 +127,14 @@ function CompanyCard({ company, navigate, twilioStatus }) {
           {company.interaction_count > 0 && (
             <span className="text-[10px] text-jv-muted shrink-0">{company.interaction_count} {company.interaction_count === 1 ? 'touch' : 'touches'}</span>
           )}
+          {company.geo_state && (() => {
+            const lt = localTimeStr(company.geo_state, now);
+            return lt ? (
+              <span className="text-[10px] text-jv-muted shrink-0" title={`Local time in ${company.geo_state}`}>
+                {company.geo_state} {lt}
+              </span>
+            ) : null;
+          })()}
           <span className="text-jv-amber text-xs ml-auto shrink-0">⚡ {company.signal_score}</span>
         </div>
         {details.length > 0 && (
@@ -169,19 +215,31 @@ export default function Contacts({ identity, callState, twilioStatus }) {
   const [loading, setLoading] = useState(true);
   const [tier, setTier] = useState('');
   const [state, setState] = useState('');
-  const [contactFilter, setContactFilter] = useState(FILTER_HAS_PHONE);
-  const [awarenessOpen, setAwarenessOpen] = useState(false);
+  const [timezone, setTimezone] = useState('');
+  const [contactFilter, setContactFilter] = useState(FILTER_ALL);
+  const [now, setNow] = useState(() => new Date());
   const navigate = useNavigate();
+
+  // Tick the clock every 60s for live local-time display
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   const fetchSignal = useCallback(async () => {
     setLoading(true);
     try {
-      // Show all contacts — phone numbers populate as Apollo enrichment runs
-      const data = await getSignalContacts({ signal_tier: tier || undefined, geo_state: state || undefined, has_phone: false, limit: 200 });
+      const data = await getSignalContacts({
+        signal_tier: tier || undefined,
+        geo_state: state || undefined,
+        timezone: timezone || undefined,
+        has_phone: false,
+        limit: 200,
+      });
       setCompanies(data.companies || []);
     } catch (err) { console.error('Signal contacts fetch failed:', err); setCompanies([]); }
     finally { setLoading(false); }
-  }, [tier, state]);
+  }, [tier, state, timezone]);
 
   useEffect(() => { fetchSignal(); }, [fetchSignal]);
 
@@ -204,10 +262,10 @@ export default function Contacts({ identity, callState, twilioStatus }) {
       ? companies.filter(c => c.contact_count > 0)
       : companies;
   const filterHidingResults = filtered.length === 0 && companies.length > 0 && contactFilter !== FILTER_ALL;
-  // When a specific tier is selected, show all matches in one flat list.
-  // Only split into main + collapsed awareness when showing all tiers.
-  const spearTargeted = tier ? filtered : filtered.filter(c => c.signal_tier !== 'awareness');
-  const awareness = tier ? [] : filtered.filter(c => c.signal_tier === 'awareness');
+  // Default (no tier selected): spear + targeted only. Awareness only shows when explicitly selected.
+  const visible = tier
+    ? filtered
+    : filtered.filter(c => c.signal_tier !== 'awareness');
 
   return (
     <div className="flex flex-col h-full">
@@ -227,8 +285,16 @@ export default function Contacts({ identity, callState, twilioStatus }) {
           </button>
         ))}
         <select
+          value={timezone}
+          onChange={e => { setTimezone(e.target.value); setState(''); }}
+          className="px-2 py-1 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted"
+        >
+          <option value="">All timezones</option>
+          {TIMEZONE_OPTIONS.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+        </select>
+        <select
           value={state}
-          onChange={e => setState(e.target.value)}
+          onChange={e => { setState(e.target.value); setTimezone(''); }}
           className="px-2 py-1 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted"
         >
           <option value="">All states</option>
@@ -288,39 +354,15 @@ export default function Contacts({ identity, callState, twilioStatus }) {
           </p>
         ))}
 
-        {spearTargeted.map(company => (
+        {visible.map(company => (
           <CompanyCard
             key={company.domain}
             company={company}
             navigate={navigate}
             twilioStatus={twilioStatus}
+            now={now}
           />
         ))}
-
-        {/* Awareness section — collapsed by default */}
-        {awareness.length > 0 && !tier && (
-          <div className="mt-4">
-            <button
-              onClick={() => setAwarenessOpen(!awarenessOpen)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted"
-            >
-              <span>AWARENESS ({awareness.length} companies)</span>
-              <span>{awarenessOpen ? '▾' : '▸'}</span>
-            </button>
-            {awarenessOpen && (
-              <div className="space-y-3 mt-3">
-                {awareness.map(company => (
-                  <CompanyCard
-                    key={company.domain}
-                    company={company}
-                    navigate={navigate}
-                    twilioStatus={twilioStatus}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

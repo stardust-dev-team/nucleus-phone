@@ -64,10 +64,11 @@ export function searchContacts(q, limit = 50) {
   return apiFetch(`/contacts?${params}`);
 }
 
-export function getSignalContacts({ signal_tier, geo_state, has_phone = true, limit = 50, offset = 0 } = {}) {
+export function getSignalContacts({ signal_tier, geo_state, timezone, has_phone = true, limit = 50, offset = 0 } = {}) {
   const params = new URLSearchParams();
   if (signal_tier) params.set('signal_tier', signal_tier);
-  if (geo_state) params.set('geo_state', geo_state);
+  if (timezone) params.set('timezone', timezone);
+  else if (geo_state) params.set('geo_state', geo_state);
   if (!has_phone) params.set('has_phone', 'false');
   params.set('limit', limit);
   params.set('offset', offset);
