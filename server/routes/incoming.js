@@ -28,12 +28,17 @@ const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 // Parse per-number routing config. Each entry maps a Twilio number (E.164)
 // to { forward: E.164, slack: channel/DM ID, name: rep display name }.
 let inboundRoutes = {};
-try {
-  if (process.env.INBOUND_ROUTES) {
+if (process.env.INBOUND_ROUTES) {
+  try {
     inboundRoutes = JSON.parse(process.env.INBOUND_ROUTES);
+    const routes = Object.entries(inboundRoutes);
+    if (routes.length === 0 || !routes.some(([, v]) => v.forward)) {
+      throw new Error('INBOUND_ROUTES has no valid routes with "forward" field');
+    }
+  } catch (err) {
+    console.error('FATAL: INBOUND_ROUTES is invalid:', err.message);
+    process.exit(1);
   }
-} catch (err) {
-  console.error('incoming: failed to parse INBOUND_ROUTES:', err.message);
 }
 
 /**

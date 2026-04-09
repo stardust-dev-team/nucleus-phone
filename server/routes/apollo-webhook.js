@@ -18,22 +18,18 @@ const { pool } = require('../db');
 const router = Router();
 
 /**
- * Pick the best phone number from Apollo's phone_numbers array.
- * Prefers mobile/direct with valid status, falls back to first sanitized number.
+ * Pick a direct/mobile phone from Apollo's phone_numbers array.
+ * Returns { phone, type } or null. Never falls back to work/other (corporate HQ).
  */
-function pickBestPhone(phoneNumbers) {
+function pickDirectPhoneWithType(phoneNumbers) {
   if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) return null;
-
-  // Apollo docs say type_cd; accept both type_cd and type defensively
   const direct = phoneNumbers.find(p =>
     (p.type_cd === 'mobile' || p.type_cd === 'direct' || p.type === 'mobile' || p.type === 'direct')
     && p.status_cd !== 'invalid_number',
   );
-  if (direct?.sanitized_number) return direct.sanitized_number;
-
-  const valid = phoneNumbers.find(p => p.status_cd !== 'invalid_number');
-  return valid?.sanitized_number || valid?.raw_number
-    || phoneNumbers[0]?.sanitized_number || phoneNumbers[0]?.raw_number || null;
+  if (!direct?.sanitized_number) return null;
+  const type = direct.type_cd || direct.type || 'mobile';
+  return { phone: direct.sanitized_number, type };
 }
 
 // POST /api/apollo/phone-webhook — Apollo sends phone numbers here
@@ -64,8 +60,8 @@ router.post('/', async (req, res) => {
         continue;
       }
 
-      const phone = pickBestPhone(entry.phone_numbers);
-      if (!phone) {
+      const phoneResult = pickDirectPhoneWithType(entry.phone_numbers);
+      if (!phoneResult) {
         console.warn('Apollo phone webhook: no usable phone', { apolloId });
         continue;
       }
@@ -74,10 +70,10 @@ router.post('/', async (req, res) => {
       // Always overwrite: sync path may have stored a corporate HQ number from sanitized_phone.
       const result = await pool.query(
         `UPDATE v35_pb_contacts
-         SET phone = $1, phone_type = 'mobile'
-         WHERE apollo_person_id = $2 AND source = 'apollo'
+         SET phone = $1, phone_type = $2
+         WHERE apollo_person_id = $3 AND source = 'apollo'
          RETURNING id`,
-        [phone, apolloId],
+        [phoneResult.phone, phoneResult.type, apolloId],
       );
 
       if (result.rowCount > 0) {

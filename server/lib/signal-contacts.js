@@ -103,7 +103,7 @@ async function getSignalContacts({
     ? await pool.query(
         `SELECT full_name, first_name, last_name, title, company_name,
                 company_name_norm, linkedin_profile_url, location, industry,
-                CASE WHEN phone_type = 'mobile' THEN phone ELSE NULL END AS phone,
+                CASE WHEN phone_type IN ('mobile', 'direct') THEN phone ELSE NULL END AS phone,
                 email, source
          FROM v35_pb_contacts
          WHERE company_name_norm = ANY($1)`,
