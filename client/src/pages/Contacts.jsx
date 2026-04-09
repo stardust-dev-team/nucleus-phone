@@ -7,7 +7,7 @@ const TIER_BORDER = { spear: 'border-jv-red', targeted: 'border-jv-amber', aware
 const TIER_TEXT = { spear: 'text-jv-red', targeted: 'text-jv-amber', awareness: 'text-gray-400' };
 const STATES = ['OH', 'TX', 'CA', 'MI', 'PA', 'CT', 'WI', 'MN', 'NY', 'FL', 'AZ'];
 
-// Timezone filter groups + IANA mapping for local time display
+// Timezone filter options (labels only — mapping lives server-side in timezones.js)
 const TIMEZONE_OPTIONS = [
   { value: 'eastern',  label: 'Eastern' },
   { value: 'central',  label: 'Central' },
@@ -15,34 +15,18 @@ const TIMEZONE_OPTIONS = [
   { value: 'pacific',  label: 'Pacific' },
 ];
 
-const STATE_TO_IANA = {
-  CT: 'America/New_York', DE: 'America/New_York', FL: 'America/New_York',
-  GA: 'America/New_York', IN: 'America/New_York', KY: 'America/New_York',
-  MA: 'America/New_York', MD: 'America/New_York', ME: 'America/New_York',
-  MI: 'America/New_York', NC: 'America/New_York', NH: 'America/New_York',
-  NJ: 'America/New_York', NY: 'America/New_York', OH: 'America/New_York',
-  PA: 'America/New_York', RI: 'America/New_York', SC: 'America/New_York',
-  TN: 'America/New_York', VA: 'America/New_York', VT: 'America/New_York',
-  WV: 'America/New_York', DC: 'America/New_York',
-  AL: 'America/Chicago', AR: 'America/Chicago', IA: 'America/Chicago',
-  IL: 'America/Chicago', KS: 'America/Chicago', LA: 'America/Chicago',
-  MN: 'America/Chicago', MO: 'America/Chicago', MS: 'America/Chicago',
-  NE: 'America/Chicago', ND: 'America/Chicago', OK: 'America/Chicago',
-  SD: 'America/Chicago', TX: 'America/Chicago', WI: 'America/Chicago',
-  CO: 'America/Denver', ID: 'America/Denver', MT: 'America/Denver',
-  NM: 'America/Denver', UT: 'America/Denver', WY: 'America/Denver',
-  AZ: 'America/Phoenix',
-  CA: 'America/Los_Angeles', NV: 'America/Los_Angeles',
-  OR: 'America/Los_Angeles', WA: 'America/Los_Angeles',
-  AK: 'America/Anchorage', HI: 'Pacific/Honolulu',
-};
-
-function localTimeStr(geoState, now) {
-  const iana = STATE_TO_IANA[geoState];
+// Cache DateTimeFormat instances by IANA timezone (~6 unique, reused every tick)
+const formatterCache = new Map();
+function localTimeStr(iana, now) {
   if (!iana) return null;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: iana, hour: 'numeric', minute: '2-digit', hour12: true,
-  }).format(now);
+  let fmt = formatterCache.get(iana);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: iana, hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+    formatterCache.set(iana, fmt);
+  }
+  return fmt.format(now);
 }
 
 function TierBadge({ tier }) {
@@ -103,6 +87,7 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
   const contract = formatCurrency(company.contract_total);
   const cert = certBadge(company.cert_expiry_date, company.cert_standard);
   const certStr = formatExpiry(company.cert_expiry_date);
+  const localTime = localTimeStr(company.iana_timezone, now);
   const details = [
     !cert && certStr && `${company.cert_standard || 'Cert'} expires ${certStr}`,
     contract && `${company.dod_flag ? 'DoD ' : ''}${contract}`,
@@ -127,14 +112,11 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
           {company.interaction_count > 0 && (
             <span className="text-[10px] text-jv-muted shrink-0">{company.interaction_count} {company.interaction_count === 1 ? 'touch' : 'touches'}</span>
           )}
-          {company.geo_state && (() => {
-            const lt = localTimeStr(company.geo_state, now);
-            return lt ? (
-              <span className="text-[10px] text-jv-muted shrink-0" title={`Local time in ${company.geo_state}`}>
-                {company.geo_state} {lt}
-              </span>
-            ) : null;
-          })()}
+          {localTime && (
+            <span className="text-[10px] text-jv-muted shrink-0" title={`Local time in ${company.geo_state}`}>
+              {company.geo_state} {localTime}
+            </span>
+          )}
           <span className="text-jv-amber text-xs ml-auto shrink-0">⚡ {company.signal_score}</span>
         </div>
         {details.length > 0 && (
@@ -217,6 +199,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
   const [state, setState] = useState('');
   const [timezone, setTimezone] = useState('');
   const [contactFilter, setContactFilter] = useState(FILTER_HAS_PHONE);
+  const [visibleCount, setVisibleCount] = useState(50);
   const [now, setNow] = useState(() => new Date());
   const navigate = useNavigate();
 
@@ -228,6 +211,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
 
   const fetchSignal = useCallback(async () => {
     setLoading(true);
+    setVisibleCount(50);
     try {
       const data = await getSignalContacts({
         signal_tier: tier || undefined,
@@ -263,9 +247,11 @@ export default function Contacts({ identity, callState, twilioStatus }) {
       : companies;
   const filterHidingResults = filtered.length === 0 && companies.length > 0 && contactFilter !== FILTER_ALL;
   // Default (no tier selected): spear + targeted only. Awareness only shows when explicitly selected.
-  const visible = tier
+  const allVisible = tier
     ? filtered
     : filtered.filter(c => c.signal_tier !== 'awareness');
+  const visible = allVisible.slice(0, visibleCount);
+  const hasMore = visibleCount < allVisible.length;
 
   return (
     <div className="flex flex-col h-full">
@@ -363,6 +349,15 @@ export default function Contacts({ identity, callState, twilioStatus }) {
             now={now}
           />
         ))}
+
+        {hasMore && (
+          <button
+            onClick={() => setVisibleCount(prev => prev + 50)}
+            className="w-full py-2 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted hover:text-white transition-colors"
+          >
+            Show more ({allVisible.length - visibleCount} remaining)
+          </button>
+        )}
       </div>
     </div>
   );

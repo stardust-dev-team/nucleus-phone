@@ -12,7 +12,7 @@
 
 const { pool } = require('../db');
 const { normalizeCompanyName } = require('./company-normalizer');
-const { statesForTimezone } = require('./timezones');
+const { statesForTimezone, STATE_TO_IANA } = require('./timezones');
 
 /**
  * Build the shared WHERE clause for signal company queries.
@@ -206,6 +206,7 @@ async function getSignalContacts({
 
     return {
       ...company,
+      iana_timezone: STATE_TO_IANA[company.geo_state] || null,
       contacts: visibleContacts,
       contact_count: companyContacts.length,
       phone_count: withPhone.length,
