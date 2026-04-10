@@ -36,7 +36,8 @@ export default function useAskNucleus() {
       .then((data) => {
         setConversationId(data.id);
         // Filter to user+assistant text messages, preserve escalation objects
-        // so the "Send to Tom" button survives page reload.
+        // so the "Send to Tom" button survives page reload. Skip _debug entries
+        // from server-side DB-backed diagnostic logging.
         const cleaned = (data.messages || [])
           .filter(m => m.role === 'user' || m.role === 'assistant')
           .map(m => ({

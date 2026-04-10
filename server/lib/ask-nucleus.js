@@ -391,6 +391,19 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
   await appendMessage(conv.id, userMsg);
   log('user message appended');
 
+  // DB-backed diagnostic logger — bypasses broken Render logs API.
+  // Writes each step as a debug entry in the conversation's messages array.
+  // Query: SELECT messages FROM ask_nucleus_conversations WHERE id = X
+  const dbLog = async (step, extra = {}) => {
+    try {
+      await pool.query(
+        `UPDATE ask_nucleus_conversations SET messages = messages || $1::jsonb WHERE id = $2`,
+        [JSON.stringify([{ role: '_debug', step, ts: new Date().toISOString(), ...extra }]), conv.id]
+      );
+    } catch { /* noop */ }
+  };
+  await dbLog('runChat:userAppended');
+
   // Build messages for Anthropic (last N from conversation)
   const allMessages = [...conv.messages, userMsg];
   const historySlice = allMessages.slice(-MAX_HISTORY_MESSAGES);
@@ -435,9 +448,13 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
 
   async function callAnthropic(stream, disableTools = false) {
     log('callAnthropic start', { stream, disableTools, msgCount: currentMessages.length });
+    await dbLog('callAnthropic:start', { stream, disableTools, msgCount: currentMessages.length });
     currentRoundController = new AbortController();
     const timer = setTimeout(
-      () => currentRoundController.abort(),
+      () => {
+        dbLog('callAnthropic:timeout_fired').catch(() => {});
+        currentRoundController.abort();
+      },
       stream ? STREAM_TIMEOUT : NON_STREAM_TIMEOUT
     );
     const body = {
@@ -448,8 +465,10 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
       stream,
       ...(disableTools ? {} : { tools: TOOLS }),
     };
+    await dbLog('callAnthropic:bodyBuilt', { bodyBytes: JSON.stringify(body).length });
     try {
       const fetchStart = Date.now();
+      await dbLog('callAnthropic:beforeFetch');
       const resp = await fetch(ANTHROPIC_URL, {
         method: 'POST',
         signal: currentRoundController.signal,
@@ -460,10 +479,13 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
         },
         body: JSON.stringify(body),
       });
-      log('callAnthropic fetch returned', { status: resp.status, ms: Date.now() - fetchStart });
+      const elapsed = Date.now() - fetchStart;
+      log('callAnthropic fetch returned', { status: resp.status, ms: elapsed });
+      await dbLog('callAnthropic:fetchReturned', { status: resp.status, ms: elapsed });
       if (!resp.ok) {
         const errBody = await resp.text();
         log('callAnthropic non-ok body', errBody.substring(0, 300));
+        await dbLog('callAnthropic:nonOk', { status: resp.status, body: errBody.substring(0, 300) });
         throw new Error(`Claude API ${resp.status}: ${errBody.substring(0, 300)}`);
       }
       return resp;
@@ -472,6 +494,7 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
       // in some race conditions. Catch both forms.
       const isAbort = err.name === 'AbortError' || err.cause?.name === 'AbortError';
       log('callAnthropic error', err.name, err.message, isAbort ? '(abort)' : '');
+      await dbLog('callAnthropic:error', { name: err.name, message: err.message, isAbort, cause: err.cause?.name });
       throw err;
     } finally {
       clearTimeout(timer);
