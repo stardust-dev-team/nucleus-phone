@@ -27,21 +27,25 @@ const RS_OPEN_FRAME = [
   { model: 'JRS-100',   hp: 100,  cfm: 405, psi: 150, price: null,  voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'direct',    pricingStatus: 'quote_required' },
 ];
 
-// --- Permanent Magnet VSD (Enclosed, Variable Speed) — 10 to 150 HP ---
+// --- Permanent Magnet VSD (Enclosed, Variable Speed) — 10 to 200 HP ---
 // CFM @ 150 PSI from official CAS PermMagBrochure.pdf.
 // IE4 Super Premium motors, zero-loss direct-drive, liquid-cooled.
-// All direct sale only.
+// All direct sale — reps should route to Alex for sizing consultation, but
+// starting MSRPs below are confirmed and quotable as an anchor ("starts around $X").
+// MSRPs confirmed 2026-04-10 from CAS net pricing. Marked 'confirmed' when Billy
+// has provided a net cost we've priced against; 'quote_required' where no cost is available.
 const PM_VSD = [
-  { model: 'JVSD-10',   hp: 10,   cfm: 34,  psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-15',   hp: 15,   cfm: 53,  psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-20',   hp: 20,   cfm: 71,  psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-30',   hp: 30,   cfm: 109, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-50',   hp: 50,   cfm: 187, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-60',   hp: 60,   cfm: 230, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-75',   hp: 75,   cfm: 320, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-100',  hp: 100,  cfm: 406, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-125',  hp: 125,  cfm: 577, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
-  { model: 'JVSD-150',  hp: 150,  cfm: 741, psi: 150, price: null, voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
+  { model: 'JVSD-10',   hp: 10,   cfm: 34,  psi: 150, price: null,    voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
+  { model: 'JVSD-15',   hp: 15,   cfm: 53,  psi: 150, price: null,    voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
+  { model: 'JVSD-20',   hp: 20,   cfm: 71,  psi: 150, price: null,    voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
+  { model: 'JVSD-30',   hp: 30,   cfm: 109, psi: 150, price: null,    voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
+  { model: 'JVSD-50',   hp: 50,   cfm: 187, psi: 150, price: 36995,   voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'confirmed' },
+  { model: 'JVSD-60',   hp: 60,   cfm: 230, psi: 150, price: null,    voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'quote_required' },
+  { model: 'JVSD-75',   hp: 75,   cfm: 320, psi: 150, price: 62995,   voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'confirmed' },
+  { model: 'JVSD-100',  hp: 100,  cfm: 406, psi: 150, price: 74995,   voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'confirmed' },
+  { model: 'JVSD-125',  hp: 125,  cfm: 577, psi: 150, price: 84995,   voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'confirmed' },
+  { model: 'JVSD-150',  hp: 150,  cfm: 741, psi: 150, price: 109995,  voltage: '208-230-460V/3ph', productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'confirmed' },
+  { model: 'JVSD-200',  hp: 200,  cfm: 960, psi: 150, price: 139995,  voltage: '460V/3ph',         productLine: 'pm_vsd', salesChannel: 'direct', pricingStatus: 'confirmed' },
 ];
 
 // --- Large Frame Enclosed — 125 to 476 HP ---
