@@ -25,6 +25,9 @@ router.post('/', sessionAuth, async (req, res) => {
     'X-Accel-Buffering': 'no',
     Connection: 'keep-alive',
   });
+  // Force flush headers immediately so the client connection opens
+  // and we can start writing SSE events without buffering.
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   const controller = new AbortController();
   req.on('close', () => controller.abort());
@@ -33,6 +36,23 @@ router.post('/', sessionAuth, async (req, res) => {
     if (!res.writableEnded) {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     }
+  }
+
+  // Immediate probe event — confirms SSE pipeline is reaching the client
+  // before we even call Anthropic. If the client sees text but no probe,
+  // something stripped our delta. If the client sees nothing, SSE itself
+  // is buffered by Render's proxy.
+  sendSSE({ type: 'text_delta', text: '' });
+
+  // ASK_TEST_MODE=1 bypasses runChat entirely and returns a canned response.
+  // Used to isolate whether the SSE pipeline works independently of Anthropic.
+  if (process.env.ASK_TEST_MODE === '1') {
+    console.log('[ask route] ASK_TEST_MODE — returning canned response');
+    sendSSE({ type: 'text_delta', text: 'Test mode: SSE pipeline is working. ' });
+    sendSSE({ type: 'text_delta', text: 'The server received your message and is streaming this response without calling Anthropic. ' });
+    sendSSE({ type: 'text_delta', text: `Your identity: ${req.user.identity}, role: ${req.user.role}.` });
+    sendSSE({ type: 'done', conversationId: conversationId || 0, escalation: null });
+    return res.end();
   }
 
   console.log('[ask route] POST /api/ask start', { identity: req.user.identity, msgLen: message.length, conversationId });
