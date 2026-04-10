@@ -464,11 +464,14 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
       if (!resp.ok) {
         const errBody = await resp.text();
         log('callAnthropic non-ok body', errBody.substring(0, 300));
-        throw new Error(`Claude API ${resp.status}: ${errBody.substring(0, 200)}`);
+        throw new Error(`Claude API ${resp.status}: ${errBody.substring(0, 300)}`);
       }
       return resp;
     } catch (err) {
-      log('callAnthropic error', err.name, err.message);
+      // Undici wraps abort errors in TypeError with cause.name === 'AbortError'
+      // in some race conditions. Catch both forms.
+      const isAbort = err.name === 'AbortError' || err.cause?.name === 'AbortError';
+      log('callAnthropic error', err.name, err.message, isAbort ? '(abort)' : '');
       throw err;
     } finally {
       clearTimeout(timer);
@@ -499,16 +502,17 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
   }
 
   try {
-    // DIAGNOSTIC: streaming mode is hanging in production. Force non-streaming
-    // for all turns until we identify the root cause. The client still sees
-    // responses — just buffered as one chunk at the end instead of token-by-token.
-    const FORCE_NON_STREAMING = true;
+    // DIAGNOSTIC: streaming fetch hangs in production. Toggle via env var:
+    //   FORCE_NON_STREAMING=1 → force stream=false (buffered response)
+    //   unset/0             → normal streaming behavior
+    // This lets us A/B without a redeploy cycle.
+    const forceNonStreaming = process.env.FORCE_NON_STREAMING === '1';
 
     // Tool-use loop: stream first turn, non-streaming for tool continuations
     while (toolRound <= MAX_TOOL_ROUNDS) {
       if (signal?.aborted) throw new Error('aborted');
 
-      const stream = FORCE_NON_STREAMING ? false : (toolRound === 0);
+      const stream = forceNonStreaming ? false : (toolRound === 0);
       const resp = await callAnthropic(stream);
 
       if (stream) {

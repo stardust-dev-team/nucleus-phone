@@ -55,12 +55,19 @@ router.post('/', sessionAuth, async (req, res) => {
     });
   } catch (err) {
     // Client disconnect aborts — swallow silently (nothing to send to)
-    if (err.name === 'AbortError' || err.message === 'aborted') {
+    const isAbort = err.name === 'AbortError' || err.cause?.name === 'AbortError' || err.message === 'aborted';
+    if (isAbort) {
       console.log('[ask route] client aborted');
       return;
     }
     console.error('[ask route] error:', err.name, err.message, err.stack);
-    sendSSE({ type: 'error', message: `Error: ${err.message || 'Something went wrong'}` });
+    // DEBUG_ASK_ERRORS=1 surfaces raw error.message to the client via SSE.
+    // Leave off in normal operation — raw API errors can leak config details.
+    const debugErrors = process.env.DEBUG_ASK_ERRORS === '1';
+    const clientMsg = debugErrors
+      ? `Error: ${err.message || 'Something went wrong'}`
+      : 'Something went wrong. Try again.';
+    sendSSE({ type: 'error', message: clientMsg });
   } finally {
     if (!res.writableEnded) res.end();
   }
