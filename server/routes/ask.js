@@ -31,9 +31,15 @@ router.post('/', sessionAuth, async (req, res) => {
 
   const controller = new AbortController();
   let clientDisconnected = false;
-  req.on('close', () => {
-    clientDisconnected = true;
-    controller.abort();
+  // Use res.on('close'), NOT req.on('close'). Render's proxy half-closes the
+  // request side as soon as the POST body is received — triggering req 'close'
+  // before runChat has even called Anthropic. res 'close' only fires when the
+  // actual client connection drops (or we end the response ourselves).
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      clientDisconnected = true;
+      controller.abort();
+    }
   });
 
   function sendSSE(data) {
