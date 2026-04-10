@@ -30,7 +30,11 @@ router.post('/', sessionAuth, async (req, res) => {
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   const controller = new AbortController();
-  req.on('close', () => controller.abort());
+  let clientDisconnected = false;
+  req.on('close', () => {
+    clientDisconnected = true;
+    controller.abort();
+  });
 
   function sendSSE(data) {
     if (!res.writableEnded) {
@@ -74,10 +78,10 @@ router.post('/', sessionAuth, async (req, res) => {
       escalation: result.escalation || null,
     });
   } catch (err) {
-    // Client disconnect aborts — swallow silently (nothing to send to)
-    const isAbort = err.name === 'AbortError' || err.cause?.name === 'AbortError' || err.message === 'aborted';
-    if (isAbort) {
-      console.log('[ask route] client aborted');
+    // Only swallow silently if the CLIENT disconnected (nothing to send to).
+    // Server-side aborts (fetch timeout, etc.) still need to surface as errors.
+    if (clientDisconnected) {
+      console.log('[ask route] client disconnected, swallowing error:', err.name, err.message);
       return;
     }
     console.error('[ask route] error:', err.name, err.message, err.stack);
