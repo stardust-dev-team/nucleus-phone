@@ -56,6 +56,8 @@ app.use('/api/curation', apiKeyAuth, require('./routes/curation'));
 const { sessionAuth } = require('./middleware/auth');
 app.use('/api/quote-request', sessionAuth, require('./routes/quote-request'));
 app.use('/api/signals', require('./routes/signals'));
+app.use('/api/summaries', require('./routes/summaries'));
+app.use('/api/ask', require('./routes/ask'));
 app.use('/api/apollo/phone-webhook', require('./routes/apollo-webhook'));
 
 // Serve React build in production

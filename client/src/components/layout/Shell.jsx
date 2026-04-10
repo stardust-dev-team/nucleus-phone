@@ -16,8 +16,10 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
     { path: '/', label: 'Contacts', icon: '👤' },
     ...(role === 'admin' ? [{ path: '/active', label: 'Live', icon: '📡' }] : []),
     { path: '/history', label: 'History', icon: '📋' },
+    { path: '/summaries', label: 'Notes', icon: '📝' },
     { path: '/scoreboard', label: 'Score', icon: '🏆' },
     { path: '/practice', label: 'Practice', icon: '🎯' },
+    { path: '/ask', label: 'Ask', icon: '💬' },
   ];
 
   return (

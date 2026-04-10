@@ -336,6 +336,43 @@ async function initSchema() {
     `);
     console.log('signal enrichment schema ready');
 
+    // ── Full-text search index for call summaries ────────────────
+    // IMPORTANT: This expression must match the to_tsvector in:
+    //   - server/routes/summaries.js (GET /api/summaries search)
+    //   - server/lib/ask-nucleus.js (search_my_calls tool)
+    // If changed here, update both or the GIN index silently stops being used.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_npc_fts ON nucleus_phone_calls
+        USING GIN (to_tsvector('english',
+          COALESCE(ai_summary,'') || ' ' || COALESCE(notes,'') || ' ' ||
+          COALESCE(lead_name,'') || ' ' || COALESCE(lead_company,'')));
+    `);
+    console.log('nucleus_phone_calls FTS index ready');
+
+    // ── Ask Nucleus conversations ────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ask_nucleus_conversations (
+        id SERIAL PRIMARY KEY,
+        caller_identity VARCHAR(50) NOT NULL,
+        messages JSONB NOT NULL DEFAULT '[]',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_ask_conv_caller ON ask_nucleus_conversations(caller_identity);
+      CREATE INDEX IF NOT EXISTS idx_ask_conv_updated ON ask_nucleus_conversations(updated_at DESC);
+
+      CREATE OR REPLACE FUNCTION update_ask_conv_ts()
+      RETURNS TRIGGER AS $$
+      BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_ask_conv_ts ON ask_nucleus_conversations;
+      CREATE TRIGGER trg_ask_conv_ts
+        BEFORE UPDATE ON ask_nucleus_conversations
+        FOR EACH ROW EXECUTE FUNCTION update_ask_conv_ts();
+    `);
+    console.log('ask_nucleus_conversations table ready');
+
   } finally {
     client.release();
   }

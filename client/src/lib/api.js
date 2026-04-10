@@ -157,3 +157,54 @@ export function runTestScenario(chunks, delayMs = 800) {
     body: JSON.stringify({ chunks, delayMs }),
   });
 }
+
+// ── Call Summaries ───────────────────────────────────────────
+export function getCallSummaries({ caller, q, limit = 20, offset = 0, signal } = {}) {
+  const params = new URLSearchParams();
+  if (caller) params.set('caller', caller);
+  if (q) params.set('q', q);
+  params.set('limit', limit);
+  params.set('offset', offset);
+  return apiFetch(`/summaries?${params}`, { signal });
+}
+
+export function getCallSummaryDetail(id, { signal } = {}) {
+  return apiFetch(`/summaries/${id}`, { signal });
+}
+
+// ── Ask Nucleus ──────────────────────────────────────────────
+// askNucleus uses raw fetch (NOT apiFetch) because the response is an SSE
+// stream and apiFetch calls res.json() unconditionally. The caller reads
+// the stream via response.body.getReader().
+export function askNucleus({ message, conversationId, signal }) {
+  return fetch(`${API_BASE}/ask`, {
+    method: 'POST',
+    credentials: 'include',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+      'X-Requested-With': 'fetch',
+    },
+    body: JSON.stringify({ message, conversationId: conversationId || null }),
+  });
+}
+
+export function askNucleusEscalate({ question, context, company, contact, conversationId }) {
+  return apiFetch('/ask/escalate', {
+    method: 'POST',
+    body: JSON.stringify({ question, context, company, contact, conversationId }),
+  });
+}
+
+export function askNucleusGetConversation(id, { signal } = {}) {
+  return apiFetch(`/ask/conversations/${id}`, { signal });
+}
+
+export function askNucleusListConversations({ signal } = {}) {
+  return apiFetch('/ask/conversations', { signal });
+}
+
+export function askNucleusDeleteConversation(id) {
+  return apiFetch(`/ask/conversations/${id}`, { method: 'DELETE' });
+}

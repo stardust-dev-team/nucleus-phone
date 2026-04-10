@@ -9,6 +9,8 @@ import ActiveCalls from './pages/ActiveCalls';
 import History from './pages/History';
 import Cockpit from './pages/Cockpit';
 import Scoreboard from './pages/Scoreboard';
+import CallSummary from './pages/CallSummary';
+import AskNucleus from './pages/AskNucleus';
 import useTwilioDevice from './hooks/useTwilioDevice';
 import useCallState from './hooks/useCallState';
 
@@ -159,6 +161,8 @@ function AppContent() {
           />
         )}
         <Route path="/history" element={<History identity={identity} role={role} />} />
+        <Route path="/summaries" element={<CallSummary identity={identity} role={role} />} />
+        <Route path="/ask" element={<AskNucleus />} />
         <Route path="/scoreboard" element={<Scoreboard />} />
         <Route
           path="/practice"
