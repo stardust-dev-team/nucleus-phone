@@ -499,11 +499,16 @@ async function runChat({ message, conversationId, identity, role, onTextDelta, o
   }
 
   try {
+    // DIAGNOSTIC: streaming mode is hanging in production. Force non-streaming
+    // for all turns until we identify the root cause. The client still sees
+    // responses — just buffered as one chunk at the end instead of token-by-token.
+    const FORCE_NON_STREAMING = true;
+
     // Tool-use loop: stream first turn, non-streaming for tool continuations
     while (toolRound <= MAX_TOOL_ROUNDS) {
       if (signal?.aborted) throw new Error('aborted');
 
-      const stream = toolRound === 0;
+      const stream = FORCE_NON_STREAMING ? false : (toolRound === 0);
       const resp = await callAnthropic(stream);
 
       if (stream) {
