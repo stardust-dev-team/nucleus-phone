@@ -56,7 +56,8 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       phone
         ? pool.query(
             `SELECT id, created_at, caller_identity, disposition, qualification,
-                    notes, duration_seconds, products_discussed
+                    notes, duration_seconds, products_discussed,
+                    ai_summary, ai_action_items
              FROM nucleus_phone_calls
              WHERE lead_phone LIKE $1 AND status = 'completed'
              ORDER BY created_at DESC LIMIT 20`,
@@ -221,12 +222,16 @@ router.get('/:identifier', apiKeyAuth, async (req, res) => {
       rapport.watch_outs = watchOuts;
     }
 
-    // Step 5: Return full cockpit payload
+    // Strip AI fields from priorCalls for API-key callers. See CLAUDE.md:70.
+    const responsePriorCalls = req.user
+      ? priorCalls
+      : priorCalls.map(({ ai_summary, ai_action_items, ...rest }) => rest);
+
     res.json({
       identity,
       rapport,
       interactionHistory,
-      priorCalls,
+      priorCalls: responsePriorCalls,
       pipelineData,
       icpScore,
       qaIntel,

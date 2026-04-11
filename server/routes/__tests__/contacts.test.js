@@ -3,29 +3,42 @@ jest.mock('../../lib/hubspot', () => ({
   searchContacts: jest.fn(),
   getContact: jest.fn(),
 }));
+jest.mock('jsonwebtoken');
 
 const request = require('supertest');
 const express = require('express');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const { pool } = require('../../db');
 const hubspot = require('../../lib/hubspot');
 
 const API_KEY = 'test-api-key';
 
+function mockSession(identity = 'tom', role = 'admin') {
+  jwt.verify.mockReturnValue({ identity, role, email: `${identity}@joruva.com` });
+}
+
 let app;
 beforeAll(() => {
   process.env.NUCLEUS_PHONE_API_KEY = API_KEY;
+  process.env.JWT_SECRET = 'test-secret';
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   app.use('/api/contacts', require('../contacts'));
 });
 
 afterAll(() => {
   delete process.env.NUCLEUS_PHONE_API_KEY;
+  delete process.env.JWT_SECRET;
 });
 
 beforeEach(() => {
   jest.clearAllMocks();
   pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+  // Defense-in-depth: jwt.verify throws by default so an API-key test that
+  // accidentally sends a cookie header can't coast on a stale mockSession.
+  jwt.verify.mockImplementation(() => { throw new Error('no session'); });
 });
 
 /* ───────────── GET /api/contacts ───────────── */
@@ -64,7 +77,8 @@ describe('GET /api/contacts', () => {
     expect(hubspot.searchContacts).toHaveBeenCalledWith('acme', 10, 'abc123');
   });
 
-  test('enriches contacts with call history from DB', async () => {
+  test('session auth: enriches contacts with full call history including lastSummary', async () => {
+    mockSession();
     hubspot.searchContacts.mockResolvedValue({
       results: [
         { id: '101', properties: { firstname: 'Jane', phone: '+16025551111' } },
@@ -81,6 +95,44 @@ describe('GET /api/contacts', () => {
           call_count: '3',
           last_call: '2026-03-25T10:00:00Z',
           last_disposition: 'callback_requested',
+          last_summary: 'Wants quote by Friday, concerned about JDD-40 downtime',
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const res = await request(app)
+      .get('/api/contacts?q=test')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .expect(200);
+
+    expect(res.body.contacts[0].callHistory).toEqual({
+      callCount: 3,
+      lastCall: '2026-03-25T10:00:00Z',
+      lastDisposition: 'callback_requested',
+      lastSummary: 'Wants quote by Friday, concerned about JDD-40 downtime',
+    });
+    expect(res.body.contacts[1].callHistory).toBeNull();
+    expect(res.body.paging).toEqual({ next: { after: 'cursor2' } });
+  });
+
+  test('api key auth: call history does NOT expose lastSummary', async () => {
+    hubspot.searchContacts.mockResolvedValue({
+      results: [
+        { id: '101', properties: { firstname: 'Jane', phone: '+16025551111' } },
+      ],
+      paging: null,
+    });
+
+    pool.query.mockResolvedValueOnce({
+      rows: [
+        {
+          lead_phone: '+16025551111',
+          hubspot_contact_id: '101',
+          call_count: '3',
+          last_call: '2026-03-25T10:00:00Z',
+          last_disposition: 'callback_requested',
+          last_summary: 'Wants quote by Friday, concerned about JDD-40 downtime',
         },
       ],
       rowCount: 1,
@@ -96,8 +148,43 @@ describe('GET /api/contacts', () => {
       lastCall: '2026-03-25T10:00:00Z',
       lastDisposition: 'callback_requested',
     });
-    expect(res.body.contacts[1].callHistory).toBeNull();
-    expect(res.body.paging).toEqual({ next: { after: 'cursor2' } });
+    expect(res.body.contacts[0].callHistory.lastSummary).toBeUndefined();
+  });
+
+  test('regression: NULL ai_summary on latest call maps to null (not stale older summary)', async () => {
+    mockSession();
+    hubspot.searchContacts.mockResolvedValue({
+      results: [
+        { id: '101', properties: { firstname: 'Jane', phone: '+16025551111' } },
+      ],
+      paging: null,
+    });
+
+    // Simulates the SQL output AFTER the COALESCE fix: the most recent call
+    // is not yet summarized (Fireflies hasn't synced), so array_agg picks up
+    // the COALESCE'd empty string from the latest row. The route maps '' → null.
+    pool.query.mockResolvedValueOnce({
+      rows: [
+        {
+          lead_phone: '+16025551111',
+          hubspot_contact_id: '101',
+          call_count: '2',
+          last_call: '2026-04-11T09:00:00Z', // today
+          last_disposition: 'connected',
+          last_summary: '', // COALESCE sentinel for NULL
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const res = await request(app)
+      .get('/api/contacts?q=test')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .expect(200);
+
+    // Key assertion: lastSummary is null, not inherited from an older call.
+    expect(res.body.contacts[0].callHistory.lastSummary).toBeNull();
+    expect(res.body.contacts[0].callHistory.lastCall).toBe('2026-04-11T09:00:00Z');
   });
 
   test('passes default limit of 50 when no limit param provided', async () => {

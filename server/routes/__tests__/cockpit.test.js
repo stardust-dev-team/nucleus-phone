@@ -15,9 +15,12 @@ jest.mock('../../lib/claude', () => ({
 jest.mock('../../lib/phone', () => ({
   normalizePhone: jest.fn((p) => p),
 }));
+jest.mock('jsonwebtoken');
 
 const request = require('supertest');
 const express = require('express');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const { pool } = require('../../db');
 const { resolve } = require('../../lib/identity-resolver');
 const { lookupCustomer } = require('../../lib/customer-lookup');
@@ -25,6 +28,10 @@ const { getCompany } = require('../../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../../lib/claude');
 
 const API_KEY = 'test-api-key';
+
+function mockSession(identity = 'tom', role = 'admin') {
+  jwt.verify.mockReturnValue({ identity, role, email: `${identity}@joruva.com` });
+}
 
 const MOCK_IDENTITY = {
   resolved: true,
@@ -40,13 +47,16 @@ const MOCK_IDENTITY = {
 let app;
 beforeAll(() => {
   process.env.NUCLEUS_PHONE_API_KEY = API_KEY;
+  process.env.JWT_SECRET = 'test-secret';
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   app.use('/api/cockpit', require('../cockpit'));
 });
 
 afterAll(() => {
   delete process.env.NUCLEUS_PHONE_API_KEY;
+  delete process.env.JWT_SECRET;
 });
 
 beforeEach(() => {
@@ -56,6 +66,9 @@ beforeEach(() => {
   lookupCustomer.mockResolvedValue({ interactions: [] });
   getCompany.mockResolvedValue(null);
   generateRapportIntel.mockResolvedValue({ rapport_starters: ['test'], fallback: false });
+  // Defense-in-depth: jwt.verify throws by default so an API-key test that
+  // accidentally sends a cookie header can't coast on a stale mockSession.
+  jwt.verify.mockImplementation(() => { throw new Error('no session'); });
 });
 
 /* ───────────── GET /api/cockpit/:identifier ───────────── */
@@ -103,7 +116,11 @@ describe('GET /api/cockpit/:identifier', () => {
     pool.query
       // Prior calls
       .mockResolvedValueOnce({
-        rows: [{ id: 1, caller_identity: 'tom', disposition: 'connected' }],
+        rows: [{
+          id: 1, caller_identity: 'tom', disposition: 'connected',
+          ai_summary: 'Discussed downtime concerns, wants quote by Friday',
+          ai_action_items: ['Send quote', 'Follow up Monday'],
+        }],
         rowCount: 1,
       })
       // Discovery pipeline
@@ -128,17 +145,50 @@ describe('GET /api/cockpit/:identifier', () => {
         rowCount: 1,
       });
 
+    mockSession();
+    const res = await request(app)
+      .get('/api/cockpit/+16025551234')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .expect(200);
+
+    expect(res.body.priorCalls).toHaveLength(1);
+    expect(res.body.priorCalls[0]).toMatchObject({
+      ai_summary: 'Discussed downtime concerns, wants quote by Friday',
+    });
+    expect(res.body.pipelineData).toHaveLength(1);
+    expect(res.body.icpScore).toMatchObject({ icp_score: 88, geo_city: 'Phoenix' });
+    expect(res.body.companyData).toMatchObject({ name: 'Acme' });
+    expect(lookupCustomer).toHaveBeenCalled();
+    expect(generateRapportIntel).toHaveBeenCalled();
+  });
+
+  test('api key auth: priorCalls does NOT expose ai_summary or ai_action_items', async () => {
+    pool.query
+      // Prior calls — AI fields present in DB row
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1, caller_identity: 'tom', disposition: 'connected',
+          ai_summary: 'sensitive generated summary',
+          ai_action_items: ['follow up tuesday'],
+        }],
+        rowCount: 1,
+      })
+      // Remaining queries — return empty to keep the route happy
+      .mockResolvedValue({ rows: [], rowCount: 0 });
+
     const res = await request(app)
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);
 
     expect(res.body.priorCalls).toHaveLength(1);
-    expect(res.body.pipelineData).toHaveLength(1);
-    expect(res.body.icpScore).toMatchObject({ icp_score: 88, geo_city: 'Phoenix' });
-    expect(res.body.companyData).toMatchObject({ name: 'Acme' });
-    expect(lookupCustomer).toHaveBeenCalled();
-    expect(generateRapportIntel).toHaveBeenCalled();
+    // Same-row metadata still flows through
+    expect(res.body.priorCalls[0]).toMatchObject({
+      id: 1, caller_identity: 'tom', disposition: 'connected',
+    });
+    // Sensitive AI fields are stripped when auth is API-key only
+    expect(res.body.priorCalls[0].ai_summary).toBeUndefined();
+    expect(res.body.priorCalls[0].ai_action_items).toBeUndefined();
   });
 
   test('returns fallback data when all downstream sources fail', async () => {

@@ -11,6 +11,7 @@ import RapportOpener from '../components/cockpit/RapportOpener';
 import RapportTags from '../components/cockpit/RapportTags';
 import IntelNuggets from '../components/cockpit/IntelNuggets';
 import InteractionTimeline from '../components/cockpit/InteractionTimeline';
+import LastCallCard from '../components/cockpit/LastCallCard';
 import QualScript from '../components/cockpit/QualScript';
 import CompanyIntel from '../components/cockpit/CompanyIntel';
 import ProductReference from '../components/cockpit/ProductReference';
@@ -99,6 +100,7 @@ function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, on
           <SignalBadges signalMetadata={d.signalMetadata} domain={d.icpScore?.domain} />
           <DataSourceIndicator sources={dataSources(d)} />
         </div>
+        <LastCallCard priorCalls={d.priorCalls} />
       </div>
 
       {/* Bridge layout: 3-column — fills remaining viewport, no scroll */}
@@ -282,6 +284,7 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId, o
                     signalMetadata={d.signalMetadata}
                     domain={d.icpScore?.domain}
                   />
+                  <LastCallCard priorCalls={d.priorCalls} />
                 </div>
 
                 {/* Bridge layout: 3-column with viewscreen center */}

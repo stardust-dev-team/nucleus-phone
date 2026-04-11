@@ -146,6 +146,14 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
                       {contact.title || 'No title'}
                       {contact.phone && ` · ${contact.phone}`}
                     </span>
+                    {contact.call_history?.lastSummary && (
+                      <span
+                        className="text-[10px] text-jv-muted italic truncate block mt-0.5"
+                        title={contact.call_history.lastSummary}
+                      >
+                        {contact.call_history.lastSummary}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as Tabs from '@radix-ui/react-tabs';
 import { motion, AnimatePresence } from 'framer-motion';
 import useActivity from '../hooks/useActivity';
@@ -140,20 +141,53 @@ function SentimentDot({ sentiment }) {
   );
 }
 
+function cockpitIdentifier(call) {
+  return call.lead_phone || call.lead_email || null;
+}
+
 function ActivityCard({ call, onOpen, selected }) {
+  const navigate = useNavigate();
   const summary = call.ai_summary || call.ci_summary || call.notes || '';
   const truncated = summary.length > 180 ? summary.substring(0, 180) + '...' : summary;
   const products = call.products_discussed || call.ci_products || [];
   const productList = Array.isArray(products) ? products : [];
   const barColor = DISP_BAR[call.disposition] || 'bg-gray-700';
+  const cockpitId = cockpitIdentifier(call);
+
+  function handleKeyDown(e) {
+    // Ignore bubbled keypresses from descendants (e.g. the cockpit icon button
+    // would otherwise fire both its own click AND this card's onOpen on Space).
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onOpen(call);
+    }
+  }
+
+  function handleCockpitClick(e) {
+    e.stopPropagation();
+    if (cockpitId) navigate(`/cockpit/${encodeURIComponent(cockpitId)}`);
+  }
+
+  const cardLabel = [
+    call.lead_name || 'Unknown',
+    call.lead_company,
+    call.disposition && humanizeDisposition(call.disposition),
+    formatRelative(call.created_at),
+  ].filter(Boolean).join(', ');
 
   return (
-    <motion.button
+    <motion.div
       layout
       whileHover={{ y: -1 }}
       whileTap={{ scale: 0.99 }}
+      role="button"
+      tabIndex={0}
+      aria-label={cardLabel}
+      aria-pressed={selected}
       onClick={() => onOpen(call)}
-      className={`w-full text-left bg-jv-card border rounded-xl overflow-hidden transition-colors ${
+      onKeyDown={handleKeyDown}
+      className={`w-full text-left bg-jv-card border rounded-xl overflow-hidden transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-jv-amber focus-visible:ring-offset-2 focus-visible:ring-offset-jv-bg ${
         selected ? 'border-jv-amber/60' : 'border-jv-border hover:border-jv-amber/40'
       }`}
     >
@@ -174,6 +208,18 @@ function ActivityCard({ call, onOpen, selected }) {
                 <span className={`text-xs px-2 py-0.5 rounded-full ${DISP_PILL[call.disposition] || 'bg-gray-500/20 text-gray-400'}`}>
                   {humanizeDisposition(call.disposition)}
                 </span>
+              )}
+              {cockpitId && (
+                <button
+                  onClick={handleCockpitClick}
+                  title="Open contact cockpit"
+                  aria-label="Open contact cockpit"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-jv-amber/10 text-jv-amber hover:bg-jv-amber/25 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </button>
               )}
             </div>
           </div>
@@ -198,7 +244,7 @@ function ActivityCard({ call, onOpen, selected }) {
           </div>
         </div>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
@@ -424,6 +470,7 @@ function DetailModal({ detail, loading, emailReady, onClose, onUpdated }) {
 }
 
 function DetailContent({ detail, emailReady, onClose, onUpdated }) {
+  const navigate = useNavigate();
   const summary = detail.ai_summary || detail.ci_summary || detail.notes || 'No summary available';
   const actionItems = detail.ai_action_items;
   const products = detail.products_discussed || detail.ci_products || [];
@@ -431,6 +478,7 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
   const sentiment = detail.sentiment;
   const competitive = detail.competitive_intel;
   const transcript = detail.transcript || detail.ci_transcript || '';
+  const cockpitId = cockpitIdentifier(detail);
 
   return (
     <>
@@ -442,7 +490,15 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-3">
           <span className="text-xs text-jv-muted">{formatRelative(detail.created_at)}</span>
-          <button onClick={onClose} className="text-jv-muted hover:text-white text-lg w-8 h-8 flex items-center justify-center">
+          {cockpitId && (
+            <button
+              onClick={() => navigate(`/cockpit/${encodeURIComponent(cockpitId)}`)}
+              className="text-xs px-3 py-1.5 rounded-full bg-jv-amber/15 text-jv-amber hover:bg-jv-amber/30 transition-colors font-semibold whitespace-nowrap"
+            >
+              Cockpit →
+            </button>
+          )}
+          <button onClick={onClose} className="text-jv-muted hover:text-white text-lg w-8 h-8 flex items-center justify-center" aria-label="Close">
             ×
           </button>
         </div>

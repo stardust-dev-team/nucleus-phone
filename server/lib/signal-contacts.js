@@ -64,6 +64,7 @@ function buildSignalWhere({ signal_tier, geo_state, timezone }) {
  */
 async function getSignalContacts({
   signal_tier, geo_state, timezone, has_phone = true, limit = 50, offset = 0,
+  includeSummary = false,
 } = {}) {
   const { where, values, idx } = buildSignalWhere({ signal_tier, geo_state, timezone });
   const lim = Math.max(1, Math.min(limit, 1000));
@@ -154,9 +155,13 @@ async function getSignalContacts({
   const callHistory = {};
   if (contactNames.length > 0) {
     const callResult = await pool.query(
+      // COALESCE around ai_summary: array_agg skips NULLs, so without this an
+      // unsummarized-yet latest call would fall through to a stale older summary.
+      // Empty-string sentinel preserves the row ordering; we map '' → null in JS.
       `SELECT lead_name, lead_company, COUNT(*) as call_count,
               MAX(created_at) as last_call,
-              (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition
+              (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition,
+              (array_agg(COALESCE(ai_summary, '') ORDER BY created_at DESC))[1] as last_summary
        FROM nucleus_phone_calls
        WHERE lead_name = ANY($1)
          AND (lead_company = ANY($2) OR lead_company IS NULL)
@@ -170,6 +175,7 @@ async function getSignalContacts({
         callCount: parseInt(row.call_count, 10),
         lastCall: row.last_call,
         lastDisposition: row.last_disposition,
+        ...(includeSummary && { lastSummary: row.last_summary || null }),
       };
     }
   }
@@ -253,7 +259,7 @@ async function getSignalContacts({
  * @param {string} domain
  * @returns {Promise<{ company: Object|null, contacts: Object[] }>}
  */
-async function getContactsForDomain(domain) {
+async function getContactsForDomain(domain, { includeSummary = false } = {}) {
   const companyResult = await pool.query(
     `SELECT lr.domain, lr.company_name, lr.geo_state, lr.enrichment_status,
             sm.signal_tier, sm.signal_score, sm.source_count,
@@ -285,9 +291,11 @@ async function getContactsForDomain(domain) {
   const callHistory = {};
   if (names.length > 0) {
     const callResult = await pool.query(
+      // See note above on COALESCE — preserves NULL summaries in array_agg ordering.
       `SELECT lead_name, COUNT(*) as call_count,
               MAX(created_at) as last_call,
-              (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition
+              (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition,
+              (array_agg(COALESCE(ai_summary, '') ORDER BY created_at DESC))[1] as last_summary
        FROM nucleus_phone_calls
        WHERE lead_name = ANY($1)
          AND (lead_company = $2 OR lead_company IS NULL)
@@ -299,6 +307,7 @@ async function getContactsForDomain(domain) {
         callCount: parseInt(row.call_count, 10),
         lastCall: row.last_call,
         lastDisposition: row.last_disposition,
+        ...(includeSummary && { lastSummary: row.last_summary || null }),
       };
     }
   }

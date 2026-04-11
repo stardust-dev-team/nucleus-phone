@@ -38,6 +38,9 @@ router.get('/signal', apiKeyAuth, async (req, res) => {
       has_phone: has_phone !== 'false', // default true
       limit: parseInt(limit, 10) || 50,
       offset: parseInt(offset, 10) || 0,
+      // Only session-authed browser callers receive AI-generated summaries.
+      // API-key callers get call metadata only. See CLAUDE.md:70.
+      includeSummary: !!req.user,
     });
     res.json(result);
   } catch (err) {
@@ -49,7 +52,9 @@ router.get('/signal', apiKeyAuth, async (req, res) => {
 // GET /api/contacts/signal/:domain — all contacts at a specific signal-scored company
 router.get('/signal/:domain', apiKeyAuth, async (req, res) => {
   try {
-    const result = await getContactsForDomain(req.params.domain);
+    const result = await getContactsForDomain(req.params.domain, {
+      includeSummary: !!req.user,
+    });
     if (!result.company) return res.status(404).json({ error: 'Domain not found in reservoir' });
     res.json(result);
   } catch (err) {
@@ -79,15 +84,23 @@ router.get('/', apiKeyAuth, async (req, res) => {
       let callHistory = {};
       if (phones.length > 0 || contactIds.length > 0) {
         const result = await pool.query(
+          // COALESCE preserves NULL ai_summary in array_agg ordering so that a
+          // most-recent unsummarized call reports null (not a stale older summary).
           `SELECT lead_phone, hubspot_contact_id,
                   COUNT(*) as call_count,
                   MAX(created_at) as last_call,
-                  (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition
+                  (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition,
+                  (array_agg(COALESCE(ai_summary, '') ORDER BY created_at DESC))[1] as last_summary
            FROM nucleus_phone_calls
            WHERE lead_phone = ANY($1) OR hubspot_contact_id = ANY($2)
            GROUP BY lead_phone, hubspot_contact_id`,
           [phones, contactIds.map(String)]
         );
+
+        // Sensitive AI data (lastSummary) is only exposed to session-authed
+        // browser callers, matching the /api/history policy at CLAUDE.md:70.
+        // API-key callers (e.g. n8n, external tools) get call metadata only.
+        const includeSummary = !!req.user;
 
         for (const row of result.rows) {
           const key = row.hubspot_contact_id || row.lead_phone;
@@ -95,6 +108,7 @@ router.get('/', apiKeyAuth, async (req, res) => {
             callCount: parseInt(row.call_count, 10),
             lastCall: row.last_call,
             lastDisposition: row.last_disposition,
+            ...(includeSummary && { lastSummary: row.last_summary || null }),
           };
         }
       }
