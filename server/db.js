@@ -504,6 +504,7 @@ async function initSchema() {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_npc_phone_suffix7 ON nucleus_phone_calls(phone_suffix7) WHERE phone_suffix7 IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_pbc_phone_suffix7 ON v35_pb_contacts(phone_suffix7) WHERE phone_suffix7 IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_npc_completed_suffix7 ON nucleus_phone_calls(phone_suffix7) WHERE status = 'completed' AND phone_suffix7 IS NOT NULL;
     `);
     console.log('phone_suffix7 columns + triggers + indexes ready');
 
