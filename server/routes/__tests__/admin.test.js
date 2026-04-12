@@ -129,6 +129,20 @@ describe('POST /api/admin/users/:id/deactivate', () => {
       });
   });
 
+  test('admin cannot deactivate themselves', async () => {
+    loginAs('admin');
+    // loginAs sets jwt.verify to return { userId: id } — grab the id
+    const { userId } = jwt.verify();
+    await request(app)
+      .post(`/api/admin/users/${userId}/deactivate`)
+      .set('Cookie', 'nucleus_session=t')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .expect(409)
+      .expect((res) => {
+        expect(res.body.error).toMatch(/yourself/i);
+      });
+  });
+
   test('404 on unknown user', async () => {
     pool.query.mockResolvedValueOnce({ rows: [] });
     await request(app)
@@ -151,6 +165,34 @@ describe('POST /api/admin/users/:id/role', () => {
       .expect((res) => {
         expect(res.body.user.role).toBe('caller');
       });
+  });
+
+  test('admin cannot demote themselves', async () => {
+    loginAs('admin');
+    const { userId } = jwt.verify();
+    await request(app)
+      .post(`/api/admin/users/${userId}/role`)
+      .set('Cookie', 'nucleus_session=t')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ role: 'caller' })
+      .expect(409)
+      .expect((res) => {
+        expect(res.body.error).toMatch(/demote.*yourself/i);
+      });
+  });
+
+  test('admin can set own role to admin (no-op)', async () => {
+    loginAs('admin');
+    const { userId } = jwt.verify();
+    pool.query.mockResolvedValueOnce({
+      rows: [{ id: userId, email: 'self@example.com', identity: 'self', role: 'admin' }],
+    });
+    await request(app)
+      .post(`/api/admin/users/${userId}/role`)
+      .set('Cookie', 'nucleus_session=t')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ role: 'admin' })
+      .expect(200);
   });
 
   test('rejects unknown role', async () => {

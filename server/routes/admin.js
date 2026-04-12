@@ -75,6 +75,9 @@ router.post('/users', async (req, res) => {
 router.post('/users/:id/deactivate', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'id must be an integer' });
+  if (req.user.id === id) {
+    return res.status(409).json({ error: 'Cannot deactivate yourself' });
+  }
 
   try {
     const { rows } = await pool.query(
@@ -123,6 +126,9 @@ router.post('/users/:id/role', async (req, res) => {
   const { role } = req.body || {};
   if (!role || !VALID_ROLES.has(role)) {
     return res.status(400).json({ error: `role must be one of ${[...VALID_ROLES].join(', ')}` });
+  }
+  if (req.user.id === id && role !== 'admin') {
+    return res.status(409).json({ error: 'Cannot demote yourself from admin' });
   }
 
   try {
