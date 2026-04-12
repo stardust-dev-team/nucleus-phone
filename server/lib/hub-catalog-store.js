@@ -137,9 +137,9 @@ async function refreshNow() {
     fullCatalogText = result.fullText;
     hubAvailable = true;
     console.log('[hub-catalog] Refreshed: ' + catalog.length + ' compressors, ' + result.fullText.split('\n').length + ' total products');
-  } else {
-    hubAvailable = false;
   }
+  // hubAvailable tracks whether data exists, not last-fetch result.
+  // A failed fetch with cached data is still "available".
 }
 
 function startRefreshLoop() {

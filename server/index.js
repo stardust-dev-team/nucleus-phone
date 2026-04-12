@@ -11,6 +11,7 @@ const { rbac } = require('./middleware/rbac');
 const { startSweep } = require('./lib/stale-sweep');
 const { attachWebSocket } = require('./lib/live-analysis');
 const { startScheduler: startCurator } = require('./lib/equipment-curator');
+const { createHmac, timingSafeEqual } = require('crypto');
 const hubCatalog = require('./lib/hub-catalog-store');
 
 const app = express();
@@ -70,15 +71,14 @@ app.use('/api/ask', require('./routes/ask'));
 app.use('/api/apollo/phone-webhook', require('./routes/apollo-webhook'));
 app.use('/api/admin', apiKeyAuth, rbac('admin'), require('./routes/admin'));
 
-// Hub event webhook — HMAC-authenticated, triggers catalog refresh on product.* events
-app.post('/api/hub/events', (req, res) => {
-  const { createHmac, timingSafeEqual } = require('crypto');
+// Hub event webhook — HMAC-authenticated, triggers catalog refresh on product.* events.
+// Uses raw body capture to avoid JSON re-serialization HMAC divergence.
+app.post('/api/hub/events', express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }), (req, res) => {
   const signature = req.headers['x-hub-signature'];
   const secret = process.env.HUB_SPOKE_SECRET;
-  if (!signature || !secret) return res.status(401).json({ error: 'Not authorized' });
+  if (!signature || !secret || !req.rawBody) return res.status(401).json({ error: 'Not authorized' });
 
-  const body = JSON.stringify(req.body);
-  const expected = createHmac('sha256', secret).update(body).digest('hex');
+  const expected = createHmac('sha256', secret).update(req.rawBody).digest('hex');
   const sigBuf = Buffer.from(signature);
   const expBuf = Buffer.from(expected);
   if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
