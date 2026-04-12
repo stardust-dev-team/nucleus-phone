@@ -11,6 +11,7 @@ const { rbac } = require('./middleware/rbac');
 const { startSweep } = require('./lib/stale-sweep');
 const { attachWebSocket } = require('./lib/live-analysis');
 const { startScheduler: startCurator } = require('./lib/equipment-curator');
+const hubCatalog = require('./lib/hub-catalog-store');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -69,6 +70,30 @@ app.use('/api/ask', require('./routes/ask'));
 app.use('/api/apollo/phone-webhook', require('./routes/apollo-webhook'));
 app.use('/api/admin', apiKeyAuth, rbac('admin'), require('./routes/admin'));
 
+// Hub event webhook — HMAC-authenticated, triggers catalog refresh on product.* events
+app.post('/api/hub/events', (req, res) => {
+  const { createHmac, timingSafeEqual } = require('crypto');
+  const signature = req.headers['x-hub-signature'];
+  const secret = process.env.HUB_SPOKE_SECRET;
+  if (!signature || !secret) return res.status(401).json({ error: 'Not authorized' });
+
+  const body = JSON.stringify(req.body);
+  const expected = createHmac('sha256', secret).update(body).digest('hex');
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  res.json({ accepted: true });
+
+  // Async: refresh catalog on product events
+  const eventType = req.body.event_type || '';
+  if (eventType.startsWith('product.') || eventType.startsWith('catalog.')) {
+    hubCatalog.refreshNow().catch(err => console.error('[hub-events] Catalog refresh failed:', err.message));
+  }
+});
+
 // Serve React build in production
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 app.use(express.static(clientDist));
@@ -84,6 +109,7 @@ async function start() {
   await initSchema();
   startSweep();
   startCurator();
+  hubCatalog.startRefreshLoop();
   httpServer = app.listen(PORT, () => {
     console.log(`nucleus-phone listening on :${PORT}`);
   });

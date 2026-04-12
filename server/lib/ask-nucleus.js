@@ -7,7 +7,7 @@
  */
 
 const { pool } = require('../db');
-const { COMPRESSOR_CATALOG } = require('./compressor-catalog');
+const { getCompressorCatalog, getProductCatalog, getFullCatalogText } = require('./hub-catalog-store');
 const fs = require('fs');
 const path = require('path');
 
@@ -19,43 +19,10 @@ const MAX_CONVERSATION_MESSAGES = 100;
 const STREAM_TIMEOUT = 60000;
 const NON_STREAM_TIMEOUT = 30000;
 
-// ── Static knowledge (loaded once at require time) ──────────────
-
-// Build the compressor line dynamically from COMPRESSOR_CATALOG so confirmed
-// pricing additions (e.g. Billy's PM VSD quotes) flow through without
-// requiring a prompt edit. Only 'confirmed' prices are listed with a dollar
-// value; quote_required rows show HP/CFM and indicate direct-sale quoting.
-function buildCompressorLineText() {
-  const byLine = { rs_open: [], pm_vsd: [], large_frame: [] };
-  for (const c of COMPRESSOR_CATALOG) {
-    if (!byLine[c.productLine]) continue;
-    const priceTxt = c.pricingStatus === 'confirmed' && c.price
-      ? `$${c.price.toLocaleString()}`
-      : 'quote';
-    byLine[c.productLine].push(`${c.model} ${c.hp}HP ${c.cfm}CFM ${priceTxt}`);
-  }
-  const lines = [];
-  if (byLine.rs_open.length) lines.push(`RS Open Frame (fixed-speed, 5-100HP): ${byLine.rs_open.join(' | ')}`);
-  if (byLine.pm_vsd.length) lines.push(`Permanent Magnet VSD (enclosed, variable-speed, 10-200HP): ${byLine.pm_vsd.join(' | ')}`);
-  if (byLine.large_frame.length) lines.push(`Large Frame Enclosed (125-476HP): ${byLine.large_frame.join(' | ')}`);
-  return lines.join('\n');
-}
-
-const PRODUCT_CATALOG = `Joruva Industrial products:
-${buildCompressorLineText()}
-Dryers (refrigerated): JRD-30 $2,195 | JRD-40 $2,495 | JRD-60 $2,895 | JRD-80 $3,195 | JRD-100 $3,595
-Dryers (desiccant, -60°F, molecular sieve, wall-mount): JDD-40 40CFM $7,495 | JDD-80 80CFM $11,895
-Filters: JPF-70 particulate 1µm $399 | JPF-130 $499 | JCF-70 coalescing 0.01µm $349 | JCF-130 $449
-OWS (oil-water separator): OWS75 $234 | OWS150 $1,092
-Rows marked "quote" are direct-sale — use the get_product_specs tool to confirm current specs, then tell the rep to request a quote (or escalate to Tom).
-For AS9100/aerospace: recommend desiccant dryer + coalescing filter. General mfg: refrigerated dryer.`;
-
-// Full catalog as structured text for the get_product_specs tool
-const FULL_CATALOG_TEXT = COMPRESSOR_CATALOG.map(c =>
-  `${c.model}: ${c.hp}HP, ${c.cfm}CFM @ ${c.psi}PSI, ${c.voltage}` +
-  (c.price ? `, $${c.price.toLocaleString()}` : ', quote required') +
-  ` (${c.salesChannel})`
-).join('\n');
+// ── Product knowledge (runtime-refreshable from hub) ──────────────
+// getProductCatalog() and getFullCatalogText() read from the TTL store
+// in hub-catalog-store.js, which fetches from the hub API every 5 min
+// and falls back to static compressor-catalog.js if the hub is down.
 
 // Study guide — strip HTML to plain text at load time
 let STUDY_GUIDE_TEXT = '';
@@ -127,7 +94,7 @@ function buildSystemPrompt(identity, role) {
 You are currently assisting ${identity} (${role}).
 ${firewall}
 PRODUCT CATALOG:
-${PRODUCT_CATALOG}
+${getProductCatalog()}
 
 STUDY GUIDE EXCERPT:
 ${STUDY_GUIDE_TEXT || '(not available)'}
@@ -298,19 +265,19 @@ async function executeSearchInteractions(input, identity, role) {
 }
 
 function executeGetProductSpecs(input) {
+  const catalog = getCompressorCatalog();
   const q = input.product_query.toLowerCase();
-  const matches = COMPRESSOR_CATALOG.filter(c => {
+  const matches = catalog.filter(c => {
     const text = `${c.model} ${c.hp}hp ${c.cfm}cfm ${c.productLine}`.toLowerCase();
     return text.includes(q);
   });
 
   if (!matches.length) {
-    // Fuzzy: try matching just the number
     const num = parseFloat(q.replace(/[^0-9.]/g, ''));
     if (!isNaN(num)) {
-      const byHp = COMPRESSOR_CATALOG.filter(c => c.hp === num);
+      const byHp = catalog.filter(c => c.hp === num);
       if (byHp.length) return byHp.map(formatProduct);
-      const byCfm = COMPRESSOR_CATALOG.filter(c => Math.abs(c.cfm - num) <= 5);
+      const byCfm = catalog.filter(c => Math.abs(c.cfm - num) <= 5);
       if (byCfm.length) return byCfm.map(formatProduct);
     }
     return [{ error: `No products matching "${input.product_query}"` }];
