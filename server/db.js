@@ -434,29 +434,20 @@ async function initSchema() {
       ALTER TABLE v35_pb_contacts ADD COLUMN IF NOT EXISTS phone_suffix7 VARCHAR(7);
     `);
 
-    // Trigger function: extract last 7 digits from a phone column
+    // Parameterized trigger: TG_ARGV[0] is the source phone column name.
+    // Used by both nucleus_phone_calls (lead_phone) and v35_pb_contacts (phone).
+    // NOTE: Triggers don't fire on COPY. If bulk-loading data, either use INSERT
+    // or run the backfill UPDATE below manually. The startup backfill catches
+    // any stray NULLs on next boot.
     await client.query(`
       CREATE OR REPLACE FUNCTION compute_phone_suffix7()
       RETURNS TRIGGER AS $$
       DECLARE
         digits TEXT;
+        src    TEXT;
       BEGIN
-        digits := REGEXP_REPLACE(COALESCE(NEW.lead_phone, ''), '\\D', '', 'g');
-        IF LENGTH(digits) >= 7 THEN
-          NEW.phone_suffix7 := RIGHT(digits, 7);
-        ELSE
-          NEW.phone_suffix7 := NULL;
-        END IF;
-        RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql;
-
-      CREATE OR REPLACE FUNCTION compute_pb_phone_suffix7()
-      RETURNS TRIGGER AS $$
-      DECLARE
-        digits TEXT;
-      BEGIN
-        digits := REGEXP_REPLACE(COALESCE(NEW.phone, ''), '\\D', '', 'g');
+        EXECUTE 'SELECT ($1).' || quote_ident(TG_ARGV[0]) INTO src USING NEW;
+        digits := REGEXP_REPLACE(COALESCE(src, ''), '\\D', '', 'g');
         IF LENGTH(digits) >= 7 THEN
           NEW.phone_suffix7 := RIGHT(digits, 7);
         ELSE
@@ -466,34 +457,48 @@ async function initSchema() {
       END;
       $$ LANGUAGE plpgsql;
     `);
+
+    // Clean up old per-table function if it exists from prior deploy
+    await client.query(`DROP FUNCTION IF EXISTS compute_pb_phone_suffix7() CASCADE`);
 
     // Attach triggers (idempotent via DROP IF EXISTS)
     await client.query(`
       DROP TRIGGER IF EXISTS trg_npc_phone_suffix7 ON nucleus_phone_calls;
       CREATE TRIGGER trg_npc_phone_suffix7
         BEFORE INSERT OR UPDATE OF lead_phone ON nucleus_phone_calls
-        FOR EACH ROW EXECUTE FUNCTION compute_phone_suffix7();
+        FOR EACH ROW EXECUTE FUNCTION compute_phone_suffix7('lead_phone');
 
       DROP TRIGGER IF EXISTS trg_pbc_phone_suffix7 ON v35_pb_contacts;
       CREATE TRIGGER trg_pbc_phone_suffix7
         BEFORE INSERT OR UPDATE OF phone ON v35_pb_contacts
-        FOR EACH ROW EXECUTE FUNCTION compute_pb_phone_suffix7();
+        FOR EACH ROW EXECUTE FUNCTION compute_phone_suffix7('phone');
     `);
 
-    // Backfill existing rows that have a phone but no suffix yet
-    await client.query(`
-      UPDATE nucleus_phone_calls
-      SET phone_suffix7 = RIGHT(REGEXP_REPLACE(lead_phone, '\\D', '', 'g'), 7)
-      WHERE lead_phone IS NOT NULL
-        AND phone_suffix7 IS NULL
-        AND LENGTH(REGEXP_REPLACE(lead_phone, '\\D', '', 'g')) >= 7;
-
-      UPDATE v35_pb_contacts
-      SET phone_suffix7 = RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 7)
-      WHERE phone IS NOT NULL
-        AND phone_suffix7 IS NULL
-        AND LENGTH(REGEXP_REPLACE(phone, '\\D', '', 'g')) >= 7;
-    `);
+    // Backfill existing rows (skip if already fully populated)
+    const { rows: npcGap } = await client.query(
+      `SELECT 1 FROM nucleus_phone_calls WHERE lead_phone IS NOT NULL AND phone_suffix7 IS NULL LIMIT 1`
+    );
+    if (npcGap.length) {
+      await client.query(`
+        UPDATE nucleus_phone_calls
+        SET phone_suffix7 = RIGHT(REGEXP_REPLACE(lead_phone, '\\D', '', 'g'), 7)
+        WHERE lead_phone IS NOT NULL
+          AND phone_suffix7 IS NULL
+          AND LENGTH(REGEXP_REPLACE(lead_phone, '\\D', '', 'g')) >= 7
+      `);
+    }
+    const { rows: pbcGap } = await client.query(
+      `SELECT 1 FROM v35_pb_contacts WHERE phone IS NOT NULL AND phone_suffix7 IS NULL LIMIT 1`
+    );
+    if (pbcGap.length) {
+      await client.query(`
+        UPDATE v35_pb_contacts
+        SET phone_suffix7 = RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 7)
+        WHERE phone IS NOT NULL
+          AND phone_suffix7 IS NULL
+          AND LENGTH(REGEXP_REPLACE(phone, '\\D', '', 'g')) >= 7
+      `);
+    }
 
     // Indexes for the new column
     await client.query(`
