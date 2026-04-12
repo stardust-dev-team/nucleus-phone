@@ -13,7 +13,7 @@ require('dotenv').config();
 require('dotenv').config({ path: '/Users/Shared/joruva-v35-scripts/.env', override: false });
 
 const { pool } = require('../server/db');
-const { runBatchEnrichment, claimEnrichmentSlot } = require('../server/lib/signal-enrichment');
+const { runBatchEnrichment, claimEnrichmentSlot, APOLLO_DAILY_BUDGET } = require('../server/lib/signal-enrichment');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const LIMIT = (() => {
@@ -22,7 +22,7 @@ const LIMIT = (() => {
 })();
 const CREDIT_CAP = (() => {
   const idx = process.argv.indexOf('--credit-cap');
-  return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : 50;
+  return idx >= 0 ? parseInt(process.argv[idx + 1], 10) : APOLLO_DAILY_BUDGET;
 })();
 
 async function run() {

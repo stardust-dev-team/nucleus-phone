@@ -21,14 +21,8 @@ const pool = new Pool({
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-// Known credential patterns — order matters (longest first to avoid partial matches)
-const CREDENTIAL_PATTERNS = [
-  /,?\s+C\.P\.M\.,?\s*A\.P\.P\.$/i,
-  /,?\s+(?:P\.E\.|Ph\.D\.|M\.B\.A\.|M\.S\.|C\.P\.A\.|C\.P\.M\.|A\.P\.P\.|J\.D\.|R\.N\.|P\.M\.P\.|C\.F\.P\.|C\.E\.M\.|C\.S\.P\.|LEED\s*A\.?P\.?|PMP|MBA|CPA|PE)$/i,
-  /,?\s+(?:Jr\.|Sr\.|III|IV|II)$/i,  // Keep — these are name suffixes, not credentials
-];
-
-// Only strip credentials, NOT name suffixes like Jr./Sr./III
+// Only strip professional credentials, NOT name suffixes like Jr./Sr./III.
+// Order matters — longest/most-specific first to avoid partial matches.
 const STRIP_PATTERNS = [
   /,?\s+C\.P\.M\.,?\s*A\.P\.P\.$/i,
   /,?\s+(?:P\.E\.|Ph\.D\.|M\.B\.A\.|M\.S\.|C\.P\.A\.|C\.P\.M\.|A\.P\.P\.|J\.D\.|R\.N\.|P\.M\.P\.|C\.F\.P\.|C\.E\.M\.|C\.S\.P\.|LEED\s*A\.?P\.?)$/i,
@@ -75,9 +69,9 @@ async function run() {
       continue;
     }
 
-    const cleanedFull = row.full_name
-      ? row.full_name.replace(row.last_name, cleaned)
-      : `${row.first_name} ${cleaned}`;
+    // Rebuild full_name from parts rather than substring-replace, which could
+    // corrupt names where last_name appears as a substring (e.g., "Hinesdale").
+    const cleanedFull = `${row.first_name} ${cleaned}`;
 
     console.log(`  ${row.last_name} → ${cleaned}  (${row.first_name} ${row.last_name})`);
 

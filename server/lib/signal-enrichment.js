@@ -308,4 +308,4 @@ async function claimEnrichmentSlot(tiers) {
   }
 }
 
-module.exports = { runBatchEnrichment, getJobStatus, checkApolloBudget, claimEnrichmentSlot };
+module.exports = { runBatchEnrichment, getJobStatus, checkApolloBudget, claimEnrichmentSlot, APOLLO_DAILY_BUDGET };

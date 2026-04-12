@@ -9,7 +9,7 @@ import {
   dateBucket,
   DATE_BUCKET_LABELS,
   DATE_BUCKET_ORDER,
-  formatRelative,
+  formatRelativeTime,
   humanizeDisposition,
 } from '../lib/format';
 import { CALLER_OPTIONS } from '../lib/team';
@@ -173,7 +173,7 @@ export function ActivityCard({ call, onOpen, selected }) {
     call.lead_name || 'Unknown',
     call.lead_company,
     call.disposition && humanizeDisposition(call.disposition),
-    formatRelative(call.created_at),
+    formatRelativeTime(call.created_at),
   ].filter(Boolean).join(', ');
 
   return (
@@ -239,7 +239,7 @@ export function ActivityCard({ call, onOpen, selected }) {
             <div className="flex items-center gap-2 text-xs text-jv-muted shrink-0">
               <span className="capitalize">{call.caller_identity}</span>
               <span>·</span>
-              <span>{formatRelative(call.created_at)}</span>
+              <span>{formatRelativeTime(call.created_at)}</span>
             </div>
           </div>
         </div>
@@ -421,7 +421,7 @@ function TimelineTab({ callId }) {
         <div key={it.id} className="bg-jv-card/50 border border-jv-border rounded-lg p-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-jv-muted capitalize">{it.channel}</span>
-            <span className="text-xs text-jv-muted">{formatRelative(it.createdAt)}</span>
+            <span className="text-xs text-jv-muted">{formatRelativeTime(it.createdAt)}</span>
           </div>
           {it.summary && <p className="text-sm text-jv-bone/80 leading-relaxed">{it.summary}</p>}
           {it.disposition && (
@@ -489,7 +489,7 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
           <p className="text-sm text-jv-muted truncate">{detail.lead_company || ''}</p>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-3">
-          <span className="text-xs text-jv-muted">{formatRelative(detail.created_at)}</span>
+          <span className="text-xs text-jv-muted">{formatRelativeTime(detail.created_at)}</span>
           {cockpitId && (
             <button
               onClick={() => navigate(`/cockpit/${encodeURIComponent(cockpitId)}`)}

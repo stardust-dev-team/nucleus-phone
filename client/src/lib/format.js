@@ -45,10 +45,10 @@ export function humanizeDisposition(disposition) {
   return disposition.replace(/_/g, ' ');
 }
 
-// Relative short format: "2h ago" / "Yesterday 3:42 PM" / "Mar 25".
+// Minute-granularity relative format: "2m ago" / "Yesterday 3:42 PM" / "Mar 25".
 // Uses day-boundary comparisons (not getDate() equality) to avoid labeling
 // same-day-of-month past dates as "Yesterday".
-export function formatRelative(dateStr) {
+export function formatRelativeTime(dateStr) {
   const d = new Date(dateStr);
   const now = new Date();
   const diffMs = now - d;
@@ -76,6 +76,7 @@ export function formatRelativeDay(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days < 0) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days}d ago`;

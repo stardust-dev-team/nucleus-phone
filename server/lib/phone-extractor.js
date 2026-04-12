@@ -18,10 +18,15 @@ const { pool } = require('../db');
 const PHONE_DIGIT_RE = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.\-]?(\d{3})[\s.\-]?(\d{4})/g;
 
 // Spoken digit sequences — RT transcription often outputs "5 5 5 1 2 3 4 5 6 7"
-const SPACED_DIGITS_RE = /(?:(?:\+?1\s)?(\d)\s(\d)\s(\d)\s(\d)\s(\d)\s(\d)\s(\d)\s(\d)\s(\d)\s(\d))/g;
+// Uses \s+ between digits to handle inconsistent spacing from transcription engines.
+const SPACED_DIGITS_RE = /(?:(?:\+?1\s+)?(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d)\s+(\d))/g;
 
-// Numbers that are obviously not phone numbers
-const IGNORE_PREFIXES = new Set(['800', '888', '877', '866', '855', '844', '833']);
+// Toll-free and premium prefixes — not useful for outbound sales capture.
+// These are real phone numbers but not direct-dial numbers worth recording.
+const IGNORE_PREFIXES = new Set([
+  '800', '888', '877', '866', '855', '844', '833', '822', // toll-free
+  '900', '976',                                             // premium-rate
+]);
 
 function extractPhoneNumbers(text) {
   if (!text || typeof text !== 'string') return [];
@@ -51,14 +56,14 @@ function extractPhoneNumbers(text) {
 
 /**
  * Process a transcript chunk for phone numbers and store any new ones.
+ * Fire-and-forget — the caller (transcription.js) discards the return value.
  * @param {number} callDbId - The database row id of the call
  * @param {string} leadPhone - The call's lead_phone (to exclude from captures)
  * @param {string} text - Transcript chunk text
- * @returns {string[]} Newly captured phone numbers (empty if none new)
  */
 async function capturePhones(callDbId, leadPhone, text) {
   const phones = extractPhoneNumbers(text);
-  if (phones.length === 0) return [];
+  if (phones.length === 0) return;
 
   // Normalize lead_phone for comparison
   const leadDigits = leadPhone ? leadPhone.replace(/\D/g, '').slice(-10) : '';
@@ -69,10 +74,10 @@ async function capturePhones(callDbId, leadPhone, text) {
     return digits !== leadDigits;
   });
 
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return;
 
   // Atomic dedup + append — only add phones not already in the array
-  const { rows } = await pool.query(
+  await pool.query(
     `UPDATE nucleus_phone_calls
      SET captured_phones = (
        SELECT jsonb_agg(DISTINCT val)
@@ -82,12 +87,9 @@ async function capturePhones(callDbId, leadPhone, text) {
          SELECT unnest($1::text[])
        ) sub
      )
-     WHERE id = $2
-     RETURNING captured_phones`,
+     WHERE id = $2`,
     [candidates, callDbId],
   );
-
-  return candidates;
 }
 
 module.exports = { extractPhoneNumbers, capturePhones };
