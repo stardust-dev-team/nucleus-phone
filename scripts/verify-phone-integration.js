@@ -48,11 +48,11 @@ async function apiFetch(base, path, opts = {}) {
     body,
     signal: AbortSignal.timeout(15000),
   });
+  const text = await resp.text();
   let data;
   try {
-    data = await resp.json();
+    data = JSON.parse(text);
   } catch {
-    const text = await resp.text().catch(() => '');
     data = { _parseError: true, body: text.slice(0, 500) };
   }
   return { status: resp.status, data };
@@ -257,26 +257,22 @@ async function checkMultichannelAPI() {
 
   if (!MC_API_KEY) { skip('All checks', 'MC_API_KEY not set'); return; }
 
-  try {
-    const { status, data } = await apiFetch(MC_BASE, '/admin/abm/accounts?limit=3');
-    assert('Returns 200', status === 200, `got ${status}`);
-    assert('Has accounts array', Array.isArray(data.accounts),
-      `keys: ${Object.keys(data).join(', ')}`);
+  const { status, data } = await apiFetch(MC_BASE, '/admin/abm/accounts?limit=3');
+  assert('Returns 200', status === 200, `got ${status}`);
+  assert('Has accounts array', Array.isArray(data.accounts),
+    `keys: ${Object.keys(data || {}).join(', ')}`);
 
-    if (data.accounts?.length) {
-      const a = data.accounts[0];
-      const signalFields = ['signal_tier', 'signal_score', 'source_count',
-        'cert_expiry_date', 'contract_total', 'dod_flag'];
-      const missing = missingFields(a, signalFields);
-      assert('Account has signal fields (Phase 2 fix)', !missing.length,
-        `missing: ${missing.join(', ')}`);
-      assert('Account has domain', !!a.domain);
-      assert('Account has company_name', !!a.company_name || !!a.name);
-    } else {
-      skip('Account field check', 'no accounts returned');
-    }
-  } catch (err) {
-    assert('Multichannel reachable', false, err.message);
+  if (data.accounts?.length) {
+    const a = data.accounts[0];
+    const signalFields = ['signal_tier', 'signal_score', 'source_count',
+      'cert_expiry_date', 'contract_total', 'dod_flag'];
+    const missing = missingFields(a, signalFields);
+    assert('Account has signal fields (Phase 2 fix)', !missing.length,
+      `missing: ${missing.join(', ')}`);
+    assert('Account has domain', !!a.domain);
+    assert('Account has company_name', !!a.company_name || !!a.name);
+  } else {
+    skip('Account field check', 'no accounts returned');
   }
 }
 
