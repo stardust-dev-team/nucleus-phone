@@ -60,4 +60,11 @@ async function stopCall(vapiCallId) {
   return vapiRequest('POST', `call/${encodeURIComponent(vapiCallId)}/stop`);
 }
 
-module.exports = { createOutboundCall, stopCall };
+/**
+ * Fetch a completed call from the Vapi API (includes transcript + recording).
+ */
+async function getCall(vapiCallId) {
+  return vapiRequest('GET', `call/${encodeURIComponent(vapiCallId)}`);
+}
+
+module.exports = { createOutboundCall, stopCall, getCall };

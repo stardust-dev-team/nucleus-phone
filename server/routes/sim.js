@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const { sessionAuth } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
-const { createOutboundCall, stopCall } = require('../lib/vapi');
+const { createOutboundCall, stopCall, getCall } = require('../lib/vapi');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
@@ -518,6 +518,8 @@ router.post('/webhook', async (req, res) => {
   const { message } = req.body || {};
   if (!message) return res.sendStatus(200);
 
+  console.log(`sim webhook: type=${message.type} call=${message.call?.id || 'none'}`);
+
   // ── Handle real-time transcript events (practice call live analysis) ──
   if (message.type === 'transcript') {
     res.sendStatus(200);
@@ -535,10 +537,27 @@ router.post('/webhook', async (req, res) => {
   const vapiCallId = call?.id;
   if (!vapiCallId) return res.sendStatus(200);
 
-  const transcript = artifact?.transcript || null;
-  const recording = artifact?.recordingUrl || artifact?.recording?.url || null;
+  let transcript = artifact?.transcript || null;
+  let recording = artifact?.recordingUrl || artifact?.recording?.url || null;
   const duration = typeof call?.duration === 'number' ? Math.round(call.duration) : null;
   const costCents = typeof call?.cost === 'number' ? Math.round(call.cost * 100) : null;
+
+  console.log(`sim webhook: end-of-call for ${vapiCallId} — transcript=${transcript ? 'yes' : 'MISSING'} recording=${recording ? 'yes' : 'MISSING'}`);
+
+  // Vapi sometimes fires the end-of-call webhook before transcript is ready.
+  // If transcript is missing, wait 5s and fetch directly from the Vapi API.
+  if (!transcript) {
+    console.log(`sim webhook: transcript missing, fetching from Vapi API in 5s...`);
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const vapiCall = await getCall(vapiCallId);
+      transcript = vapiCall.artifact?.transcript || vapiCall.transcript || null;
+      recording = recording || vapiCall.artifact?.recordingUrl || vapiCall.recordingUrl || null;
+      console.log(`sim webhook: Vapi API fallback — transcript=${transcript ? 'yes (' + transcript.length + ' chars)' : 'STILL MISSING'}`);
+    } catch (err) {
+      console.warn(`sim webhook: Vapi API fallback failed for ${vapiCallId}:`, err.message);
+    }
+  }
 
   // Update the existing row. For browser-mode calls, vapi_call_id is set via
   // link-vapi (client-side) and may not be written yet. Retry once after 2s.
@@ -580,7 +599,7 @@ router.post('/webhook', async (req, res) => {
   (async () => {
     if (!transcript) {
       await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
-      console.warn(`sim webhook: no transcript for call ${vapiCallId}`);
+      console.warn(`sim webhook: no transcript for call ${vapiCallId} even after API fallback`);
       return;
     }
 
