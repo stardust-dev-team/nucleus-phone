@@ -298,104 +298,102 @@ export default function Cockpit({ identity, callState, twilioStatus, forcedId, o
           </button>
         </div>
       ) : (
-        <>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {isPractice ? (
-              /* ── Practice layout: Bridge — viewscreen center, stations flanking ── */
-              <>
-                {/* Contact identity + signal context — ship status bar */}
-                <div className="px-5 pt-3 pb-1">
-                  <ContactIdentity identity={d.identity} />
-                  <div className="flex items-center justify-between">
-                    <SignalBadges signalMetadata={d.signalMetadata} domain={d.icpScore?.domain} />
-                    <DataSourceIndicator sources={dataSources(d)} />
-                  </div>
-                  <LastCallCard priorCalls={d.priorCalls} />
-                </div>
-
-                {/* Bridge layout: 3-column with viewscreen center */}
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-3 px-5 pb-3">
-
-                  {/* Left — Rapport + Career + Discovery + Intel */}
-                  <div className="min-w-0 flex flex-col gap-0">
-                    <ScoreSection label="Rapport" weight="20%" color="amber" isPractice>
-                      <RapportOpener openingLine={d.rapport?.opening_line} />
-                      <RapportTags tags={d.rapport?.rapport_starters} />
-                    </ScoreSection>
-                    <CareerContext pbContactData={d.identity?.pbContactData} />
-                    <ScoreSection label="Discovery" weight="25%" color="blue" isPractice>
-                      <IntelNuggets nuggets={d.rapport?.intel_nuggets} />
-                    </ScoreSection>
-                  </div>
-
-                  {/* CENTER — Viewscreen */}
-                  <div className="min-w-0 flex flex-col">
-                    <div className="cockpit-viewscreen">
-                      <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} contact={d.identity} callId={liveCallId} />
-                    </div>
-                  </div>
-
-                  {/* Right — Objections + Qual Script + Product */}
-                  <div className="min-w-0 flex flex-col gap-0">
-                    <ScoreSection label="Objection Handling" weight="25%" color="orange" isPractice>
-                      <IntelNuggets watchOuts={d.rapport?.watch_outs} />
-                    </ScoreSection>
-                    <QualScript adaptedScript={d.rapport?.adapted_script} />
-                    <ScoreSection label="Product & Close" weight="30%" color="green" isPractice>
-                      <ProductReference productReference={d.rapport?.product_reference} />
-                    </ScoreSection>
-                  </div>
-                </div>
-
-                <PracticeHistory identity={identity} refreshKey={historyKey} />
-              </>
-            ) : (
-              /* ── Real call layout: tabbed interface ── */
-              <RealCallLayout
-                d={d}
-                callPhase={callPhase}
-                liveAnalysis={liveAnalysis}
-                liveCallId={liveCallId}
-                testCallId={testCallId}
-                onTestCallId={setTestCallId}
-                confParam={confParam}
-              />
-            )}
-          </div>
-
-          {/* Bottom bar: practice button or real call controls */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {isPractice ? (
-            <div
-              className="sticky bottom-0 z-10 flex items-center justify-center px-4 py-3 shrink-0 transition-colors duration-300"
-              style={{
-                background: 'var(--cockpit-footer-bg)',
-                borderTop: '1px solid var(--cockpit-card-border)',
-              }}
-            >
-              <PracticeCallButton
-                identity={identity}
-                onScoreComplete={handleScoreComplete}
-                onDifficultySelect={setPracticeDifficulty}
-                onCallStart={(simId) => setActiveSimCallId(simId)}
-                onCallEnd={() => setActiveSimCallId(null)}
-              />
-            </div>
+            /* ── Practice layout: Bridge — viewscreen center, stations flanking ── */
+            <>
+              {/* Contact identity + signal context — ship status bar */}
+              <div className="px-5 pt-3 pb-1">
+                <ContactIdentity identity={d.identity} />
+                <div className="flex items-center justify-between">
+                  <SignalBadges signalMetadata={d.signalMetadata} domain={d.icpScore?.domain} />
+                  <DataSourceIndicator sources={dataSources(d)} />
+                </div>
+                <LastCallCard priorCalls={d.priorCalls} />
+              </div>
+
+              {/* Bridge layout: 3-column with viewscreen center */}
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-3 px-5 pb-3">
+
+                {/* Left — Rapport + Career + Discovery + Intel */}
+                <div className="min-w-0 flex flex-col gap-0">
+                  <ScoreSection label="Rapport" weight="20%" color="amber" isPractice>
+                    <RapportOpener openingLine={d.rapport?.opening_line} />
+                    <RapportTags tags={d.rapport?.rapport_starters} />
+                  </ScoreSection>
+                  <CareerContext pbContactData={d.identity?.pbContactData} />
+                  <ScoreSection label="Discovery" weight="25%" color="blue" isPractice>
+                    <IntelNuggets nuggets={d.rapport?.intel_nuggets} />
+                  </ScoreSection>
+                </div>
+
+                {/* CENTER — Viewscreen */}
+                <div className="min-w-0 flex flex-col">
+                  <div className="cockpit-viewscreen">
+                    <LiveAnalysis data={liveAnalysis} active={!!activeSimCallId} contact={d.identity} callId={liveCallId} />
+                  </div>
+                </div>
+
+                {/* Right — Objections + Qual Script + Product */}
+                <div className="min-w-0 flex flex-col gap-0">
+                  <ScoreSection label="Objection Handling" weight="25%" color="orange" isPractice>
+                    <IntelNuggets watchOuts={d.rapport?.watch_outs} />
+                  </ScoreSection>
+                  <QualScript adaptedScript={d.rapport?.adapted_script} />
+                  <ScoreSection label="Product & Close" weight="30%" color="green" isPractice>
+                    <ProductReference productReference={d.rapport?.product_reference} />
+                  </ScoreSection>
+                </div>
+              </div>
+
+              <PracticeHistory identity={identity} refreshKey={historyKey} />
+            </>
           ) : (
-            <CallControls
+            /* ── Real call layout: tabbed interface ── */
+            <RealCallLayout
+              d={d}
               callPhase={callPhase}
-              timer={callState.elapsed}
-              onCallNow={handleCallNow}
-              onEndCall={handleEndCall}
-              onSaveNext={handleSaveNext}
-              onSkip={handleSkip}
-              skipLoading={skipLoading}
-              disabled={twilioStatus !== 'ready'}
-              onSendDigits={onSendDigits}
-              onToggleMute={onToggleMute}
-              muted={muted}
+              liveAnalysis={liveAnalysis}
+              liveCallId={liveCallId}
+              testCallId={testCallId}
+              onTestCallId={setTestCallId}
+              confParam={confParam}
             />
           )}
-        </>
+        </div>
+      )}
+
+      {/* Bottom bar: always mounted to preserve state across cockpit data refreshes */}
+      {isPractice ? (
+        <div
+          className="sticky bottom-0 z-10 flex items-center justify-center px-4 py-3 shrink-0 transition-colors duration-300"
+          style={{
+            background: 'var(--cockpit-footer-bg)',
+            borderTop: '1px solid var(--cockpit-card-border)',
+          }}
+        >
+          <PracticeCallButton
+            identity={identity}
+            onScoreComplete={handleScoreComplete}
+            onDifficultySelect={setPracticeDifficulty}
+            onCallStart={(simId) => setActiveSimCallId(simId)}
+            onCallEnd={() => setActiveSimCallId(null)}
+          />
+        </div>
+      ) : !loading && !error && (
+        <CallControls
+          callPhase={callPhase}
+          timer={callState.elapsed}
+          onCallNow={handleCallNow}
+          onEndCall={handleEndCall}
+          onSaveNext={handleSaveNext}
+          onSkip={handleSkip}
+          skipLoading={skipLoading}
+          disabled={twilioStatus !== 'ready'}
+          onSendDigits={onSendDigits}
+          onToggleMute={onToggleMute}
+          muted={muted}
+        />
       )}
     </div>
   );

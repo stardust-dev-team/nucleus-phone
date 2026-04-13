@@ -4,10 +4,12 @@ import { startPracticeCall, getPracticeCallStatus, cancelPracticeCall, linkVapiC
 import { GRADE_EMOJI } from '../../lib/constants';
 
 const DIFFICULTIES = [
-  { key: 'easy', label: 'Easy', desc: 'Friendly Mike — open to conversation' },
-  { key: 'medium', label: 'Medium', desc: 'Skeptical Mike — pushes back on pitches' },
-  { key: 'hard', label: 'Hard', desc: 'Hostile Mike — you have 30 seconds' },
+  { key: 'easy', label: 'Easy', desc: 'Friendly Mike — open to conversation', tip: 'Mike is friendly. Focus on building rapport and asking open questions.' },
+  { key: 'medium', label: 'Medium', desc: 'Skeptical Mike — pushes back on pitches', tip: 'Mike will push back. Listen to his objections before countering.' },
+  { key: 'hard', label: 'Hard', desc: 'Hostile Mike — you have 30 seconds', tip: 'Mike is hostile. Lead with value, not introductions. Every second counts.' },
 ];
+
+const RING_DURATION_MS = 3000;
 
 // Phase 1: poll every 5s while call in progress (no timeout — calls can run 8 min)
 // Phase 2: poll every 3s while scoring, 60s timeout
@@ -15,8 +17,38 @@ const POLL_CALL_MS = 5000;
 const POLL_SCORE_MS = 3000;
 const SCORE_TIMEOUT_MS = 60000;
 
+// Synthesize a phone ringtone using Web Audio API — two-tone ring, 2s on / 4s off
+function playRingtone(durationMs) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.15;
+  gain.connect(ctx.destination);
+
+  const ringOn = 0.8;   // ring burst duration (seconds)
+  const ringOff = 0.4;  // gap between bursts
+  const cycle = ringOn + ringOff;
+  const cycles = Math.ceil(durationMs / 1000 / cycle);
+
+  for (let i = 0; i < cycles; i++) {
+    const start = i * cycle;
+    // Two-tone: 440Hz + 480Hz mimics US ringtone
+    [440, 480].forEach(freq => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + ringOn);
+    });
+  }
+
+  const stopTime = ctx.currentTime + (durationMs / 1000) + 0.1;
+  setTimeout(() => ctx.close(), durationMs + 200);
+  return { stop: () => { gain.gain.value = 0; ctx.close(); } };
+}
+
 export default function PracticeCallButton({ identity, onScoreComplete, onDifficultySelect, onCallStart, onCallEnd }) {
-  const [phase, setPhase] = useState('idle'); // idle | selecting | connecting | in-progress | scoring | complete | error
+  const [phase, setPhase] = useState('idle'); // idle | selecting | confirming | ringing | connecting | in-progress | scoring | complete | error
   const [difficulty, setDifficulty] = useState(null);
   const [callMode, setCallMode] = useState('browser'); // 'phone' | 'browser'
   const [simCallId, setSimCallId] = useState(null);
@@ -26,6 +58,8 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
   const abortRef = useRef(null);
   const startTimeRef = useRef(null);
   const vapiRef = useRef(null);
+  const ringtoneRef = useRef(null);
+  const ringTimerRef = useRef(null);
   const onScoreCompleteRef = useRef(onScoreComplete);
   onScoreCompleteRef.current = onScoreComplete;
   const onCallStartRef = useRef(onCallStart);
@@ -51,10 +85,22 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
     }
   }, []);
 
+  const cleanupRingtone = useCallback(() => {
+    if (ringtoneRef.current) {
+      ringtoneRef.current.stop();
+      ringtoneRef.current = null;
+    }
+    if (ringTimerRef.current) {
+      clearTimeout(ringTimerRef.current);
+      ringTimerRef.current = null;
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
     cleanupPoll();
     cleanupVapi();
-  }, [cleanupPoll, cleanupVapi]);
+    cleanupRingtone();
+  }, [cleanupPoll, cleanupVapi, cleanupRingtone]);
 
   useEffect(() => cleanup, [cleanup]);
 
@@ -114,12 +160,27 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
     }, interval);
   }
 
-  async function handleStart(diff) {
+  function handleSelectDifficulty(diff) {
     setDifficulty(diff);
     onDifficultySelect?.(diff);
-    setPhase('connecting');
+    setPhase('confirming');
+  }
+
+  function handleConfirm() {
+    setPhase('ringing');
     setErrorMsg('');
     setResult(null);
+
+    // Play ringtone, then connect
+    ringtoneRef.current = playRingtone(RING_DURATION_MS);
+    ringTimerRef.current = setTimeout(() => {
+      cleanupRingtone();
+      initiateCall(difficulty);
+    }, RING_DURATION_MS);
+  }
+
+  async function initiateCall(diff) {
+    setPhase('connecting');
 
     try {
       const data = await startPracticeCall(diff, callMode);
@@ -150,7 +211,7 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
   }
 
   async function handleCancel() {
-    const wasActive = phase === 'in-progress';
+    const wasActive = phase === 'in-progress' || phase === 'ringing' || phase === 'connecting';
     cleanup();
     if (wasActive) onCallEndRef.current?.();
     if (simCallId) {
@@ -166,6 +227,8 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
     setSimCallId(null);
     setErrorMsg('');
   }
+
+  const selectedDiff = DIFFICULTIES.find(d => d.key === difficulty);
 
   // ─── Idle ─────────────────────────────────────
   if (phase === 'idle') {
@@ -215,7 +278,7 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
         {DIFFICULTIES.map(d => (
           <button
             key={d.key}
-            onClick={() => handleStart(d.key)}
+            onClick={() => handleSelectDifficulty(d.key)}
             className="w-full py-2.5 px-4 rounded text-left transition-colors cursor-pointer"
             style={{
               background: 'var(--cockpit-purple-bg)',
@@ -234,6 +297,69 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
           onClick={handleReset}
           className="text-xs mt-1 cursor-pointer"
           style={{ color: 'var(--cockpit-text-muted)' }}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  // ─── Confirmation ─────────────────────────────
+  if (phase === 'confirming' && selectedDiff) {
+    return (
+      <div className="flex flex-col gap-3 w-full max-w-[400px] mx-auto">
+        <div
+          className="px-5 py-4 rounded text-center"
+          style={{
+            background: 'var(--cockpit-purple-bg)',
+            border: '1px solid var(--cockpit-purple-border)',
+          }}
+        >
+          <p className="text-sm font-semibold" style={{ color: 'var(--cockpit-purple-900)' }}>
+            {selectedDiff.label} — {selectedDiff.desc}
+          </p>
+          <p className="text-xs mt-2 leading-relaxed" style={{ color: 'var(--cockpit-text-muted)' }}>
+            {selectedDiff.tip}
+          </p>
+        </div>
+        <button
+          onClick={handleConfirm}
+          className="w-full py-3 rounded text-sm font-semibold text-white cursor-pointer transition-opacity flex items-center justify-center gap-2"
+          style={{ background: 'var(--cockpit-purple-600)' }}
+        >
+          📞 Begin Practice Call
+        </button>
+        <button
+          onClick={() => setPhase('selecting')}
+          className="text-xs cursor-pointer"
+          style={{ color: 'var(--cockpit-text-muted)' }}
+        >
+          Back
+        </button>
+      </div>
+    );
+  }
+
+  // ─── Ringing ──────────────────────────────────
+  if (phase === 'ringing') {
+    return (
+      <div className="flex flex-col items-center gap-3 w-full max-w-[400px] mx-auto">
+        <div
+          className="flex items-center gap-3 w-full px-6 py-4 rounded justify-center"
+          style={{
+            background: 'var(--cockpit-purple-bg)',
+            border: '1px solid var(--cockpit-purple-border)',
+          }}
+        >
+          <span className="text-lg animate-pulse">📞</span>
+          <span className="text-sm font-normal" style={{ color: 'var(--cockpit-purple-900)' }}>
+            Ringing Mike Garza...
+          </span>
+        </div>
+        <button
+          onClick={handleCancel}
+          className="text-xs cursor-pointer px-3 py-1 rounded"
+          style={{ color: 'var(--cockpit-red-text)', background: 'var(--cockpit-red-bg)' }}
         >
           Cancel
         </button>
@@ -264,10 +390,10 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
         </div>
         <button
           onClick={handleCancel}
-          className="text-xs cursor-pointer px-3 py-1 rounded"
-          style={{ color: 'var(--cockpit-red-text)', background: 'var(--cockpit-red-bg)' }}
+          className="w-full py-2.5 rounded text-sm font-semibold cursor-pointer transition-opacity"
+          style={{ color: 'var(--cockpit-red-text)', background: 'var(--cockpit-red-bg)', border: '1px solid var(--cockpit-red-border, transparent)' }}
         >
-          Cancel practice
+          End Practice Call
         </button>
       </div>
     );
