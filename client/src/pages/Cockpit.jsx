@@ -397,10 +397,10 @@ export default function Cockpit({ identity, role, callState, twilioStatus, force
         />
       )}
 
-      {role === 'admin' && callPhase !== 'pre' && (
+      {role === 'admin' && (callPhase !== 'pre' || activeSimCallId) && (
         <DebugOverlay
           wsConnected={liveAnalysis.connected}
-          callPhase={callPhase}
+          callPhase={activeSimCallId ? 'practice' : callPhase}
           callId={liveCallId}
         />
       )}
