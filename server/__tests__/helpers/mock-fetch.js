@@ -13,10 +13,16 @@
 
 let fetchMock;
 
+function makeHeaders(map = {}) {
+  const lower = Object.fromEntries(Object.entries(map).map(([k, v]) => [k.toLowerCase(), String(v)]));
+  return { get: (name) => (name.toLowerCase() in lower ? lower[name.toLowerCase()] : null) };
+}
+
 function installFetchMock() {
   fetchMock = jest.fn().mockResolvedValue({
     ok: true,
     status: 200,
+    headers: makeHeaders(),
     json: async () => ({}),
     text: async () => '',
   });
@@ -24,11 +30,12 @@ function installFetchMock() {
   return fetchMock;
 }
 
-function mockFetchResponse(body, { status = 200, ok } = {}) {
+function mockFetchResponse(body, { status = 200, ok, headers = {} } = {}) {
   const isOk = ok !== undefined ? ok : status >= 200 && status < 300;
   fetchMock.mockResolvedValueOnce({
     ok: isOk,
     status,
+    headers: makeHeaders(headers),
     json: async () => (typeof body === 'object' ? body : JSON.parse(body)),
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
   });

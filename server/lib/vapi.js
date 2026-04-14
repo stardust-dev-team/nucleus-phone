@@ -30,6 +30,10 @@ async function vapiRequest(method, endpoint, body, { usePublicKey } = {}) {
     if (!res.ok) {
       const text = await res.text();
       const err = new Error(`Vapi ${method} ${endpoint} (${res.status}): ${text.substring(0, 300)}`);
+      err.status = res.status;
+      err.body = text.substring(0, 500);
+      err.endpoint = endpoint;
+      err.method = method;
       logEvent('integration', 'vapi.api', `${method} ${endpoint} failed: ${res.status}`, { level: 'error', detail: { status: res.status, body: text.substring(0, 200) } });
       throw err;
     }

@@ -260,7 +260,16 @@ router.post('/call', sessionAuth, async (req, res) => {
     res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
     console.error('sim: INSERT failed after Vapi call initiated, stopping orphan:', err.message);
-    stopCall(call.id).catch(e => console.warn('sim: failed to stop orphan:', e.message));
+    stopCall(call.id).catch(e => {
+      console.error('sim: ORPHAN Vapi call could not be stopped:', e.message);
+      sendSystemAlert(
+        `🔴 Orphan Vapi Call — manual cleanup required`,
+        [{
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*DB insert failed AND Vapi stop failed — live call burning minutes with no DB row.*\n*Vapi Call ID:* \`${call.id}\`\n*Caller:* ${identity}\n*DB error:* ${err.message}\n*Stop error:* ${e.message} (status ${e.status || 'n/a'})\n*Action:* End this call manually in the Vapi dashboard.` },
+        }]
+      ).catch(() => {});
+    });
     res.status(500).json({ error: 'Failed to record practice call' });
   }
 });
@@ -405,7 +414,13 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
 
   if (row.vapi_call_id) {
     try { await stopCall(row.vapi_call_id); } catch (err) {
-      console.warn('Vapi stop failed (may have already ended):', err.message);
+      // 404 = call already ended on Vapi's side (race with inactivity timeout). That's fine.
+      // Anything else is a real failure — log loudly so it gets noticed.
+      if (err.status === 404) {
+        console.log(`Vapi stop: call ${row.vapi_call_id} already ended (404)`);
+      } else {
+        console.error(`Vapi stop FAILED for ${row.vapi_call_id} (status ${err.status || 'n/a'}):`, err.message);
+      }
     }
   }
 
