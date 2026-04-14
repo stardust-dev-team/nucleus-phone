@@ -15,6 +15,7 @@ const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
 const { processEquipmentChunk } = require('../lib/equipment-pipeline');
+const { processConversationChunk, getCallEventLog, cleanupConversation } = require('../lib/conversation-pipeline');
 const { logEvent } = require('../lib/debug-log');
 const { touch } = require('../lib/health-tracker');
 const team = require('../config/team.json');
@@ -440,9 +441,13 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
   );
   res.json({ cancelled: false, scoring: true });
 
+  // Capture navigator events then clean up conversation state
+  const navEvents = getCallEventLog(`sim-${row.id}`);
+  cleanupConversation(`sim-${row.id}`);
+
   // Fire-and-forget scoring pipeline
   (async () => {
-    const result = await scoreTranscript(transcript, row.difficulty, row.caller_identity);
+    const result = await scoreTranscript(transcript, row.difficulty, row.caller_identity, navEvents);
     if (result.error) {
       console.error(`sim cancel scoring failed for ${row.vapi_call_id}:`, result.message);
       await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
@@ -561,6 +566,11 @@ async function handleTranscriptEvent(message) {
 
   // Run entity extraction → lookup → sizing → broadcast pipeline
   await processEquipmentChunk(wsCallId, 'practice', String(simId), text);
+
+  // Run conversation analysis pipeline (fire-and-forget, parallel to equipment)
+  processConversationChunk(wsCallId, text).catch((err) => {
+    console.error('sim: conversation pipeline error:', err.message);
+  });
 }
 
 // ─── Vapi webhook handler (registered above auth middleware) ─────────────────
@@ -649,8 +659,12 @@ async function webhookHandler(req, res) {
     return;
   }
 
-  // Async scoring pipeline (fire-and-forget after 200 response).
+  // Capture navigator events then clean up conversation state
   const row = rows[0];
+  const webhookNavEvents = getCallEventLog(`sim-${row.id}`);
+  cleanupConversation(`sim-${row.id}`);
+
+  // Async scoring pipeline (fire-and-forget after 200 response).
   (async () => {
     if (!transcript) {
       await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);
@@ -658,7 +672,7 @@ async function webhookHandler(req, res) {
       return;
     }
 
-    const result = await scoreTranscript(transcript, row.difficulty, row.caller_identity);
+    const result = await scoreTranscript(transcript, row.difficulty, row.caller_identity, webhookNavEvents);
     if (result.error) {
       console.error(`sim scoring failed for ${vapiCallId}:`, result.message);
       await pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id]);

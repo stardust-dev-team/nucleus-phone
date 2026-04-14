@@ -20,6 +20,7 @@ const { pool } = require('../db');
 const { broadcast } = require('../lib/live-analysis');
 const { track } = require('../lib/inflight');
 const { processEquipmentChunk } = require('../lib/equipment-pipeline');
+const { processConversationChunk } = require('../lib/conversation-pipeline');
 const { summarizeCall, MIN_TRANSCRIPT_LENGTH } = require('../lib/call-summarizer');
 const { capturePhones } = require('../lib/phone-extractor');
 const { logEvent } = require('../lib/debug-log');
@@ -107,6 +108,11 @@ router.post('/', twilioWebhook, async (req, res) => {
   // Run entity extraction pipeline (fire-and-forget, don't block)
   processEquipmentChunk(callId, 'real', String(call.id), transcriptText).catch((err) => {
     console.error('transcription: pipeline error:', err.message);
+  });
+
+  // Run conversation analysis pipeline (fire-and-forget, parallel to equipment)
+  processConversationChunk(callId, transcriptText).catch((err) => {
+    console.error('transcription: conversation pipeline error:', err.message);
   });
 
   // Capture any phone numbers spoken during the call
