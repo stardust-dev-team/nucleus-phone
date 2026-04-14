@@ -188,11 +188,21 @@ describe('stopCallAndLog (branching logic extracted for testability)', () => {
     expect(logger.log).not.toHaveBeenCalled();
   });
 
-  test('defaults to console when no logger passed', async () => {
-    // Smoke test — production callers pass no logger. Must not throw.
-    mockFetchResponse('', { status: 204 });
-    const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    await expect(stopCallAndLog('call-abc')).resolves.toBe('stopped');
-    spy.mockRestore();
+  test('defaults to console when no logger passed — verified via 404 branch', async () => {
+    // Must use a branch that actually calls logger.log, otherwise the spy
+    // is never touched and this test passes whether the default works or not.
+    // 404 → 'already-ended' calls logger.log. 204 → 'stopped' calls neither.
+    mockFetchResponse('{"message":"Call not found"}', { status: 404 });
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await stopCallAndLog('call-abc');
+      expect(result).toBe('already-ended');
+      expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/already ended \(404\)/));
+      expect(errSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });
