@@ -13,6 +13,7 @@ const WebSocket = require('ws');
 const { WebSocketServer } = WebSocket;
 const jwt = require('jsonwebtoken');
 const { logEvent } = require('./debug-log');
+const { AQ_RANK } = require('./aq-constants');
 
 // callId -> Set<ws>
 const subscriptions = new Map();
@@ -23,6 +24,11 @@ const seen = new Map();
 // callId -> Array<equipment> — accumulated equipment for sizing recalculation.
 // Ephemeral: lost on restart, but sizing rebuilds from subsequent detections.
 const callEquipment = new Map();
+
+// callId -> string — highest-priority air quality class detected from conversation
+// context (e.g. AS9100/aerospace → ISO_8573_1). Separate from equipment-derived
+// air quality because CNC machines default to 'general' even in aerospace shops.
+const callAirQuality = new Map();
 
 function attachWebSocket(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
@@ -100,6 +106,7 @@ function unsubClient(callId, ws) {
     subscriptions.delete(callId);
     seen.delete(callId);
     callEquipment.delete(callId);
+    callAirQuality.delete(callId);
   }
 }
 
@@ -149,6 +156,7 @@ function cleanupCall(callId) {
   subscriptions.delete(callId);
   seen.delete(callId);
   callEquipment.delete(callId);
+  callAirQuality.delete(callId);
 }
 
 /**
@@ -157,6 +165,26 @@ function cleanupCall(callId) {
 function getCallEquipment(callId) {
   if (!callEquipment.has(callId)) callEquipment.set(callId, []);
   return callEquipment.get(callId);
+}
+
+/**
+ * Get the highest-priority air quality class detected from conversation context.
+ */
+function getCallAirQuality(callId) {
+  return callAirQuality.get(callId) || null;
+}
+
+/**
+ * Set air quality class from conversation context, keeping the highest priority.
+ * ISO_8573_1 > paint_grade > general/null.
+ */
+function setCallAirQuality(callId, aqClass) {
+  const current = callAirQuality.get(callId);
+  if ((AQ_RANK[aqClass] || 0) > (AQ_RANK[current] || 0)) {
+    callAirQuality.set(callId, aqClass);
+    return true;   // escalated
+  }
+  return false;     // no change
 }
 
 /**
@@ -186,4 +214,4 @@ function getConnectionStats() {
   return { websockets, total: websockets.length };
 }
 
-module.exports = { attachWebSocket, broadcast, cleanupCall, getCallEquipment, getConnectionStats };
+module.exports = { attachWebSocket, broadcast, cleanupCall, getCallEquipment, getCallAirQuality, setCallAirQuality, getConnectionStats };

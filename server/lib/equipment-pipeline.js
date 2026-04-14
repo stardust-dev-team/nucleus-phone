@@ -10,8 +10,9 @@ const { extractEquipment } = require('./entity-extractor');
 const { lookupEquipment } = require('./equipment-lookup');
 const { calculateDemand, recommendSystem, addQualityFilters, deriveSalesChannel } = require('./sizing-engine');
 const { logSighting } = require('./equipment-db');
-const { broadcast, getCallEquipment } = require('./live-analysis');
+const { broadcast, getCallEquipment, getCallAirQuality, setCallAirQuality } = require('./live-analysis');
 const { addVariant } = require('./equipment-curator');
+const { AQ_RANK } = require('./aq-constants');
 
 // Default CFM estimates for equipment categories when no specific model is matched.
 // Based on manufacturer pre-install guides, industry standards, and forum data.
@@ -49,6 +50,40 @@ const CNC_MANUFACTURERS = new Set([
   'citizen', 'star', 'tornos', 'daewoo', 'bridgeport',
 ]);
 
+// Air quality context keywords — detected from transcript text, independent of
+// equipment type. CNC machines default to 'general' air quality, but a shop running
+// AS9100 aerospace work needs ISO_8573_1 regardless of what machines they have.
+// Checked on every transcript chunk so context detected before or after equipment
+// mentions still gets applied.
+const AQ_CONTEXT_PATTERNS = [
+  { re: /\bAS[\s-]?9100\b/i,              aqClass: 'ISO_8573_1' },
+  { re: /\baerospace\b/i,                  aqClass: 'ISO_8573_1' },
+  { re: /\bpharma(?:ceutical)?\b/i,       aqClass: 'ISO_8573_1' },
+  { re: /\bISO[\s-]?8573\b/i,             aqClass: 'ISO_8573_1' },
+  { re: /\bmedical[\s-]?devices?\b/i,      aqClass: 'ISO_8573_1' },
+  { re: /\bclean[\s-]?room\b/i,           aqClass: 'ISO_8573_1' },
+  { re: /\bpaint[\s-]?booth\b/i,          aqClass: 'paint_grade' },
+  { re: /\bspray[\s-]?booth\b/i,          aqClass: 'paint_grade' },
+  { re: /\bauto[\s-]?body\b/i,            aqClass: 'paint_grade' },
+  { re: /\bpowder[\s-]?coat(?:ing)?\b/i,  aqClass: 'paint_grade' },
+];
+
+/**
+ * Scan transcript text for air quality context signals.
+ * Returns the highest-priority air quality class found, or null.
+ */
+function detectAirQualityContext(text) {
+  let best = null;
+  let bestRank = 0;
+  for (const { re, aqClass } of AQ_CONTEXT_PATTERNS) {
+    if (re.test(text) && (AQ_RANK[aqClass] || 0) > bestRank) {
+      best = aqClass;
+      bestRank = AQ_RANK[aqClass] || 0;
+    }
+  }
+  return best;
+}
+
 /**
  * Get default specs for an equipment entity that didn't match the catalog.
  * Uses manufacturer name, model keywords, and raw mention to infer category.
@@ -75,6 +110,33 @@ function getCategoryDefault(entity) {
 }
 
 /**
+ * Resolve the highest-priority air quality class from both equipment specs
+ * and conversation context (AS9100, aerospace, etc.). Context signals override
+ * equipment defaults because CNC machines are always 'general' even in
+ * aerospace shops.
+ */
+function resolveAirQuality(accumulated, callId) {
+  let bestAq = null;
+  let bestPriority = 0;
+
+  // Check equipment-derived air quality
+  for (const item of accumulated) {
+    const p = AQ_RANK[item.air_quality_class] || 0;
+    if (p > bestPriority) {
+      bestPriority = p;
+      bestAq = item.air_quality_class;
+    }
+  }
+
+  // Check conversation context (may override equipment defaults)
+  const contextAq = getCallAirQuality(callId);
+  const contextP = AQ_RANK[contextAq] || 0;
+  if (contextP > bestPriority) bestAq = contextAq;
+
+  return bestAq;
+}
+
+/**
  * Process a transcript chunk through the equipment detection pipeline.
  *
  * @param {string} callId   - WebSocket broadcast channel (e.g. 'conf_abc' or 'sim-42')
@@ -83,10 +145,32 @@ function getCategoryDefault(entity) {
  * @param {string} text     - Transcript text to process
  */
 async function processEquipmentChunk(callId, callType, dbCallId, text) {
-  const entities = await extractEquipment(text);
-  if (entities.length === 0) return;
+  // Scan every transcript chunk for air quality context (AS9100, aerospace, etc.)
+  // regardless of whether equipment is mentioned. Context may arrive in a different
+  // chunk than the equipment.
+  const detectedAq = detectAirQualityContext(text);
+  let aqEscalated = false;
+  if (detectedAq) aqEscalated = setCallAirQuality(callId, detectedAq);
 
+  const entities = await extractEquipment(text);
+
+  // If no new equipment but air quality escalated and we have prior equipment,
+  // re-trigger the recommendation with the upgraded air quality.
   const accumulated = getCallEquipment(callId);
+  if (entities.length === 0) {
+    if (aqEscalated && accumulated.length > 0) {
+      const demand = calculateDemand(accumulated);
+      const recommendation = recommendSystem(demand);
+      if (recommendation) {
+        const bestAq = resolveAirQuality(accumulated, callId);
+        addQualityFilters(recommendation, bestAq);
+        deriveSalesChannel(recommendation);
+        broadcast(callId, { type: 'recommendation_ready', data: recommendation });
+      }
+    }
+    return;
+  }
+
   let sizingChanged = false;
 
   for (const entity of entities) {
@@ -167,17 +251,7 @@ async function processEquipmentChunk(callId, callType, dbCallId, text) {
 
     const recommendation = recommendSystem(demand);
     if (recommendation) {
-      // Derive air quality class from accumulated equipment (priority: ISO > paint > general)
-      const AQ_PRIORITY = { ISO_8573_1: 2, paint_grade: 1 };
-      let bestAq = null;
-      let bestPriority = 0;
-      for (const item of accumulated) {
-        const p = AQ_PRIORITY[item.air_quality_class] || 0;
-        if (p > bestPriority) {
-          bestPriority = p;
-          bestAq = item.air_quality_class;
-        }
-      }
+      const bestAq = resolveAirQuality(accumulated, callId);
       addQualityFilters(recommendation, bestAq);
       deriveSalesChannel(recommendation);
       broadcast(callId, { type: 'recommendation_ready', data: recommendation });
@@ -185,4 +259,4 @@ async function processEquipmentChunk(callId, callType, dbCallId, text) {
   }
 }
 
-module.exports = { processEquipmentChunk };
+module.exports = { processEquipmentChunk, detectAirQualityContext, resolveAirQuality, AQ_CONTEXT_PATTERNS };

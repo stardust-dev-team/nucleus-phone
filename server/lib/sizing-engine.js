@@ -146,16 +146,25 @@ function recommendSystem(demand) {
   let compressor;
   let parallelConfig = null;
 
-  if (demand.adjustedCfm <= largest.cfm) {
-    // Prefer RS Open Frame / Large Frame (standard lines) over PM/VSD (premium upsell).
-    // Only fall back to PM/VSD if no standard model fits the demand.
+  // Select the primary compressor based on totalCfmAtDuty (realistic demand),
+  // not adjustedCfm (safety-inflated). The safety factor compounds with
+  // manufacturer specs that already include their own margins, causing oversizing
+  // at model break points. The rep sees a "growth headroom" note when the
+  // safety-adjusted demand exceeds the selected compressor.
+  // Use totalCfmAtDuty when available; fall back to adjustedCfm for
+  // backward compatibility with callers that provide only adjustedCfm.
+  const selectionCfm = demand.totalCfmAtDuty != null
+    ? Math.ceil(demand.totalCfmAtDuty)
+    : demand.adjustedCfm;
+
+  if (selectionCfm <= largest.cfm) {
     compressor = COMPRESSOR_CATALOG.find(c =>
-      c.cfm >= demand.adjustedCfm && (c.productLine === 'rs_open' || c.productLine === 'large_frame')
-    ) || COMPRESSOR_CATALOG.find(c => c.cfm >= demand.adjustedCfm);
+      c.cfm >= selectionCfm && (c.productLine === 'rs_open' || c.productLine === 'large_frame')
+    ) || COMPRESSOR_CATALOG.find(c => c.cfm >= selectionCfm);
   } else {
     // Parallel configuration: N identical units of the largest model
     compressor = largest;
-    const unitCount = Math.ceil(demand.adjustedCfm / largest.cfm);
+    const unitCount = Math.ceil(selectionCfm / largest.cfm);
     parallelConfig = {
       units: Array.from({ length: unitCount }, () => ({ ...largest })),
       totalCfm: unitCount * largest.cfm,
@@ -187,14 +196,27 @@ function recommendSystem(demand) {
     notes.push(`High PSI requirement (${demand.maxPsi}) — verify equipment specs`);
   }
 
+  // Growth headroom note — when the 25% safety-adjusted demand exceeds the
+  // selected compressor's rated CFM, suggest the next size up. The primary
+  // recommendation fits the realistic duty-cycle demand; this note flags the
+  // engineering margin for the rep to discuss with the customer.
+  if (!parallelConfig && demand.adjustedCfm > compressor.cfm) {
+    const nextUp = COMPRESSOR_CATALOG.find(c =>
+      c.cfm >= demand.adjustedCfm && (c.productLine === 'rs_open' || c.productLine === 'large_frame')
+    ) || COMPRESSOR_CATALOG.find(c => c.cfm >= demand.adjustedCfm);
+    if (nextUp && nextUp.model !== compressor.model) {
+      notes.push(`Growth headroom: with 25% safety margin (${demand.adjustedCfm} CFM), consider ${nextUp.model} (${nextUp.cfm} CFM${nextUp.price ? ', $' + nextUp.price.toLocaleString() : ''}) if the shop is expanding or has high leak rates`);
+    }
+  }
+
   // PM/VSD upsell — when RS Open Frame is significantly oversized, a VSD
   // matches output to actual demand and saves 20-35% energy at partial load.
   // When pmVsdAlternative is set, the UI renders a dedicated card — no note needed.
   let pmVsdAlternative = null;
   if (!parallelConfig && compressor.productLine === 'rs_open') {
-    const oversizeRatio = compressor.cfm / demand.adjustedCfm;
+    const oversizeRatio = compressor.cfm / selectionCfm;
     if (oversizeRatio >= OVERSIZE_THRESHOLD) {
-      const vsdAlt = PM_VSD.find(c => c.cfm >= demand.adjustedCfm);
+      const vsdAlt = PM_VSD.find(c => c.cfm >= selectionCfm);
       if (vsdAlt) {
         const pct = Math.round((oversizeRatio - 1) * 100);
         pmVsdAlternative = { ...vsdAlt, rsOversizePct: pct };

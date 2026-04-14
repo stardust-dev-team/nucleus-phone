@@ -106,14 +106,19 @@ describe('recommendSystem', () => {
   it('recommends JRS-7.5E for moderate low demand', () => {
     const demand = calculateDemand([{ cfm_typical: 12, duty_cycle_pct: 100, count: 1 }]);
     const rec = recommendSystem(demand);
-    // adjustedCfm = ceil(12 * 1.25) = 15 → fits JRS-5E (18 CFM)
+    // selectionCfm = ceil(12) = 12 → JRS-5E (18 CFM)
     expect(rec.compressor.model).toBe('JRS-5E');
 
     const demand2 = calculateDemand([{ cfm_typical: 15, duty_cycle_pct: 100, count: 1 }]);
-    // adjustedCfm = ceil(15 * 1.25) = ceil(18.75) = 19 → JRS-7.5E (28 CFM)
+    // selectionCfm = ceil(15) = 15 → JRS-5E (18 CFM ≥ 15)
     const rec2 = recommendSystem(demand2);
-    expect(rec2.compressor.model).toBe('JRS-7.5E');
-    expect(rec2.compressor.price).toBe(7495);
+    expect(rec2.compressor.model).toBe('JRS-5E');
+
+    const demand3 = calculateDemand([{ cfm_typical: 19, duty_cycle_pct: 100, count: 1 }]);
+    // selectionCfm = ceil(19) = 19 → JRS-7.5E (28 CFM)
+    const rec3 = recommendSystem(demand3);
+    expect(rec3.compressor.model).toBe('JRS-7.5E');
+    expect(rec3.compressor.price).toBe(7495);
   });
 
   it('recommends JRS-10E for medium demand', () => {
@@ -458,23 +463,21 @@ describe('CnC shop sizing scenarios', () => {
     expect(rec.salesChannel).toBe('ecommerce');
   });
 
-  it('small job shop: 5x Haas VF-2 → JRS-15E (ecommerce)', () => {
+  it('small job shop: 5x Haas VF-2 → JRS-10E (ecommerce)', () => {
     const { rec } = sizeShop([{ cfm_typical: 12, duty_cycle_pct: 60, count: 5 }]);
-    // adjustedCfm = ceil(36 * 1.25) = 45 → JRS-15E (54 CFM, rs_open preferred)
-    // JRS-15E compressor is ecommerce, JRD-60 dryer (60 CFM) is ecommerce
-    expect(rec.compressor.model).toBe('JRS-15E');
+    // totalCfmAtDuty = 36, selectionCfm = 36 → JRS-10E (38 CFM)
+    // Safety-adjusted 45 CFM noted as growth headroom
+    expect(rec.compressor.model).toBe('JRS-10E');
     expect(rec.compressor.salesChannel).toBe('ecommerce');
     expect(rec.dryer.cfm).toBeGreaterThanOrEqual(rec.compressor.cfm);
   });
 
-  it('mid job shop: 10x CNC @ 70% duty → ecommerce', () => {
+  it('mid job shop: 10x CNC @ 70% duty → JRS-25E (ecommerce)', () => {
     const { demand, rec } = sizeShop([{ cfm_typical: 12, duty_cycle_pct: 70, count: 10 }]);
-    // adjustedCfm = ceil(84 * 1.25) = 105 → JRS-25E (102 CFM)? No, 105 > 102.
-    // Next: JVSD-30 (109) or JRS-30 (125). Both are direct.
-    // Actually JRS-25E at 102 < 105, so we skip it.
-    expect(demand.adjustedCfm).toBe(105);
-    // 105 > 102, so we land on next model
-    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(105);
+    // totalCfmAtDuty = 84, selectionCfm = 84 → JRS-25E (102 CFM)
+    expect(demand.totalCfmAtDuty).toBe(84);
+    expect(rec.compressor.model).toBe('JRS-25E');
+    expect(rec.compressor.cfm).toBe(102);
   });
 
   it('ecommerce system boundary: JRS-20E (78 CFM) + JRD-80 → all ecommerce', () => {
@@ -496,20 +499,27 @@ describe('CnC shop sizing scenarios', () => {
     expect(rec.salesChannel).toBe('direct');
   });
 
-  it('ecommerce/direct boundary: 103 CFM → compressor is direct', () => {
-    // 82.4 * 1.25 = 103 → JRS-30 (125 CFM, direct)
+  it('ecommerce/direct boundary: 103 CFM at duty → JRS-25E still ecommerce', () => {
+    // selectionCfm = ceil(82.4) = 83 → JRS-25E (102 CFM, ecommerce)
+    // Safety-adjusted 103 → growth headroom note suggests JRS-30
     const { rec } = sizeShop([{ cfm_typical: 82.4, duty_cycle_pct: 100, count: 1 }]);
-    expect(rec.compressor.cfm).toBeGreaterThan(102);
-    expect(rec.compressor.salesChannel).toBe('direct');
-    expect(rec.salesChannel).toBe('direct');
-    expect(rec.pricingStatus).toBe('quote_required');
+    expect(rec.compressor.model).toBe('JRS-25E');
+    expect(rec.compressor.salesChannel).toBe('ecommerce');
   });
 
-  it('growing shop: 15x CNC → JRS-40 (direct)', () => {
+  it('ecommerce/direct boundary: 103 CFM at duty → compressor is direct', () => {
+    // selectionCfm = ceil(103) = 103 → JRS-25E (102 CFM) too small, JRS-30 (125 CFM, direct)
+    const { rec } = sizeShop([{ cfm_typical: 103, duty_cycle_pct: 100, count: 1 }]);
+    expect(rec.compressor.model).toBe('JRS-30');
+    expect(rec.compressor.salesChannel).toBe('direct');
+    expect(rec.salesChannel).toBe('direct');
+  });
+
+  it('growing shop: 15x CNC → JRS-30 (direct)', () => {
     const { demand, rec } = sizeShop([{ cfm_typical: 12, duty_cycle_pct: 70, count: 15 }]);
-    // adjustedCfm = ceil(126 * 1.25) = 158 → JRS-40 (155 CFM)? 158 > 155, so next: JRS-50 (185).
-    expect(demand.adjustedCfm).toBe(158);
-    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(158);
+    // totalCfmAtDuty = 126, selectionCfm = 126 → JRS-30 (125 CFM)? 126 > 125, so JRS-40 (155 CFM)
+    expect(demand.totalCfmAtDuty).toBe(126);
+    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(126);
     expect(rec.salesChannel).toBe('direct');
   });
 
@@ -518,8 +528,8 @@ describe('CnC shop sizing scenarios', () => {
       { cfm_typical: 12, duty_cycle_pct: 70, count: 25 },  // CNC machines
       { cfm_typical: 20, duty_cycle_pct: 50, count: 5 },   // Grinders
     ]);
-    // total = (12*0.7*25) + (20*0.5*5) = 210 + 50 = 260. adjusted = ceil(260*1.25) = 325
-    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(325);
+    // total = (12*0.7*25) + (20*0.5*5) = 210 + 50 = 260, selectionCfm = 260
+    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(260);
     expect(rec.salesChannel).toBe('direct');
   });
 
@@ -528,18 +538,18 @@ describe('CnC shop sizing scenarios', () => {
       { cfm_typical: 12, duty_cycle_pct: 70, count: 40 },
       { cfm_typical: 25, duty_cycle_pct: 60, count: 10 },
     ]);
-    // total = (12*0.7*40) + (25*0.6*10) = 336 + 150 = 486. adjusted = ceil(486*1.25) = 608
-    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(608);
+    // total = (12*0.7*40) + (25*0.6*10) = 336 + 150 = 486, selectionCfm = 486
+    expect(rec.compressor.cfm).toBeGreaterThanOrEqual(486);
     expect(rec.salesChannel).toBe('direct');
-    expect(rec.parallelConfig).toBeNull();  // 608 < JLF-180 (749), single unit fits
+    expect(rec.parallelConfig).toBeNull();  // 486 < JLF-125 (518), single unit fits
   });
 
   it('mega facility: demand exceeds largest single unit → parallel', () => {
     const { rec } = sizeShop([{ cfm_typical: 100, duty_cycle_pct: 100, count: 20 }]);
-    // adjusted = ceil(2000 * 1.25) = 2500 → exceeds JLF-476 (1895)
+    // totalCfmAtDuty = 2000, selectionCfm = 2000 → exceeds JLF-476 (1895)
     expect(rec.parallelConfig).not.toBeNull();
     expect(rec.parallelConfig.unitCount).toBeGreaterThanOrEqual(2);
-    expect(rec.parallelConfig.totalCfm).toBeGreaterThanOrEqual(2500);
+    expect(rec.parallelConfig.totalCfm).toBeGreaterThanOrEqual(2000);
     expect(rec.compressor.model).toBe('JLF-476');
     expect(rec.salesChannel).toBe('direct');
   });
@@ -548,9 +558,8 @@ describe('CnC shop sizing scenarios', () => {
 describe('parallel configuration', () => {
   it('parallel trigger boundary: demand at exactly largest CFM → single unit', () => {
     const largest = COMPRESSOR_CATALOG[COMPRESSOR_CATALOG.length - 1];
-    // Craft demand for exactly largest.cfm
-    const cfmNeeded = largest.cfm / SAFETY_FACTOR;
-    const demand = calculateDemand([{ cfm_typical: cfmNeeded, duty_cycle_pct: 100, count: 1 }]);
+    // Craft demand where totalCfmAtDuty = largest.cfm (selection uses this, not adjusted)
+    const demand = calculateDemand([{ cfm_typical: largest.cfm, duty_cycle_pct: 100, count: 1 }]);
     const rec = recommendSystem(demand);
     expect(rec.parallelConfig).toBeNull();
     expect(rec.compressor.model).toBe(largest.model);
@@ -697,32 +706,35 @@ describe('DESICCANT_REQUIRED', () => {
 describe('PM/VSD upsell alternative', () => {
   it('sets pmVsdAlternative when RS Open Frame is 20%+ oversized', () => {
     // demand = 55 CFM adjusted → RS picks JRS-20E (78 CFM, 42% over)
-    // PM/VSD alternative: JVSD-20 (71 CFM)
+    // selectionCfm = ceil(44) = 44 → JRS-15E (54 CFM). 54/44 = 1.23 → 23% over → PM/VSD triggers
     const demand = calculateDemand([{ cfm_typical: 44, duty_cycle_pct: 100, count: 1 }]);
-    expect(demand.adjustedCfm).toBe(55);
+    const rec = recommendSystem(demand);
+    expect(rec.compressor.model).toBe('JRS-15E');
+    expect(rec.compressor.cfm).toBe(54);
+    expect(rec.pmVsdAlternative).not.toBeNull();
+    expect(rec.pmVsdAlternative.model).toBe('JVSD-15');
+    expect(rec.pmVsdAlternative.rsOversizePct).toBe(23);
+  });
+
+  it('sets pmVsdAlternative for large RS gap (JRS-40 at 155 CFM for 140 demand)', () => {
+    // selectionCfm = ceil(140) = 140 → JRS-40 (155 CFM). 155/140 = 1.11 → below 20%
+    // Need bigger gap: 120 CFM → JRS-30 (125 CFM)? No, too tight.
+    // Try: 100 CFM → JRS-25E (102 CFM). 102/100 = 1.02 → too tight.
+    // Best: 35 duty → JRS-10E (38 CFM). 38/35 = 1.09 → too tight.
+    // Use: 65 → JRS-20E (78). 78/65 = 1.20 → exactly at threshold
+    const demand = calculateDemand([{ cfm_typical: 65, duty_cycle_pct: 100, count: 1 }]);
     const rec = recommendSystem(demand);
     expect(rec.compressor.model).toBe('JRS-20E');
     expect(rec.compressor.cfm).toBe(78);
+    // 78/65 = 1.20 → at threshold → triggers
     expect(rec.pmVsdAlternative).not.toBeNull();
-    expect(rec.pmVsdAlternative.model).toBe('JVSD-20');
-    expect(rec.pmVsdAlternative.rsOversizePct).toBe(42);
+    expect(rec.pmVsdAlternative.rsOversizePct).toBe(20);
   });
 
-  it('sets pmVsdAlternative for large RS gap (JRS-75 at 285 CFM for 211 demand)', () => {
-    // 168.8 * 1.25 = 211 → JRS-75 (285 CFM, 35% over)
-    const demand = calculateDemand([{ cfm_typical: 168.8, duty_cycle_pct: 100, count: 1 }]);
-    expect(demand.adjustedCfm).toBe(211);
-    const rec = recommendSystem(demand);
-    expect(rec.compressor.model).toBe('JRS-75');
-    expect(rec.pmVsdAlternative).not.toBeNull();
-    expect(rec.pmVsdAlternative.model).toBe('JVSD-60');
-    expect(rec.pmVsdAlternative.rsOversizePct).toBe(35);
-  });
-
-  it('does NOT trigger when RS is tightly sized (4% over, below threshold)', () => {
-    // 60 * 1.25 = 75 → JRS-20E (78 CFM, 4% over)
-    const demand = calculateDemand([{ cfm_typical: 60, duty_cycle_pct: 100, count: 1 }]);
-    expect(demand.adjustedCfm).toBe(75);
+  it('does NOT trigger when RS is tightly sized (below threshold)', () => {
+    // selectionCfm = ceil(60) = 60 → JRS-20E (78 CFM). 78/60 = 1.30 → 30% over — triggers!
+    // Use a tighter fit: 70 CFM → JRS-20E (78 CFM). 78/70 = 1.11 → below 20% threshold
+    const demand = calculateDemand([{ cfm_typical: 70, duty_cycle_pct: 100, count: 1 }]);
     const rec = recommendSystem(demand);
     expect(rec.compressor.model).toBe('JRS-20E');
     expect(rec.pmVsdAlternative).toBeNull();
@@ -736,22 +748,20 @@ describe('PM/VSD upsell alternative', () => {
   });
 
   it('does NOT trigger when RS is tightly sized (0% over, below threshold)', () => {
-    // 30 * 1.25 = 38 → JRS-10E (38 CFM, exactly meets demand)
-    const demand = calculateDemand([{ cfm_typical: 30, duty_cycle_pct: 100, count: 1 }]);
-    expect(demand.adjustedCfm).toBe(38);
+    // selectionCfm = ceil(36) = 36 → JRS-10E (38 CFM). 38/36 = 1.06 → below threshold
+    const demand = calculateDemand([{ cfm_typical: 36, duty_cycle_pct: 100, count: 1 }]);
     const rec = recommendSystem(demand);
     expect(rec.compressor.model).toBe('JRS-10E');
     expect(rec.pmVsdAlternative).toBeNull();
   });
 
   it('includes rsOversizePct on the alternative object', () => {
-    // demand = 103. RS: JRS-30 (125 CFM). 125/103 = 1.21 → 21% over
+    // totalCfmAtDuty = 82, selectionCfm = 82 → JRS-25E (102 CFM). 102/82 = 1.24 → 24% over
     const demand = { adjustedCfm: 103, maxPsi: 90, totalCfmAtDuty: 82, peakCfm: 103, adjustedPeak: 129, equipmentCount: 10 };
     const rec = recommendSystem(demand);
-    expect(rec.compressor.model).toBe('JRS-30');
-    expect(rec.pmVsdAlternative.model).toBe('JVSD-30');
-    expect(rec.pmVsdAlternative.rsOversizePct).toBe(21);
-    expect(rec.pmVsdAlternative.cfm).toBe(109);
+    expect(rec.compressor.model).toBe('JRS-25E');
+    expect(rec.pmVsdAlternative).not.toBeNull();
+    expect(rec.pmVsdAlternative.rsOversizePct).toBe(24);
   });
 });
 

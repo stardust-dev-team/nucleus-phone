@@ -187,9 +187,11 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
 
   async function initiateCall(diff) {
     setPhase('connecting');
+    let createdSimCallId = null;
 
     try {
       const data = await startPracticeCall(diff, callMode);
+      createdSimCallId = data.simCallId;
       setSimCallId(data.simCallId);
 
       const vapiPubKey = import.meta.env.VITE_VAPI_PUBLIC_KEY || data.publicKey;
@@ -199,8 +201,15 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
         vapi.on('call-end', () => {
           cleanupVapi();
         });
+        // Capture Vapi SDK errors — start() returns null on failure instead of throwing
+        let vapiError = null;
+        vapi.on('error', (e) => { vapiError = e; });
         const overrides = data.firstMessage ? { firstMessage: data.firstMessage } : {};
         const vapiCall = await vapi.start(data.assistantId, overrides);
+        if (!vapiCall) {
+          const detail = vapiError?.error?.message || vapiError?.error || 'Vapi call failed to start — check mic permissions and try again';
+          throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        }
         // Link the Vapi call ID BEFORE proceeding — webhooks arrive immediately
         await linkVapiCall(data.simCallId, vapiCall.id);
       }
@@ -211,8 +220,10 @@ export default function PracticeCallButton({ identity, onScoreComplete, onDiffic
       startPolling(data.simCallId, 'in-progress');
     } catch (err) {
       cleanupVapi();
+      // Cancel the stuck DB row so the 10-min guard doesn't lock us out
+      if (createdSimCallId) cancelPracticeCall(createdSimCallId).catch(e => console.warn('sim: failed to cancel stuck row:', e.message));
       setPhase('error');
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Call failed to connect');
     }
   }
 
