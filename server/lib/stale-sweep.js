@@ -8,6 +8,7 @@
 
 const { pool } = require('../db');
 const { sendSystemAlert } = require('./slack');
+const { logEvent } = require('./debug-log');
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const CALL_STALE_MINUTES = 15;
@@ -25,6 +26,7 @@ async function sweepStaleCalls() {
 
     if (rowCount > 0) {
       console.warn(`stale-sweep: cleaned ${rowCount} stuck call(s)`);
+      logEvent('sweep', 'stale-sweep', `cleaned ${rowCount} stuck call(s)`, { detail: { ids: rows.map(r => r.id), callers: rows.map(r => r.caller_identity) } });
       const names = rows.map(r => r.caller_identity).join(', ');
       const ids = rows.map(r => r.id).join(', ');
       sendSystemAlert(
@@ -63,6 +65,7 @@ async function sweepStaleSims() {
 
     if (rowCount > 0) {
       console.warn(`stale-sweep: cleaned ${rowCount} stuck sim(s)`);
+      logEvent('sweep', 'stale-sweep', `cleaned ${rowCount} stuck sim(s)`, { detail: { ids: rows.map(r => r.id), callers: rows.map(r => r.caller_identity) } });
       const names = rows.map(r => r.caller_identity).join(', ');
       const ids = rows.map(r => r.id).join(', ');
       sendSystemAlert(
@@ -111,6 +114,7 @@ async function runSweep() {
   await sweepStaleCalls();
   await sweepStaleSims();
   await pruneDebugEvents();
+  logEvent('sweep', 'stale-sweep', 'cycle complete');
 }
 
 let intervalId;
