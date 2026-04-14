@@ -54,7 +54,16 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
             className="text-[11px] font-semibold tracking-wide transition-colors hover:text-white"
             style={{ color: '#7EC55F', textDecoration: 'none' }}
           >
-            Latest Study Guide from HQ
+            Sales Ops Guide
+          </a>
+          <a
+            href="/compressed-air-fundamentals.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-semibold tracking-wide transition-colors hover:text-white"
+            style={{ color: '#7EC55F', textDecoration: 'none' }}
+          >
+            Compressor Fundamentals
           </a>
           <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
           <div className="flex items-center gap-2">
