@@ -63,7 +63,7 @@ async function stopCall(vapiCallId) {
   if (!vapiCallId || typeof vapiCallId !== 'string') {
     throw new Error('stopCall requires a valid call ID string');
   }
-  return vapiRequest('POST', `call/${encodeURIComponent(vapiCallId)}/stop`);
+  return vapiRequest('DELETE', `call/${encodeURIComponent(vapiCallId)}`);
 }
 
 /**
