@@ -1,13 +1,13 @@
 const { installFetchMock, mockFetchResponse, mockFetchError } = require('../../__tests__/helpers/mock-fetch');
 
-let createOutboundCall, stopCall, getCall;
+let createOutboundCall, stopCall, getCall, stopCallAndLog;
 
 beforeEach(() => {
   installFetchMock();
   process.env.VAPI_API_KEY = 'test-key';
   process.env.VAPI_PRACTICE_PHONE_ID = 'phone-123';
   jest.isolateModules(() => {
-    ({ createOutboundCall, stopCall, getCall } = require('../vapi'));
+    ({ createOutboundCall, stopCall, getCall, stopCallAndLog } = require('../vapi'));
   });
 });
 
@@ -60,8 +60,24 @@ describe('stopCall', () => {
     expect(url).not.toMatch(/\/stop$/);
   });
 
-  test('returns {} on 204 empty body', async () => {
-    mockFetchResponse('', { status: 204 });
+  test('returns {} on 204 via status short-circuit (does NOT call res.json())', async () => {
+    // Prove the 204 branch actually fires — if it fell through to res.json(),
+    // this mock would throw. Two-bugs-masking-each-other protection.
+    const fetchMock = global.fetch;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      headers: { get: () => null },
+      json: async () => { throw new Error('res.json() should not be called on 204'); },
+      text: async () => '',
+    });
+    const result = await stopCall('call-id');
+    expect(result).toEqual({});
+  });
+
+  test('returns {} on content-length: 0 via header short-circuit', async () => {
+    mockFetchResponse('', { status: 200, headers: { 'content-length': '0' } });
+    // If this ever calls res.json() it will parse '' and throw — same protection as above.
     const result = await stopCall('call-id');
     expect(result).toEqual({});
   });
@@ -85,9 +101,15 @@ describe('stopCall', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('propagates network errors', async () => {
+  test('propagates network errors WITHOUT err.status (distinguishable from API failures)', async () => {
     mockFetchError(new Error('ECONNRESET'));
-    await expect(stopCall('call-id')).rejects.toThrow(/ECONNRESET/);
+    let caught;
+    try { await stopCall('call-id'); } catch (e) { caught = e; }
+    expect(caught).toBeDefined();
+    expect(caught.message).toMatch(/ECONNRESET/);
+    // Network errors must NOT have err.status — callers that branch on
+    // err.status === 404 must treat network failures as "other", not "already gone".
+    expect(caught.status).toBeUndefined();
   });
 });
 
@@ -107,9 +129,70 @@ describe('getCall', () => {
   });
 });
 
-describe('auth', () => {
-  test('throws if VAPI_API_KEY is not set', async () => {
+describe('auth (shared vapiRequest gate)', () => {
+  test.each([
+    ['stopCall', () => stopCall('call-id')],
+    ['getCall', () => getCall('call-id')],
+    ['createOutboundCall', () => createOutboundCall({ assistantId: 'a', customerNumber: '+1' })],
+  ])('%s throws if VAPI_API_KEY is not set', async (_name, fn) => {
     delete process.env.VAPI_API_KEY;
-    await expect(stopCall('call-id')).rejects.toThrow(/VAPI_API_KEY not set/);
+    await expect(fn()).rejects.toThrow(/VAPI_API_KEY not set/);
+  });
+});
+
+describe('stopCallAndLog (branching logic extracted for testability)', () => {
+  test('returns "stopped" on success', async () => {
+    mockFetchResponse('', { status: 204 });
+    const logger = { log: jest.fn(), error: jest.fn() };
+    const result = await stopCallAndLog('call-abc', logger);
+    expect(result).toBe('stopped');
+    expect(logger.log).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  test('returns "already-ended" on 404 — logs at .log, NOT .error', async () => {
+    // This is the whole point of the refactor. A 404 at End Call means
+    // Vapi already ended the call (inactivity timeout). It's not an error.
+    mockFetchResponse('{"message":"Call not found"}', { status: 404 });
+    const logger = { log: jest.fn(), error: jest.fn() };
+    const result = await stopCallAndLog('call-abc', logger);
+    expect(result).toBe('already-ended');
+    expect(logger.log).toHaveBeenCalledWith(expect.stringMatching(/already ended \(404\)/));
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  test('returns "failed" on 500 — logs LOUDLY at .error', async () => {
+    // The old code logged every failure at console.warn with a misleading
+    // "may have already ended" — that lie is how the Vapi bug hid for weeks.
+    mockFetchResponse('{"error":"Internal"}', { status: 500 });
+    const logger = { log: jest.fn(), error: jest.fn() };
+    const result = await stopCallAndLog('call-abc', logger);
+    expect(result).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringMatching(/Vapi stop FAILED for call-abc \(status 500\)/),
+      expect.any(String),
+    );
+    expect(logger.log).not.toHaveBeenCalled();
+  });
+
+  test('returns "failed" on network error (no err.status) — logs at .error', async () => {
+    // Network errors have no status. They must NOT be mistaken for "already ended".
+    mockFetchError(new Error('ECONNRESET'));
+    const logger = { log: jest.fn(), error: jest.fn() };
+    const result = await stopCallAndLog('call-abc', logger);
+    expect(result).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringMatching(/status n\/a/),
+      expect.any(String),
+    );
+    expect(logger.log).not.toHaveBeenCalled();
+  });
+
+  test('defaults to console when no logger passed', async () => {
+    // Smoke test — production callers pass no logger. Must not throw.
+    mockFetchResponse('', { status: 204 });
+    const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(stopCallAndLog('call-abc')).resolves.toBe('stopped');
+    spy.mockRestore();
   });
 });

@@ -29,9 +29,11 @@ async function vapiRequest(method, endpoint, body, { usePublicKey } = {}) {
     const res = await fetch(`${VAPI_BASE}/${endpoint}`, opts);
     if (!res.ok) {
       const text = await res.text();
+      // err.body is a property for programmatic inspection — keep it full.
+      // err.message is truncated because it ends up in logs.
       const err = new Error(`Vapi ${method} ${endpoint} (${res.status}): ${text.substring(0, 300)}`);
       err.status = res.status;
-      err.body = text.substring(0, 500);
+      err.body = text;
       err.endpoint = endpoint;
       err.method = method;
       logEvent('integration', 'vapi.api', `${method} ${endpoint} failed: ${res.status}`, { level: 'error', detail: { status: res.status, body: text.substring(0, 200) } });
@@ -80,4 +82,28 @@ async function getCall(vapiCallId) {
   return vapiRequest('GET', `call/${encodeURIComponent(vapiCallId)}`);
 }
 
-module.exports = { createOutboundCall, stopCall, getCall };
+/**
+ * Stop a Vapi call and log the outcome honestly.
+ * - 404 means Vapi ended the call on its side (inactivity timeout, caller hung up). That's fine.
+ * - Any other error is a real failure and gets logged loudly.
+ *
+ * Extracted so the branching logic can be unit-tested without standing up the
+ * full Express route. Exported for tests; production callers use it directly.
+ *
+ * @returns {'stopped'|'already-ended'|'failed'}
+ */
+async function stopCallAndLog(vapiCallId, logger = console) {
+  try {
+    await stopCall(vapiCallId);
+    return 'stopped';
+  } catch (err) {
+    if (err.status === 404) {
+      logger.log(`Vapi stop: call ${vapiCallId} already ended (404)`);
+      return 'already-ended';
+    }
+    logger.error(`Vapi stop FAILED for ${vapiCallId} (status ${err.status || 'n/a'}):`, err.message);
+    return 'failed';
+  }
+}
+
+module.exports = { createOutboundCall, stopCall, getCall, stopCallAndLog };

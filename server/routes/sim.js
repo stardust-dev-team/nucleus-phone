@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const { sessionAuth } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
-const { createOutboundCall, stopCall, getCall } = require('../lib/vapi');
+const { createOutboundCall, stopCall, stopCallAndLog, getCall } = require('../lib/vapi');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
@@ -260,13 +260,13 @@ router.post('/call', sessionAuth, async (req, res) => {
     res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
     console.error('sim: INSERT failed after Vapi call initiated, stopping orphan:', err.message);
-    stopCall(call.id).catch(e => {
-      console.error('sim: ORPHAN Vapi call could not be stopped:', e.message);
+    stopCall(call.id).catch(stopErr => {
+      console.error('sim: ORPHAN Vapi call could not be stopped:', stopErr.message);
       sendSystemAlert(
         `🔴 Orphan Vapi Call — manual cleanup required`,
         [{
           type: 'section',
-          text: { type: 'mrkdwn', text: `*DB insert failed AND Vapi stop failed — live call burning minutes with no DB row.*\n*Vapi Call ID:* \`${call.id}\`\n*Caller:* ${identity}\n*DB error:* ${err.message}\n*Stop error:* ${e.message} (status ${e.status || 'n/a'})\n*Action:* End this call manually in the Vapi dashboard.` },
+          text: { type: 'mrkdwn', text: `*DB insert failed AND Vapi stop failed — live call burning minutes with no DB row.*\n*Vapi Call ID:* \`${call.id}\`\n*Caller:* ${identity}\n*DB error:* ${err.message}\n*Stop error:* ${stopErr.message} (status ${stopErr.status || 'n/a'})\n*Action:* End this call manually in the Vapi dashboard.` },
         }]
       ).catch(() => {});
     });
@@ -413,15 +413,7 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
   const row = rows[0];
 
   if (row.vapi_call_id) {
-    try { await stopCall(row.vapi_call_id); } catch (err) {
-      // 404 = call already ended on Vapi's side (race with inactivity timeout). That's fine.
-      // Anything else is a real failure — log loudly so it gets noticed.
-      if (err.status === 404) {
-        console.log(`Vapi stop: call ${row.vapi_call_id} already ended (404)`);
-      } else {
-        console.error(`Vapi stop FAILED for ${row.vapi_call_id} (status ${err.status || 'n/a'}):`, err.message);
-      }
-    }
+    await stopCallAndLog(row.vapi_call_id);
   }
 
   // Fetch transcript from Vapi API — the call just ended so transcript

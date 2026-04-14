@@ -15,7 +15,7 @@ let fetchMock;
 
 function makeHeaders(map = {}) {
   const lower = Object.fromEntries(Object.entries(map).map(([k, v]) => [k.toLowerCase(), String(v)]));
-  return { get: (name) => (name.toLowerCase() in lower ? lower[name.toLowerCase()] : null) };
+  return { get: (name) => lower[name.toLowerCase()] ?? null };
 }
 
 function installFetchMock() {
