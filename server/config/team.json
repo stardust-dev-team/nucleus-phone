@@ -7,6 +7,7 @@
     { "name": "Britt", "email": "britt@joruva.com", "identity": "britt", "role": "caller", "pronouns": "she/her" },
     { "name": "Ryann", "email": "ryann@joruva.com", "identity": "ryann", "role": "caller", "pronouns": "she/her" },
     { "name": "Alex", "email": "alex@joruva.com", "identity": "alex", "role": "caller", "pronouns": "he/him" },
-    { "name": "Lily", "email": "lily@joruva.com", "identity": "lily", "role": "caller", "pronouns": "she/her" }
+    { "name": "Lily", "email": "lily@joruva.com", "identity": "lily", "role": "caller", "pronouns": "she/her" },
+    { "name": "Blake", "email": "blake@joruva.com", "identity": "blake", "role": "caller", "pronouns": "he/him" }
   ]
 }
