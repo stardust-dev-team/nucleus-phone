@@ -27,12 +27,24 @@ const { normalizePhone } = require('./phone');
 const HUB_URL = process.env.UCIL_HUB_URL || process.env.HUB_URL || 'https://joruva-ucil.onrender.com';
 const HUB_TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 60 * 1000;
+// Negative results (unresolved) get a much shorter TTL. A recent HubSpot edit
+// that landed during the 60s hit window would otherwise make the cockpit lie
+// for a full minute after the person is enriched. 10s is the compromise:
+// enough to absorb the same-call retry storm, short enough to recover fast.
+const NEGATIVE_TTL_MS = 10 * 1000;
 const USE_HUB = process.env.USE_HUB_RESOLVER !== 'false';
 
 // Simple LRU-ish in-process cache keyed by `${type}:${normalized}`.
 // Bounded at 500 entries — identity lookups are cheap and this protects memory.
 const cache = new Map();
 const CACHE_MAX = 500;
+
+// Fallback instrumentation — how often are we running on inline because the
+// hub was unreachable? During a hub outage this counter climbs fast, and the
+// caller surface (cockpit) is silently degraded (Apollo/Dropcontact disabled
+// in fallback per design). Expose it for /health + /metrics so ops sees it.
+const fallbackCounter = { total: 0, lastAt: null, lastError: null };
+function fallbackMetrics() { return { ...fallbackCounter }; }
 
 function cacheKey(identifier) {
   if (!identifier) return null;
@@ -60,7 +72,8 @@ function cacheSet(key, value) {
     const oldest = cache.keys().next().value;
     cache.delete(oldest);
   }
-  cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
+  const ttl = value && value.resolved ? CACHE_TTL_MS : NEGATIVE_TTL_MS;
+  cache.set(key, { value, expires: Date.now() + ttl });
 }
 
 function clearCache() { cache.clear(); }
@@ -95,6 +108,16 @@ async function callHub(identifier) {
 
 // ── Adapter: hub shape → legacy ResolvedIdentity ───────────
 
+// Extract a phone string for the unresolved path, branching on identifier type.
+// Piping emails or HubSpot IDs through normalizePhone happened to yield null by
+// accident; branch explicitly so the shape is obviously correct.
+function identifierPhone(identifier) {
+  if (!identifier || typeof identifier !== 'string') return null;
+  if (identifier.includes('@')) return null;          // email
+  if (/^\d{11,}$/.test(identifier)) return null;      // HubSpot ID (opaque numeric)
+  return toE164(normalizePhone(identifier));          // phone
+}
+
 function adapt(hubResult, identifier) {
   if (!hubResult || hubResult.found === false) {
     return {
@@ -103,7 +126,7 @@ function adapt(hubResult, identifier) {
       hubspotCompanyId: null,
       name: null,
       email: null,
-      phone: hubResult?.contact?.phone || toE164(normalizePhone(identifier)),
+      phone: hubResult?.contact?.phone || identifierPhone(identifier),
       company: null,
       title: null,
       linkedinUrl: null,
@@ -122,8 +145,11 @@ function adapt(hubResult, identifier) {
   const sources = hubResult.sources || [];
 
   // Legacy `source` is single-valued: first wins in priority order.
+  // `hub_contacts` aliases to `hubspot` because cockpit.js doesn't know the
+  // write-through cache exists — a warm hub_contacts hit originated in
+  // HubSpot and we shouldn't surface a new string value.
   const priority = ['hubspot', 'v35_pb_contacts', 'apollo', 'dropcontact', 'hub_contacts'];
-  const legacyAlias = { v35_pb_contacts: 'pb_contacts' };
+  const legacyAlias = { v35_pb_contacts: 'pb_contacts', hub_contacts: 'hubspot' };
   let source = 'unknown';
   for (const s of priority) {
     if (sources.includes(s)) { source = legacyAlias[s] || s; break; }
@@ -136,7 +162,7 @@ function adapt(hubResult, identifier) {
     hubspotCompanyId: co.hubspot_company_id || null,
     name: c.name || null,
     email: c.email || e.dropcontact_email || null,
-    phone: c.phone || toE164(normalizePhone(identifier)),
+    phone: c.phone || identifierPhone(identifier),
     company: co.name || null,
     title: c.title || null,
     linkedinUrl: c.linkedin_url || null,
@@ -174,14 +200,33 @@ async function resolve(identifier) {
       cacheSet(key, identity);
       return identity;
     } catch (err) {
-      console.warn('[identity-resolver] hub call failed, falling back to inline:', err.message);
-      // fall through to inline
+      // Structured fallback signal. The hub being unreachable silently
+      // disables Apollo + Dropcontact (per design — avoid double-spending
+      // against the hub's daily counter), so ops needs to see this clearly.
+      // The counter feeds /health so the Joruva supervisor (CLAUDE.md
+      // policy: caller must NEVER hear silence) can page on sustained
+      // fallback activity.
+      fallbackCounter.total += 1;
+      fallbackCounter.lastAt = new Date().toISOString();
+      fallbackCounter.lastError = err.message;
+      console.warn(JSON.stringify({
+        event: 'hub_resolver_fallback',
+        error: err.message,
+        fallback_total: fallbackCounter.total,
+        ts: fallbackCounter.lastAt,
+      }));
+      // Inline fallback path — do NOT cache the result. Caching the degraded
+      // identity for 60s (or even 10s) means the hub's recovery is invisible
+      // to repeat callers until the TTL expires. Let every call through to
+      // inline during the outage; inline has its own internal caches.
+      return resolveInline(identifier);
     }
   }
 
+  // USE_HUB=false (explicit rollback). Use inline and cache normally.
   const identity = await resolveInline(identifier);
   cacheSet(key, identity);
   return identity;
 }
 
-module.exports = { resolve, clearCache, _adapt: adapt };
+module.exports = { resolve, clearCache, fallbackMetrics, _adapt: adapt };
