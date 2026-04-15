@@ -1,451 +1,187 @@
 /**
- * lib/identity-resolver.js — Phone/email/ID → unified ResolvedIdentity.
+ * lib/identity-resolver.js — Thin hub client + adapter + TTL cache + fallback.
  *
- * Steps 1-2 (free): HubSpot + PB contacts + URL slug name resolution.
- * Steps 3-4 (credit-gated): Apollo + Dropcontact.
+ * Phase 2c (hub-spoke, bd joruva-ucil-537): resolution chain moved to UCIL at
+ * GET /hub/contacts/resolve. This module:
+ *   1. Calls the hub (RBAC auth via HUB_ADMIN_EMAIL + HUB_ADMIN_KEY env)
+ *   2. Maps the hub's domain-neutral response → legacy ResolvedIdentity shape
+ *      (so cockpit.js and call-screen UI don't change)
+ *   3. Caches resolved identities in-process by phone/email for CACHE_TTL_MS
+ *      (live cockpit is the hot caller — repeat loads are free)
+ *   4. Falls back to inline resolution (identity-resolver-inline.js) if the
+ *      hub is unreachable, so a UCIL outage doesn't black out incoming calls
+ *
+ * STALENESS: the TTL cache is time-based only. A HubSpot update to a contact
+ * will not be visible to the spoke for up to CACHE_TTL_MS. This is a known
+ * limitation — the proper fix is event-driven invalidation via a hub
+ * `contact.updated` subscription (filed under a follow-up bead). Until then,
+ * CACHE_TTL_MS is kept short (60s) so cockpit loads still feel live and
+ * rare HubSpot edits are never more than a minute stale.
+ *
+ * Disable with USE_HUB_RESOLVER=false (reverts to inline fallback).
  */
 
-const { pool } = require('../db');
+const { resolve: resolveInline, toE164 } = require('./identity-resolver-inline');
 const { normalizePhone } = require('./phone');
-const { normalizeCompanyName } = require('./company-normalizer');
-const { findContactByPhone, getContact, searchContacts } = require('./hubspot');
-const { matchPerson } = require('./apollo');
-const { reverseSearch } = require('./dropcontact');
 
-/**
- * Extract full name from LinkedIn URL slug. Free, instant, no API calls.
- * "linkedin.com/in/ashley-parker8190" + firstName "Ashley" → { firstName: "Ashley", lastName: "Parker" }
- */
-function resolveNameFromSlug(url, firstName) {
-  if (!url || !firstName) return null;
-  const slug = url.match(/linkedin\.com\/in\/([^/?]+)/)?.[1];
-  if (!slug) return null;
+const HUB_URL = process.env.UCIL_HUB_URL || process.env.HUB_URL || 'https://joruva-ucil.onrender.com';
+const HUB_TIMEOUT_MS = 8000;
+const CACHE_TTL_MS = 60 * 1000;
+const USE_HUB = process.env.USE_HUB_RESOLVER !== 'false';
 
-  const clean = slug
-    .replace(/-[a-f0-9]{6,}$/, '')
-    .replace(/-?\d+$/, '')
-    .replace(/-(mba|phd|pe|cpa|pmp|cfa|csm|ehs|mfg-leader|plant-manager|strategic-advisor|engineering|mgr|aeromgr)$/i, '');
+// Simple LRU-ish in-process cache keyed by `${type}:${normalized}`.
+// Bounded at 500 entries — identity lookups are cheap and this protects memory.
+const cache = new Map();
+const CACHE_MAX = 500;
 
-  const firstLower = firstName.toLowerCase();
-
-  // Hyphenated: "ashley-parker" → Ashley Parker
-  const parts = clean.split('-');
-  if (parts.length >= 2 && parts[0].toLowerCase() === firstLower) {
-    const last = parts.slice(1).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
-    if (last.length >= 2) return { firstName: capitalize(parts[0]), lastName: last };
-  }
-
-  // Concatenated: "ashleyparker" → Ashley Parker
-  const lower = clean.toLowerCase();
-  if (lower.startsWith(firstLower) && lower.length > firstLower.length + 1) {
-    const rest = clean.slice(firstLower.length);
-    if (rest.length >= 3 && rest.length <= 20 && /^[a-z]+$/i.test(rest)) {
-      return { firstName: capitalize(firstLower), lastName: capitalize(rest) };
-    }
-  }
-
+function cacheKey(identifier) {
+  if (!identifier) return null;
+  if (identifier.includes('@')) return `email:${identifier.toLowerCase()}`;
+  const n = normalizePhone(identifier);
+  if (n) return `phone:${n}`;
+  if (/^\d+$/.test(identifier)) return `hsid:${identifier}`;
   return null;
 }
 
-function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
-
-/** Convert normalized digits to E.164. Assumes US (+1) for 10-digit numbers. */
-function toE164(phone) {
-  if (!phone) return null;
-  if (phone.startsWith('+')) return phone;
-  if (phone.length === 10) return `+1${phone}`;
-  if (phone.length === 11 && phone.startsWith('1')) return `+${phone}`;
-  console.warn('toE164: unexpected phone length', phone.length, phone);
-  return null; // Unknown format — return null rather than non-E.164 string
+function cacheGet(key) {
+  if (!key) return null;
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) { cache.delete(key); return null; }
+  // refresh LRU order
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry.value;
 }
 
-/**
- * Resolve an identifier (phone, email, or HubSpot contact ID) into a
- * unified identity with rapport data from HubSpot + PB contacts.
- *
- * @param {string} identifier - phone number, email, or HubSpot contact ID
- * @returns {Promise<ResolvedIdentity>}
- */
-async function resolve(identifier) {
-  if (!identifier) return unresolved(identifier);
+function cacheSet(key, value) {
+  if (!key) return;
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    cache.delete(oldest);
+  }
+  cache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
+}
 
-  const type = classifyIdentifier(identifier);
-  if (type === 'unknown') return unresolved(identifier);
+function clearCache() { cache.clear(); }
 
-  let hsContact = null;
+// ── Hub client ─────────────────────────────────────────────
 
-  // Step 1: HubSpot lookup
-  try {
-    if (type === 'phone') {
-      hsContact = await findContactByPhone(identifier);
-    } else if (type === 'hubspot_id') {
-      hsContact = await getContact(identifier);
-    } else if (type === 'email') {
-      const result = await searchContacts(identifier, 1);
-      hsContact = result.total > 0 ? result.results[0] : null;
-    }
-  } catch (err) {
-    console.warn('Identity resolver: HubSpot lookup failed:', err.message);
+async function callHub(identifier) {
+  const email = process.env.HUB_ADMIN_EMAIL;
+  const key = process.env.HUB_ADMIN_KEY;
+  if (!email || !key) {
+    throw new Error('HUB_ADMIN_EMAIL + HUB_ADMIN_KEY not configured');
   }
 
-  const props = hsContact?.properties || {};
-  // Guard: if firstname already ends with lastname, don't double it
-  let name = null;
-  if (props.firstname && props.lastname
-      && props.firstname.toLowerCase().endsWith(props.lastname.toLowerCase())) {
-    name = props.firstname;
-  } else {
-    name = [props.firstname, props.lastname].filter(Boolean).join(' ') || null;
+  const params = new URLSearchParams();
+  if (identifier.includes('@')) params.set('email', identifier);
+  else if (/^\d+$/.test(identifier)) params.set('hubspot_contact_id', identifier);
+  else params.set('phone', identifier);
+
+  const resp = await fetch(`${HUB_URL}/hub/contacts/resolve?${params}`, {
+    headers: {
+      'X-Hub-Admin-Email': email,
+      'X-Hub-Admin-Key': key,
+    },
+    signal: AbortSignal.timeout(HUB_TIMEOUT_MS),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Hub resolver ${resp.status}: ${(await resp.text()).substring(0, 200)}`);
   }
-  let company = props.company || null;
-  const phone = normalizePhone(identifier) || normalizePhone(props.phone) || null;
+  return resp.json();
+}
 
-  let pbData = null;
+// ── Adapter: hub shape → legacy ResolvedIdentity ───────────
 
-  // Step 1b: If HubSpot didn't find the contact, try v35_pb_contacts by phone or email.
-  // Apollo/Dropcontact-enriched PB contacts may not be in HubSpot yet.
-  if (!hsContact && (phone || type === 'phone')) {
-    try {
-      const pbByPhone = await lookupPbContactByPhone(identifier, phone);
-      if (pbByPhone) {
-        name = name || pbByPhone.full_name;
-        company = company || pbByPhone.company_name;
-      }
-    } catch (err) {
-      console.warn('Identity resolver: PB phone lookup failed:', err.message);
-    }
-  }
-
-  // Step 1c: Email-based PB lookup (Apollo-enriched contacts with email but not in HubSpot)
-  if (!hsContact && !name && type === 'email') {
-    try {
-      const { rows } = await pool.query(
-        `SELECT full_name, first_name, last_name, title, company_name, domain,
-                linkedin_profile_url, phone, email
-         FROM v35_pb_contacts WHERE email = $1 LIMIT 1`,
-        [identifier.toLowerCase()]
-      );
-      if (rows[0]) {
-        name = rows[0].full_name;
-        company = rows[0].company_name;
-        // Pre-seed pbData so step 2 doesn't re-query
-        pbData = {
-          full_name: rows[0].full_name,
-          title: rows[0].title,
-          linkedinUrl: rows[0].linkedin_profile_url,
-          company: rows[0].company_name,
-          domain: rows[0].domain,
-        };
-      }
-    } catch (err) {
-      console.warn('Identity resolver: PB email lookup failed:', err.message);
-    }
+function adapt(hubResult, identifier) {
+  if (!hubResult || hubResult.found === false) {
+    return {
+      resolved: false,
+      hubspotContactId: null,
+      hubspotCompanyId: null,
+      name: null,
+      email: null,
+      phone: hubResult?.contact?.phone || toE164(normalizePhone(identifier)),
+      company: null,
+      title: null,
+      linkedinUrl: null,
+      profileImage: null,
+      pbContactData: null,
+      fitScore: null,
+      fitReason: null,
+      persona: null,
+      source: 'unknown',
+    };
   }
 
-  // Step 2: PB contacts lookup by company + name (enriches with LinkedIn, title, etc.)
-  // pbData may already be set from step 1c (email-based PB lookup)
-  if (!pbData && company && name) {
-    try {
-      pbData = await lookupPbContact(company, name);
-    } catch (err) {
-      console.warn('Identity resolver: PB lookup failed:', err.message);
-    }
+  const c = hubResult.contact || {};
+  const co = hubResult.company || {};
+  const e = hubResult.enrichments || {};
+  const sources = hubResult.sources || [];
+
+  // Legacy `source` is single-valued: first wins in priority order.
+  const priority = ['hubspot', 'v35_pb_contacts', 'apollo', 'dropcontact', 'hub_contacts'];
+  const legacyAlias = { v35_pb_contacts: 'pb_contacts' };
+  let source = 'unknown';
+  for (const s of priority) {
+    if (sources.includes(s)) { source = legacyAlias[s] || s; break; }
   }
 
-  // Step 2c: If last name is truncated ("P." from Sales Navigator), try URL slug first (free)
-  const lastNameParts = (name || '').split(/\s+/).slice(1);
-  let lastNameTruncated = lastNameParts.length > 0 && /^\w\.$/.test(lastNameParts[lastNameParts.length - 1]);
-  const slugUrl = pbData?.linkedinUrl || pbData?.defaultProfileUrl || null;
-  if (lastNameTruncated && name && slugUrl) {
-    const resolved = resolveNameFromSlug(slugUrl, name.split(/\s+/)[0]);
-    if (resolved) {
-      name = `${resolved.firstName} ${resolved.lastName}`;
-      lastNameTruncated = false; // Resolved — skip Apollo
-      // Persist the fix back to PB contacts, scoped by LinkedIn URL (unique)
-      pool.query(
-        `UPDATE v35_pb_contacts SET full_name = $1, first_name = $2, last_name = $3
-         WHERE first_name = $4 AND last_name ~ '^\\w\\.$' AND company_name_norm = $5
-           AND linkedin_profile_url = $6`,
-        [name, resolved.firstName, resolved.lastName, resolved.firstName, normalizeCompanyName(company), slugUrl]
-      ).catch(err => console.warn('identity-resolver: slug name persist failed:', err.message));
-    }
-  }
-
-  // Step 3: Apollo people match (credit-gated, only if still truncated after URL slug attempt)
-  let apolloData = null;
-  if (name && company && (!pbData?.linkedinUrl || lastNameTruncated)) {
-    try {
-      if (await checkCreditBudget('apollo')) {
-        const nameParts = name.split(/\s+/);
-        const person = await matchPerson({
-          firstName: nameParts[0],
-          lastName: lastNameTruncated ? undefined : nameParts.slice(1).join(' '),
-          organization: company,
-          email: props.email || undefined,
-        });
-        if (person) {
-          apolloData = {
-            linkedinUrl: person.linkedin_url || null,
-            title: person.title || null,
-            email: person.email || null,
-            fullName: person.first_name && person.last_name
-              ? `${person.first_name} ${person.last_name}` : null,
-          };
-          // Resolve truncated name from Apollo
-          if (lastNameTruncated && apolloData.fullName) {
-            name = apolloData.fullName;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Identity resolver: Apollo match failed:', err.message);
-    }
-  }
-
-  // Step 4: Dropcontact reverse search (credit-gated, only if no email from Steps 1-3)
-  let dropcontactEmail = null;
-  const resolvedEmail = props.email || apolloData?.email || null;
-  if (!resolvedEmail && phone && name) {
-    try {
-      if (await checkCreditBudget('dropcontact')) {
-        const nameParts = name.split(/\s+/);
-        const dc = await reverseSearch({
-          phone,
-          firstName: nameParts[0],
-          lastName: nameParts.slice(1).join(' '),
-          company: company || undefined,
-        });
-        dropcontactEmail = dc.email;
-      }
-    } catch (err) {
-      console.warn('Identity resolver: Dropcontact search failed:', err.message);
-    }
-  }
-
-  if (!hsContact && !pbData && !apolloData && !dropcontactEmail) {
-    return unresolved(identifier);
-  }
-
-  const source = hsContact ? 'hubspot'
-    : pbData ? 'pb_contacts'
-    : apolloData ? 'apollo'
-    : 'dropcontact';
-
+  const pb = e.pb_contact;
   return {
     resolved: true,
-    hubspotContactId: hsContact?.id || null,
-    hubspotCompanyId: props.associatedcompanyid || null,
-    name,
-    email: resolvedEmail || dropcontactEmail || null,
-    phone: toE164(phone),
-    company,
-    title: pbData?.title || apolloData?.title || props.jobtitle || null,
-    linkedinUrl: pbData?.linkedinUrl || apolloData?.linkedinUrl || null,
-    profileImage: pbData?.profileImage || null,
-    pbContactData: pbData ? {
-      summary: pbData.summary,
-      industry: pbData.industry,
-      location: pbData.location,
-      companyLocation: pbData.companyLocation,
-      durationInRole: pbData.durationInRole,
-      durationInCompany: pbData.durationInCompany,
-      pastExperience: pbData.pastExperience,
-      connectionDegree: pbData.connectionDegree,
+    hubspotContactId: c.hubspot_contact_id || null,
+    hubspotCompanyId: co.hubspot_company_id || null,
+    name: c.name || null,
+    email: c.email || e.dropcontact_email || null,
+    phone: c.phone || toE164(normalizePhone(identifier)),
+    company: co.name || null,
+    title: c.title || null,
+    linkedinUrl: c.linkedin_url || null,
+    profileImage: pb?.profile_image || null,
+    pbContactData: pb ? {
+      summary: pb.summary,
+      industry: pb.industry,
+      location: pb.location,
+      companyLocation: pb.company_location,
+      durationInRole: pb.duration_in_role,
+      durationInCompany: pb.duration_in_company,
+      pastExperience: pb.past_experience,
+      connectionDegree: pb.connection_degree,
     } : null,
-    fitScore: props.joruva_fit_score || null,
-    fitReason: props.joruva_fit_reason || null,
-    persona: props.joruva_persona || null,
+    fitScore: e.hubspot?.fit_score || null,
+    fitReason: e.hubspot?.fit_reason || null,
+    persona: e.hubspot?.persona || null,
     source,
   };
 }
 
-/**
- * Classify identifier as phone, email, or HubSpot contact ID.
- */
-function classifyIdentifier(id) {
-  if (id.includes('@')) return 'email';
-  // Pure digits with no formatting → HubSpot contact ID (they're numeric strings like "357584127732")
-  // Phone numbers from the dialer always have formatting: +1, parens, dashes, or spaces
-  if (/^\d+$/.test(id)) return 'hubspot_id';
-  // Has phone formatting characters (+, parens, dashes, dots, spaces) with 7+ digits
-  const digits = id.replace(/\D/g, '');
-  if (/^[+\d().\s-]+$/.test(id) && digits.length >= 7) return 'phone';
-  return 'unknown';
-}
+// ── Public API ─────────────────────────────────────────────
 
-/**
- * Query v35_pb_contacts by normalized company name, then filter by name.
- *
- * Matching rules (from plan review):
- * - Query by company_name_norm first (indexed)
- * - Filter by name similarity: exact > first+last > first-only
- * - If company returns >5 rows with no name match, skip (false positive risk)
- * - NEVER return PB data without both company AND name matching
- */
-async function lookupPbContact(company, name) {
-  const companyNorm = normalizeCompanyName(company);
-  if (!companyNorm) return null;
+async function resolve(identifier) {
+  if (!identifier) return adapt(null, identifier);
 
-  const { rows } = await pool.query(`
-    SELECT full_name, first_name, last_name, title, industry, location,
-           linkedin_profile_url,
-           raw_data->>'profileImageUrl' AS profile_image,
-           raw_data->>'defaultProfileUrl' AS default_profile_url,
-           raw_data->>'summary' AS summary,
-           raw_data->>'durationInRole' AS duration_in_role,
-           raw_data->>'durationInCompany' AS duration_in_company,
-           raw_data->>'connectionDegree' AS connection_degree,
-           raw_data->>'pastExperienceCompanyName' AS past_company,
-           raw_data->>'pastExperienceCompanyTitle' AS past_title,
-           raw_data->>'pastExperienceDuration' AS past_experience_duration,
-           raw_data->>'companyLocation' AS company_location
-    FROM v35_pb_contacts
-    WHERE company_name_norm = $1
-    LIMIT 20
-  `, [companyNorm]);
+  const key = cacheKey(identifier);
+  const cached = cacheGet(key);
+  if (cached) return cached;
 
-  if (!rows.length) return null;
-
-  const nameParts = name.toLowerCase().split(/\s+/);
-  const firstName = nameParts[0] || '';
-  const lastName = nameParts.slice(1).join(' ') || '';
-
-  // Rank matches by quality
-  let best = null;
-  let bestScore = 0;
-
-  for (const row of rows) {
-    const rowFirst = (row.first_name || '').toLowerCase();
-    const rowLast = (row.last_name || '').toLowerCase();
-    const rowFull = (row.full_name || '').toLowerCase();
-
-    let score = 0;
-    // Exact full name match
-    if (rowFull === name.toLowerCase()) {
-      score = 3;
-    // First + last match
-    } else if (rowFirst === firstName && lastName && rowLast === lastName) {
-      score = 2;
-    // First name only match (weak — only if few results)
-    } else if (rowFirst === firstName && rows.length <= 5) {
-      score = 1;
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = row;
+  if (USE_HUB) {
+    try {
+      const hubResult = await callHub(identifier);
+      const identity = adapt(hubResult, identifier);
+      cacheSet(key, identity);
+      return identity;
+    } catch (err) {
+      console.warn('[identity-resolver] hub call failed, falling back to inline:', err.message);
+      // fall through to inline
     }
   }
 
-  // No name match at all — refuse to return (wrong person's photo is worse than no photo)
-  if (!best) return null;
-
-  return {
-    title: best.title,
-    industry: best.industry,
-    location: best.location,
-    linkedinUrl: best.linkedin_profile_url,
-    defaultProfileUrl: best.default_profile_url,
-    profileImage: best.profile_image,
-    summary: best.summary,
-    durationInRole: best.duration_in_role,
-    durationInCompany: best.duration_in_company,
-    connectionDegree: best.connection_degree,
-    companyLocation: best.company_location,
-    pastExperience: best.past_company ? {
-      company: best.past_company,
-      title: best.past_title,
-      duration: best.past_experience_duration,
-    } : null,
-  };
+  const identity = await resolveInline(identifier);
+  cacheSet(key, identity);
+  return identity;
 }
 
-/**
- * Look up a PB contact by phone number. Used when HubSpot doesn't know the contact
- * but Dropcontact enriched them with a phone number in v35_pb_contacts.
- */
-async function lookupPbContactByPhone(rawPhone, normalizedPhone) {
-  // Try exact match on raw phone first (e.g. "+1 734-656-2200" — uses idx_pbc_phone index)
-  const { rows } = await pool.query(`
-    SELECT full_name, first_name, last_name, title, company_name, phone,
-           linkedin_profile_url
-    FROM v35_pb_contacts
-    WHERE phone = $1 OR phone = $2
-    LIMIT 1
-  `, [rawPhone, normalizedPhone || rawPhone]);
-
-  if (rows.length > 0) return rows[0];
-
-  // Fuzzy: last 7 digits suffix match (handles +1 vs 1, spaces vs dashes)
-  const digits = (rawPhone || '').replace(/\D/g, '');
-  if (digits.length < 7) return null;
-
-  const { rows: fuzzyRows } = await pool.query(`
-    SELECT full_name, first_name, last_name, title, company_name, phone,
-           linkedin_profile_url
-    FROM v35_pb_contacts
-    WHERE phone_suffix7 = $1
-    LIMIT 1
-  `, [digits.slice(-7)]);
-
-  return fuzzyRows[0] || null;
-}
-
-function unresolved(identifier) {
-  return {
-    resolved: false,
-    hubspotContactId: null,
-    hubspotCompanyId: null,
-    name: null,
-    email: null,
-    phone: toE164(normalizePhone(identifier)),
-    company: null,
-    title: null,
-    linkedinUrl: null,
-    profileImage: null,
-    pbContactData: null,
-    fitScore: null,
-    fitReason: null,
-    persona: null,
-    source: 'unknown',
-  };
-}
-
-/**
- * Atomic credit budget guard via UPDATE ... RETURNING.
- * Prevents TOCTOU race on concurrent cockpit loads.
- */
-async function checkCreditBudget(service, dailyLimit = 10) {
-  const syncKey = `${service}_daily_credits`;
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Atomic: increment if under budget, reset if new day. Returns new count.
-  const { rows } = await pool.query(`
-    INSERT INTO ucil_sync_state (sync_key, last_sync_at, metadata)
-    VALUES ($1, NOW(), jsonb_build_object('date', $2::text, 'credits_used', 1))
-    ON CONFLICT (sync_key) DO UPDATE SET
-      metadata = CASE
-        WHEN ucil_sync_state.metadata->>'date' = $2
-          AND (ucil_sync_state.metadata->>'credits_used')::int >= $3
-        THEN ucil_sync_state.metadata  -- over budget: don't increment
-        WHEN ucil_sync_state.metadata->>'date' = $2
-        THEN jsonb_build_object('date', $2::text, 'credits_used',
-             ((ucil_sync_state.metadata->>'credits_used')::int + 1))
-        ELSE jsonb_build_object('date', $2::text, 'credits_used', 1)  -- new day: reset
-      END,
-      updated_at = NOW()
-    RETURNING metadata
-  `, [syncKey, today, dailyLimit]);
-
-  const meta = rows[0]?.metadata || {};
-  const used = parseInt(meta.credits_used, 10) || 0;
-
-  if (used >= dailyLimit) {
-    console.log(`Credit budget exhausted for ${service}: ${used}/${dailyLimit}`);
-    return false;
-  }
-
-  return true;
-}
-
-module.exports = { resolve };
+module.exports = { resolve, clearCache, _adapt: adapt };

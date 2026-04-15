@@ -1,3 +1,7 @@
+// Phase 2c (bd joruva-ucil-537): resolve() is now a thin hub client with
+// fallback to the inline chain. These tests exercise the inline chain directly
+// (identity-resolver-inline.js) so they remain meaningful without a live hub.
+// Hub-client + adapter behavior is covered in identity-resolver-hub.test.js.
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('../hubspot');
 jest.mock('../apollo');
@@ -7,7 +11,7 @@ const { pool } = require('../../db');
 const hubspot = require('../hubspot');
 const apollo = require('../apollo');
 const dropcontact = require('../dropcontact');
-const { resolve } = require('../identity-resolver');
+const { resolve } = require('../identity-resolver-inline');
 
 const HS_CONTACT = {
   id: '12345',
@@ -141,87 +145,42 @@ describe('Step 2: PB contacts lookup', () => {
   });
 });
 
-describe('Step 3: Apollo (credit-gated)', () => {
+// Phase 2c: Apollo + Dropcontact are intentionally DISABLED in the inline
+// fallback — the UCIL hub owns paid enrichment to avoid double-spending the
+// shared daily credit counter. These tests pin that behavior so a future
+// refactor doesn't silently re-enable paid calls in the fallback path.
+describe('inline fallback: paid enrichment disabled', () => {
   beforeEach(() => {
     hubspot.findContactByPhone.mockResolvedValue(HS_CONTACT);
-    pool.query.mockImplementation((sql) => {
-      if (sql.includes('v35_pb_contacts')) return { rows: [], rowCount: 0 };
-      if (sql.includes('ucil_sync_state')) {
-        return { rows: [{ metadata: { date: new Date().toISOString().slice(0, 10), credits_used: 1 } }], rowCount: 1 };
-      }
-      return { rows: [], rowCount: 0 };
-    });
+    pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
   });
 
-  test('calls Apollo when PB has no LinkedIn and budget available', async () => {
+  test('never calls Apollo, even when PB has no LinkedIn', async () => {
     apollo.matchPerson.mockResolvedValue({
       linkedin_url: 'https://linkedin.com/in/janedoe',
       title: 'VP Operations',
       email: 'jane@acme.com',
     });
-
-    const result = await resolve('+16305551234');
-    expect(apollo.matchPerson).toHaveBeenCalledWith(expect.objectContaining({
-      firstName: 'Jane',
-      lastName: 'Doe',
-      organization: 'Acme Corp',
-    }));
-    expect(result.linkedinUrl).toBe('https://linkedin.com/in/janedoe');
-  });
-
-  test('skips Apollo when credit budget exhausted', async () => {
-    pool.query.mockImplementation((sql) => {
-      if (sql.includes('v35_pb_contacts')) return { rows: [], rowCount: 0 };
-      if (sql.includes('ucil_sync_state')) {
-        return { rows: [{ metadata: { date: new Date().toISOString().slice(0, 10), credits_used: 10 } }], rowCount: 1 };
-      }
-      return { rows: [], rowCount: 0 };
-    });
-
     await resolve('+16305551234');
     expect(apollo.matchPerson).not.toHaveBeenCalled();
   });
 
-  test('Apollo error is caught gracefully', async () => {
-    apollo.matchPerson.mockRejectedValue(new Error('rate limited'));
-    const result = await resolve('+16305551234');
-    expect(result.resolved).toBe(true);
-    expect(result.source).toBe('hubspot');
-  });
-});
-
-describe('Step 4: Dropcontact (credit-gated)', () => {
-  test('calls Dropcontact when no email from Steps 1-3', async () => {
+  test('never calls Dropcontact, even when no email is known', async () => {
     hubspot.findContactByPhone.mockResolvedValue({
       id: '1',
       properties: { firstname: 'Jane', lastname: 'Doe', company: 'Acme', phone: '+16305551234' },
     });
-    pool.query.mockImplementation((sql) => {
-      if (sql.includes('v35_pb_contacts')) return { rows: [], rowCount: 0 };
-      if (sql.includes('ucil_sync_state')) {
-        return { rows: [{ metadata: { date: new Date().toISOString().slice(0, 10), credits_used: 1 } }], rowCount: 1 };
-      }
-      return { rows: [], rowCount: 0 };
-    });
-
     dropcontact.reverseSearch.mockResolvedValue({ email: 'jane@acme.com', qualification: 'valid' });
     const result = await resolve('+16305551234');
-    expect(dropcontact.reverseSearch).toHaveBeenCalled();
-    expect(result.email).toBe('jane@acme.com');
+    expect(dropcontact.reverseSearch).not.toHaveBeenCalled();
+    expect(result.email).toBeNull();
   });
 
-  test('skips Dropcontact when email already found', async () => {
-    hubspot.findContactByPhone.mockResolvedValue(HS_CONTACT);
-    pool.query.mockImplementation((sql) => {
-      if (sql.includes('v35_pb_contacts')) return { rows: [], rowCount: 0 };
-      if (sql.includes('ucil_sync_state')) {
-        return { rows: [{ metadata: { date: new Date().toISOString().slice(0, 10), credits_used: 1 } }], rowCount: 1 };
-      }
-      return { rows: [], rowCount: 0 };
-    });
-
-    await resolve('+16305551234');
-    expect(dropcontact.reverseSearch).not.toHaveBeenCalled();
+  test('inline resolution still succeeds via HubSpot (free path)', async () => {
+    const result = await resolve('+16305551234');
+    expect(result.resolved).toBe(true);
+    expect(result.source).toBe('hubspot');
+    expect(result.name).toBe('Jane Doe');
   });
 });
 
