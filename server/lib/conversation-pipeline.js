@@ -20,6 +20,47 @@ const HISTORY_WINDOW_MS = 60000;   // rolling ~60s transcript window
 const MAX_SENTIMENT_HISTORY = 20;  // cap at 20 entries (~2.7 min at 8s cycle)
 const DEGRADED_THRESHOLD = 3;      // consecutive failures before degraded mode
 
+// Tier 2 question detection. Two branches only:
+//   1. literal "?" anywhere (reliable when ASR emits punctuation)
+//   2. wh-word (who/what/when/where/why/how) at chunk start or after
+//      sentence-terminal punctuation, AND NOT immediately followed by a
+//      subject pronoun (we/i/he/she/they) — that pattern signals a
+//      wh-cleft/relative ("What we do is…", "Why I called was…"), not a
+//      question.
+// Aux verbs (is/are/do/does/can/will/…) are deliberately excluded — they
+// false-positive on statements like "Is what I said" or "Do that tomorrow"
+// and every false-positive costs a Haiku call. Wh-words carry the signal
+// with much lower noise.
+//
+// Known residual leaks (all accepted — see known-leak test block):
+//   1. "you"-fronted clefts ("What you need is…") match; "you" isn't in
+//      the pronoun exclusion list because "What you doing?" is a real
+//      question in spoken ASR.
+//   2. Contraction clefts ("What's needed is…") match; the apostrophe
+//      breaks the \s+ in the lookahead so the exclusion doesn't fire.
+//   3. "How come …" phrases match; treated as questions (they usually are).
+//
+// Also: if production ASR strips both "?" and sentence punctuation, only
+// chunk-start wh-words match. Measure hit rate in production before
+// tightening further.
+const QUESTION_REGEX = /\?|(?:^|[.!?]\s+)(who|what|when|where|why|how)\b(?!\s+(?:we|i|he|she|they)\b)/i;
+
+// Suggestion source tags (single source of truth for hit-rate log parsing).
+// Names describe the *trigger*, not the backend model — so swapping Haiku
+// for another LLM later doesn't make the wire contract lie.
+const DEFAULT_SOURCE_TAG = 'tier3_batch';        // 8s buffered cycle
+const BYPASS_SOURCE_TAG = 'tier2_question';      // question-signal immediate fire
+const EXIT_ASSIST_SOURCE_TAG = 'exit_assist';    // hostile/tanking off-ramp
+// Client-side Tier 0 matches stamp source='prediction' in the hook. Kept
+// here as a grep target so renames can't miss the client side.
+// const TIER0_SOURCE_TAG = 'prediction';  // client-only, see useLiveAnalysis.js
+
+// Hit-rate log format contract (downstream parsers depend on this):
+//   "suggestion served | callId=<id> source=<tag> trigger=<trigger>"
+//   "suggestion suppressed | callId=<id> reason=<reason> trigger=<trigger>"
+//   "analysis cycle | callId=<id> source=<tag> latency=<ms> phase=<phase|->"
+// Keep key=value pipe-delimited. "-" is the sentinel for missing values.
+
 // ── System prompt (same as validated in scripts/test-conversation-latency.js) ──
 
 // SYNC CHECK: copied from server/lib/claude.js PRODUCT_CATALOG to avoid coupling.
@@ -88,13 +129,50 @@ const SYSTEM_PAYLOAD = [
 ];
 
 // ── Per-call state ──────────────────────────────────────────────────────
+//
+// A callId traverses three states:
+//
+//   1. LIVE — entry exists in callState, aborted=false. Chunks accumulate,
+//      cycles fire, broadcasts go out.
+//
+//   2. ABORTED-BUT-IN-FLIGHT — cleanupConversation has been called while a
+//      Haiku fetch is still pending. state.aborted=true; entry removed from
+//      callState; entry added to recentlyAborted. When the fetch resolves,
+//      runAnalysis sees state.aborted and returns before any broadcast or
+//      counter mutation. In-flight requests can't resurrect a dead call.
+//
+//   3. CLEANED-UP — no entry in callState; entry in recentlyAborted until
+//      the next stale sweep past STALE_THRESHOLD. Late transcript chunks
+//      are rejected by processConversationChunk before getState can create
+//      zombie state. After eviction, the callId is effectively forgotten;
+//      a new call with the same id (Twilio reuses) would start fresh.
+//
+// Two guards serve different phases:
+//   - state.aborted gates POST-AWAIT broadcasts (phase 2).
+//   - recentlyAborted gates NEW-CHUNK arrivals (phase 3).
+// Don't collapse them — they protect non-overlapping windows.
 
 const callState = new Map();
 
+// Callers that have been cleaned up. Prevents zombie state when a late
+// transcript chunk arrives after cleanupConversation — without this,
+// getState would auto-create fresh state for a dead call and the pipeline
+// would happily fire Haiku against a disconnected WebSocket. Entries are
+// evicted by the stale sweep after STALE_THRESHOLD.
+const recentlyAborted = new Map();  // callId -> abortedAt timestamp
+
 function initState() {
+  const now = Date.now();
   return {
     buffer: [],
-    lastAnalysis: Date.now(),
+    // lastAnalysis: batch-timer clock — advances only when runAnalysis
+    // commits to calling the model.
+    // lastActivity: stale-sweep clock — advances on every chunk arrival,
+    // so a call that's receiving audio but not firing cycles (e.g. all
+    // short chunks under the 50-char floor) still counts as alive.
+    lastAnalysis: now,
+    lastActivity: now,
+    aborted: false,          // set by cleanupConversation to gate post-await broadcasts
     history: [],             // [{ text, ts }] — rolling transcript window
     lastPhase: null,
     prediction: null,        // Tier 0 (stored for future use)
@@ -164,10 +242,12 @@ async function callHaiku(callId, transcriptWindow) {
     const data = await res.json();
     const raw = data.content?.[0]?.text || '';
 
-    // Strip markdown fences if present
+    // Strip markdown fences if present. Haiku sometimes emits fenced output
+    // on one line (no trailing newline) — the `\n?` on both ends handles
+    // both multi-line and single-line fence shapes.
     let cleaned = raw.trim();
-    cleaned = cleaned.replace(/^```(?:json)?\s*\n/i, '');
-    cleaned = cleaned.replace(/\n```\s*$/, '');
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
+    cleaned = cleaned.replace(/\n?\s*```\s*$/, '');
     cleaned = cleaned.trim();
     if (!cleaned.startsWith('{')) {
       const start = cleaned.indexOf('{');
@@ -192,7 +272,11 @@ function buildTranscriptWindow(state) {
   return state.history.map(h => h.text).join(' ');
 }
 
-function handleAnalysisResult(callId, state, parsed) {
+// Single default site for sourceTag — runAnalysis passes through a caller-
+// supplied tag explicitly, while direct test callers fall back to tier3.
+function handleAnalysisResult(callId, state, parsed, sourceTag = DEFAULT_SOURCE_TAG) {
+  let exitAssistFired = false;
+
   // Phase change detection + broadcast
   if (parsed.phase && parsed.phase !== state.lastPhase) {
     const prev = state.lastPhase;
@@ -220,9 +304,12 @@ function handleAnalysisResult(callId, state, parsed) {
       momentum: parsed.sentiment.momentum,
       ts: Date.now(),
     });
-    // Cap at MAX_SENTIMENT_HISTORY
+    // Cap at MAX_SENTIMENT_HISTORY. In-place shift keeps the array identity
+    // stable (avoids the slice-and-replace alloc every cycle). At n=20 the
+    // shift re-index cost is trivial; if this ever grows, switch to a ring
+    // buffer.
     if (state.sentimentHistory.length > MAX_SENTIMENT_HISTORY) {
-      state.sentimentHistory = state.sentimentHistory.slice(-MAX_SENTIMENT_HISTORY);
+      state.sentimentHistory.shift();
     }
 
     broadcast(callId, {
@@ -245,21 +332,32 @@ function handleAnalysisResult(callId, state, parsed) {
             text: "I appreciate your time — let me send you some information and we can reconnect when the timing is better.",
             trigger: 'exit_assist',
             confidence: 0.95,
-            source: 'haiku',
+            source: EXIT_ASSIST_SOURCE_TAG,
           },
         });
         logNav(state, 'exit_assist', { reason: 'hostile/tanking 2+ cycles' });
+        logEvent('info', 'conversation-pipeline',
+          `suggestion served | callId=${callId} source=${EXIT_ASSIST_SOURCE_TAG} trigger=exit_assist`);
+        exitAssistFired = true;
       }
     }
   }
 
-  // Suggestion — broadcast when present
-  if (parsed.suggestion) {
+  // Suggestion — broadcast when present, unless exit-assist already fired
+  // this cycle (avoid stacking two suggestion cards back-to-back; the
+  // client shows one at a time and the second would clobber the exit).
+  if (parsed.suggestion && exitAssistFired) {
+    logEvent('info', 'conversation-pipeline',
+      `suggestion suppressed | callId=${callId} reason=exit_assist_active trigger=${parsed.suggestion.trigger}`);
+  }
+  if (parsed.suggestion && !exitAssistFired) {
     broadcast(callId, {
       type: 'response_suggestion',
-      data: { ...parsed.suggestion, source: 'haiku' },
+      data: { ...parsed.suggestion, source: sourceTag },
     });
-    logNav(state, 'suggestion', { trigger: parsed.suggestion.trigger });
+    logNav(state, 'suggestion', { trigger: parsed.suggestion.trigger, source: sourceTag });
+    logEvent('info', 'conversation-pipeline',
+      `suggestion served | callId=${callId} source=${sourceTag} trigger=${parsed.suggestion.trigger}`);
   }
 
   // Objection — broadcast when present
@@ -271,32 +369,55 @@ function handleAnalysisResult(callId, state, parsed) {
     logNav(state, 'objection', { objection: parsed.objection.objection });
   }
 
-  // Prediction — store for future Tier 0 use
-  if (parsed.predicted_next) {
-    state.prediction = parsed.predicted_next;
+  // Prediction — broadcast on change (including null) to clear stale client
+  // ref. A prediction from 8s ago that didn't match is worse than no
+  // prediction: it can fire on a keyword that's no longer trajectory-
+  // relevant. The client distinguishes explicit null (clear ref) from an
+  // absent field (ignore), so the `|| null` normalization is load-bearing.
+  //
+  // Dedupe on pattern-string equality, not object identity: parsed comes
+  // from JSON.parse so every cycle allocates fresh objects, and identity
+  // comparison would never short-circuit. Pattern is the match key the
+  // client uses for Tier 0 — if it hasn't changed, the client's ref is
+  // already correct and the broadcast is noise.
+  const nextPrediction = parsed.predicted_next || null;
+  const prevPattern = state.prediction?.pattern ?? null;
+  const nextPattern = nextPrediction?.pattern ?? null;
+  if (prevPattern !== nextPattern) {
+    state.prediction = nextPrediction;
     broadcast(callId, {
       type: 'prediction_loaded',
-      data: parsed.predicted_next,
+      data: nextPrediction,
     });
   }
 }
 
-async function runAnalysis(callId, state) {
+async function runAnalysis(callId, state, { sourceTag } = {}) {
+  // runAnalysis requires an explicit tag from the caller — processConversationChunk
+  // passes DEFAULT_SOURCE_TAG for batched cycles and BYPASS_SOURCE_TAG for
+  // question-fire. handleAnalysisResult absorbs the default at the end of
+  // the chain if anything slips through.
   if (state.analysisInFlight) return;
+
+  // Evaluate window FIRST — a no-op early return must not reset the timer,
+  // otherwise a steady stream of short chunks (all under the 50-char floor)
+  // could keep extending the 8s window indefinitely.
+  const window = buildTranscriptWindow(state);
+  if (!window || window.length < 50) return;
+
   state.analysisInFlight = true;
-  // Reset timer immediately so the 8s window restarts regardless of outcome.
-  // Without this, a failure leaves timerExpired permanently true.
+  // Reset timer now that we're committed to work. On failure we still want
+  // the 8s window to restart so the next cycle isn't timer-expired forever.
   state.lastAnalysis = Date.now();
 
-  const window = buildTranscriptWindow(state);
-  if (!window || window.length < 50) {
-    // Not enough content for meaningful analysis (avoids wasting Haiku on "Hello?")
-    state.analysisInFlight = false;
-    return;
-  }
-
+  const startedAt = Date.now();
   const parsed = await callHaiku(callId, window);
+  const latency = Date.now() - startedAt;
   state.analysisInFlight = false;
+
+  // The call may have ended mid-await — don't broadcast to a cleaned-up call
+  // and don't mutate failure counters on state that was freed.
+  if (state.aborted) return;
 
   if (!parsed) {
     state.consecutiveFailures++;
@@ -306,14 +427,19 @@ async function runAnalysis(callId, state) {
     return;
   }
 
-  // Success — clear buffer and reset failure counter
+  // Success — clear buffer and reset failure counter.
   state.buffer = [];
+  // Broadcast recovery BEFORE resetting the counter — the condition checks
+  // the pre-reset value to know whether we were actually in degraded mode.
   if (state.consecutiveFailures >= DEGRADED_THRESHOLD) {
     broadcast(callId, { type: 'navigator_status', data: { status: 'ok' } });
   }
   state.consecutiveFailures = 0;
 
-  handleAnalysisResult(callId, state, parsed);
+  logEvent('info', 'conversation-pipeline',
+    `analysis cycle | callId=${callId} source=${sourceTag} latency=${latency}ms phase=${parsed.phase || '-'}`);
+
+  handleAnalysisResult(callId, state, parsed, sourceTag);
 }
 
 /**
@@ -323,26 +449,53 @@ async function runAnalysis(callId, state) {
 async function processConversationChunk(callId, text) {
   if (!text || typeof text !== 'string') return;
 
+  // Refuse late chunks for already-cleaned-up calls. Without this guard,
+  // getState auto-creates fresh state and the pipeline resurrects a dead
+  // call — firing Haiku, broadcasting to a closed WebSocket, and sitting
+  // in memory until the next stale sweep.
+  if (recentlyAborted.has(callId)) return;
+
   const state = getState(callId);
+  const now = Date.now();
 
-  // Add to rolling history window
-  state.history.push({ text, ts: Date.now() });
+  // Add to rolling history window. lastActivity advances on every chunk so
+  // the stale sweep sees the call as alive even when no cycle fires.
+  state.history.push({ text, ts: now });
   state.buffer.push(text);
+  state.lastActivity = now;
 
-  // Check if we should run analysis
-  const elapsed = Date.now() - state.lastAnalysis;
+  // Short-circuit: if a cycle is already running, it will cover the same
+  // window content. Skip both the question-fire and batched paths — the
+  // guard is duplicated inside runAnalysis as defense-in-depth, but we
+  // make it explicit here so the two trigger paths share one check.
+  if (state.analysisInFlight) return;
+
+  // Tier 2: question-signal immediate fire. Side effect: runAnalysis resets
+  // state.lastAnalysis on commit, so firing here also restarts the 8s batch
+  // window. Intentional — we just analyzed the current transcript.
+  if (QUESTION_REGEX.test(text)) {
+    await runAnalysis(callId, state, { sourceTag: BYPASS_SOURCE_TAG });
+    return;
+  }
+
+  const elapsed = now - state.lastAnalysis;
   const bufferFull = state.buffer.length >= MIN_BUFFER_CHUNKS;
   const timerExpired = elapsed >= BUFFER_INTERVAL_MS;
 
   if (bufferFull || timerExpired) {
-    await runAnalysis(callId, state);
+    await runAnalysis(callId, state, { sourceTag: DEFAULT_SOURCE_TAG });
   }
 }
 
 // ── Cleanup ─────────────────────────────────────────────────────────────
 
 function cleanupConversation(callId) {
+  const state = callState.get(callId);
+  if (state) state.aborted = true;   // gate any in-flight post-await broadcasts
   callState.delete(callId);
+  // Only record the first abort timestamp — repeated cleanup calls must NOT
+  // extend the zombie-guard window past its original expiry.
+  if (!recentlyAborted.has(callId)) recentlyAborted.set(callId, Date.now());
 }
 
 // ── Stale state sweep ───────────────────────────────────────────────────
@@ -355,10 +508,20 @@ const STALE_THRESHOLD = 30 * 60 * 1000; // 30 minutes
 const sweepInterval = setInterval(() => {
   const now = Date.now();
   for (const [callId, state] of callState) {
-    if (now - state.lastAnalysis > STALE_THRESHOLD) {
+    // lastActivity, not lastAnalysis — the sweep measures "no chunks in
+    // 30 min," not "no cycles in 30 min." A call with short chunks under
+    // the 50-char floor is still alive.
+    if (now - state.lastActivity > STALE_THRESHOLD) {
+      state.aborted = true;
       callState.delete(callId);
+      recentlyAborted.set(callId, now);
       logEvent('sweep', 'conversation-pipeline', `stale state cleared: ${callId}`);
     }
+  }
+  // Evict recentlyAborted entries past the stale window — no risk of late
+  // chunks after this long; keeping them would leak memory.
+  for (const [callId, abortedAt] of recentlyAborted) {
+    if (now - abortedAt > STALE_THRESHOLD) recentlyAborted.delete(callId);
   }
 }, SWEEP_INTERVAL);
 sweepInterval.unref();
@@ -371,7 +534,9 @@ module.exports = {
   getCallEventLog,
   // Exposed for testing
   _callState: callState,
+  _recentlyAborted: recentlyAborted,
   _initState: initState,
   _handleAnalysisResult: handleAnalysisResult,
   _buildTranscriptWindow: buildTranscriptWindow,
+  _QUESTION_REGEX: QUESTION_REGEX,
 };
