@@ -272,56 +272,105 @@ function buildTranscriptWindow(state) {
   return state.history.map(h => h.text).join(' ');
 }
 
+function broadcastPhase(callId, state, parsed) {
+  if (!parsed.phase || parsed.phase === state.lastPhase) return;
+  const prev = state.lastPhase;
+  state.lastPhase = parsed.phase;
+  broadcast(callId, {
+    type: 'conversation_phase',
+    data: { phase: parsed.phase, key_topic: parsed.objection?.objection || null },
+  });
+  logNav(state, 'phase_change', { from: prev, to: parsed.phase });
+
+  if (parsed.phase_bank && parsed.phase_bank.length > 0) {
+    state.phaseBank = parsed.phase_bank;
+    broadcast(callId, {
+      type: 'phase_bank_loaded',
+      data: { phase: parsed.phase, suggestions: parsed.phase_bank },
+    });
+  }
+}
+
+function broadcastSentiment(callId, state, parsed) {
+  if (!parsed.sentiment) return;
+  state.sentimentHistory.push({
+    customer: parsed.sentiment.customer,
+    momentum: parsed.sentiment.momentum,
+    ts: Date.now(),
+  });
+  // Cap at MAX_SENTIMENT_HISTORY. In-place shift keeps the array identity
+  // stable (avoids the slice-and-replace alloc every cycle). At n=20 the
+  // shift re-index cost is trivial; if this ever grows, switch to a ring
+  // buffer.
+  if (state.sentimentHistory.length > MAX_SENTIMENT_HISTORY) {
+    state.sentimentHistory.shift();
+  }
+  broadcast(callId, {
+    type: 'sentiment_update',
+    data: {
+      customer: parsed.sentiment.customer,
+      momentum: parsed.sentiment.momentum,
+      history: state.sentimentHistory,
+    },
+  });
+}
+
+function broadcastSuggestion(callId, state, parsed, sourceTag) {
+  if (!parsed.suggestion) return;
+  broadcast(callId, {
+    type: 'response_suggestion',
+    data: { ...parsed.suggestion, source: sourceTag },
+  });
+  logNav(state, 'suggestion', { trigger: parsed.suggestion.trigger, source: sourceTag });
+  logEvent('info', 'conversation-pipeline',
+    `suggestion served | callId=${callId} source=${sourceTag} trigger=${parsed.suggestion.trigger}`);
+}
+
+function broadcastObjection(callId, state, parsed) {
+  if (!parsed.objection) return;
+  broadcast(callId, {
+    type: 'objection_detected',
+    data: parsed.objection,
+  });
+  logNav(state, 'objection', { objection: parsed.objection.objection });
+}
+
+// Broadcast on change (including null) to clear stale client ref. A
+// prediction from 8s ago that didn't match is worse than no prediction:
+// it can fire on a keyword that's no longer trajectory-relevant. The
+// client distinguishes explicit null (clear ref) from an absent field
+// (ignore), so the `|| null` normalization is load-bearing.
+//
+// Dedupe on pattern-string equality, not object identity: parsed comes
+// from JSON.parse so every cycle allocates fresh objects, and identity
+// comparison would never short-circuit. Pattern is the match key the
+// client uses for Tier 0 — if it hasn't changed, the client's ref is
+// already correct and the broadcast is noise.
+function broadcastPrediction(callId, state, parsed) {
+  const nextPrediction = parsed.predicted_next || null;
+  const prevPattern = state.prediction?.pattern ?? null;
+  const nextPattern = nextPrediction?.pattern ?? null;
+  if (prevPattern === nextPattern) return;
+  state.prediction = nextPrediction;
+  broadcast(callId, {
+    type: 'prediction_loaded',
+    data: nextPrediction,
+  });
+}
+
 // Single default site for sourceTag — runAnalysis passes through a caller-
 // supplied tag explicitly, while direct test callers fall back to tier3.
 function handleAnalysisResult(callId, state, parsed, sourceTag = DEFAULT_SOURCE_TAG) {
+  broadcastPhase(callId, state, parsed);
+  broadcastSentiment(callId, state, parsed);
+
+  // Exit-assist: hostile/tanking 2+ consecutive cycles. Gated on
+  // parsed.sentiment because the check reads sentimentHistory's tail —
+  // without a fresh push, we'd re-evaluate stale data every cycle and
+  // re-fire on the same pair. Suppression of the model's own suggestion
+  // stays here so the back-to-back-card guard is visible at the top level.
   let exitAssistFired = false;
-
-  // Phase change detection + broadcast
-  if (parsed.phase && parsed.phase !== state.lastPhase) {
-    const prev = state.lastPhase;
-    state.lastPhase = parsed.phase;
-    broadcast(callId, {
-      type: 'conversation_phase',
-      data: { phase: parsed.phase, key_topic: parsed.objection?.objection || null },
-    });
-    logNav(state, 'phase_change', { from: prev, to: parsed.phase });
-
-    // Phase bank (broadcast for future Tier 1 use)
-    if (parsed.phase_bank && parsed.phase_bank.length > 0) {
-      state.phaseBank = parsed.phase_bank;
-      broadcast(callId, {
-        type: 'phase_bank_loaded',
-        data: { phase: parsed.phase, suggestions: parsed.phase_bank },
-      });
-    }
-  }
-
-  // Sentiment — broadcast every cycle, maintain history
   if (parsed.sentiment) {
-    state.sentimentHistory.push({
-      customer: parsed.sentiment.customer,
-      momentum: parsed.sentiment.momentum,
-      ts: Date.now(),
-    });
-    // Cap at MAX_SENTIMENT_HISTORY. In-place shift keeps the array identity
-    // stable (avoids the slice-and-replace alloc every cycle). At n=20 the
-    // shift re-index cost is trivial; if this ever grows, switch to a ring
-    // buffer.
-    if (state.sentimentHistory.length > MAX_SENTIMENT_HISTORY) {
-      state.sentimentHistory.shift();
-    }
-
-    broadcast(callId, {
-      type: 'sentiment_update',
-      data: {
-        customer: parsed.sentiment.customer,
-        momentum: parsed.sentiment.momentum,
-        history: state.sentimentHistory,
-      },
-    });
-
-    // Hostile/tanking exit-assist detection (2+ consecutive cycles)
     const recent = state.sentimentHistory.slice(-2);
     if (recent.length >= 2) {
       const allHostile = recent.every(s => s.customer === 'hostile' || s.momentum === 'tanking');
@@ -343,53 +392,15 @@ function handleAnalysisResult(callId, state, parsed, sourceTag = DEFAULT_SOURCE_
     }
   }
 
-  // Suggestion — broadcast when present, unless exit-assist already fired
-  // this cycle (avoid stacking two suggestion cards back-to-back; the
-  // client shows one at a time and the second would clobber the exit).
   if (parsed.suggestion && exitAssistFired) {
     logEvent('info', 'conversation-pipeline',
       `suggestion suppressed | callId=${callId} reason=exit_assist_active trigger=${parsed.suggestion.trigger}`);
-  }
-  if (parsed.suggestion && !exitAssistFired) {
-    broadcast(callId, {
-      type: 'response_suggestion',
-      data: { ...parsed.suggestion, source: sourceTag },
-    });
-    logNav(state, 'suggestion', { trigger: parsed.suggestion.trigger, source: sourceTag });
-    logEvent('info', 'conversation-pipeline',
-      `suggestion served | callId=${callId} source=${sourceTag} trigger=${parsed.suggestion.trigger}`);
+  } else {
+    broadcastSuggestion(callId, state, parsed, sourceTag);
   }
 
-  // Objection — broadcast when present
-  if (parsed.objection) {
-    broadcast(callId, {
-      type: 'objection_detected',
-      data: parsed.objection,
-    });
-    logNav(state, 'objection', { objection: parsed.objection.objection });
-  }
-
-  // Prediction — broadcast on change (including null) to clear stale client
-  // ref. A prediction from 8s ago that didn't match is worse than no
-  // prediction: it can fire on a keyword that's no longer trajectory-
-  // relevant. The client distinguishes explicit null (clear ref) from an
-  // absent field (ignore), so the `|| null` normalization is load-bearing.
-  //
-  // Dedupe on pattern-string equality, not object identity: parsed comes
-  // from JSON.parse so every cycle allocates fresh objects, and identity
-  // comparison would never short-circuit. Pattern is the match key the
-  // client uses for Tier 0 — if it hasn't changed, the client's ref is
-  // already correct and the broadcast is noise.
-  const nextPrediction = parsed.predicted_next || null;
-  const prevPattern = state.prediction?.pattern ?? null;
-  const nextPattern = nextPrediction?.pattern ?? null;
-  if (prevPattern !== nextPattern) {
-    state.prediction = nextPrediction;
-    broadcast(callId, {
-      type: 'prediction_loaded',
-      data: nextPrediction,
-    });
-  }
+  broadcastObjection(callId, state, parsed);
+  broadcastPrediction(callId, state, parsed);
 }
 
 async function runAnalysis(callId, state, { sourceTag } = {}) {
