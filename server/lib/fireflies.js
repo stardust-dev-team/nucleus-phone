@@ -1,5 +1,10 @@
 // DEPRECATED for phone calls — replaced by Twilio RT Transcription + call-summarizer.js (2026-03).
 // Still used by fireflies-sync.js for Teams/Zoom meeting transcripts.
+//
+// Fire-and-forget contract: returns { success: false, reason } on any failure,
+// never throws. Callers (recording.js) do not branch on failure shape.
+
+const { throwHttpError } = require('./http-error');
 
 const FIREFLIES_UPLOAD_MUTATION = `
   mutation($input: AudioUploadInput) {
@@ -63,6 +68,10 @@ async function uploadToFireflies(recordingUrl, metadata) {
       }),
     });
 
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throwHttpError(res, text, 'POST', 'graphql', { service: 'Fireflies' });
+    }
     const data = await res.json();
     if (data.errors) {
       console.error('Fireflies upload errors:', data.errors);
@@ -72,7 +81,15 @@ async function uploadToFireflies(recordingUrl, metadata) {
     return { success: true, title };
   } catch (err) {
     console.error('Fireflies upload failed:', err.message);
-    return { success: false, reason: 'network_error', error: err.message };
+    let reason = 'network_error';
+    if (err.status) reason = 'http_error';
+    else if (err instanceof SyntaxError) reason = 'parse_error';
+    return {
+      success: false,
+      reason,
+      error: err.message,
+      ...(err.status && { status: err.status }),
+    };
   }
 }
 

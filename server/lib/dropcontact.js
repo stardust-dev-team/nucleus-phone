@@ -6,6 +6,8 @@
  * No circuit breaker, no rate limiter — overkill at <10 calls/day.
  */
 
+const { throwHttpError } = require('./http-error');
+
 const BASE_URL = 'https://api.dropcontact.io/batch';
 const TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 3000;
@@ -48,7 +50,7 @@ async function reverseSearch({ phone, firstName, lastName, company }) {
 
   if (!submitResp.ok) {
     const text = await submitResp.text().catch(() => '');
-    throw new Error(`Dropcontact submit failed: ${submitResp.status} ${text.substring(0, 200)}`);
+    throwHttpError(submitResp, text, 'POST', 'batch', { service: 'Dropcontact' });
   }
 
   const { request_id } = await submitResp.json();
@@ -67,8 +69,10 @@ async function reverseSearch({ phone, firstName, lastName, company }) {
     if (!pollResp.ok) {
       // Fatal errors: fail fast instead of polling until timeout
       if (pollResp.status === 401 || pollResp.status === 403 || pollResp.status === 404) {
-        throw new Error(`Dropcontact poll fatal: ${pollResp.status}`);
+        const text = await pollResp.text().catch(() => '');
+        throwHttpError(pollResp, text, 'GET', `batch/${request_id}`, { service: 'Dropcontact' });
       }
+      console.warn(`Dropcontact poll transient ${pollResp.status} for ${request_id} — retrying`);
       continue; // 429, 500, 503 etc — retriable
     }
 

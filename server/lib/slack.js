@@ -1,6 +1,82 @@
+/**
+ * lib/slack.js — Slack notification sender.
+ *
+ * Fire-and-forget contract: every function returns a boolean (true=delivered,
+ * false=failed). Failures NEVER throw. Slack is best-effort notification
+ * plumbing — if an alert fails, the underlying business event (call made,
+ * note written) still happened. Callers are not expected to branch on failure
+ * shape; telemetry lives in logEvent for forensics.
+ *
+ * Contrast with apollo.js/hubspot.js which throw structured errors — those are
+ * system-of-record writes where the caller needs to know what broke.
+ */
+
 const { formatDuration } = require('./format');
 const { logEvent } = require('./debug-log');
 const { touch } = require('./health-tracker');
+const { throwHttpError } = require('./http-error');
+
+const CHAT_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
+
+/**
+ * POST to Slack's chat.postMessage (bot token). Shared by the three bot-mode
+ * callers (sendAdminReport, sendSystemAlert, sendSlackDM). Fire-and-forget
+ * contract: returns true on success, false on ANY failure (network, HTTP,
+ * or data.ok:false). All failure paths log + emit telemetry; callers never
+ * see exceptions.
+ *
+ * @param {Object} payload - Full Slack message payload (must include `channel`)
+ * @param {string} context - Short tag for logs ('admin_report', 'system_alert', 'dm')
+ */
+async function postBotMessage(payload, context) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    console.warn(`SLACK_BOT_TOKEN not set — skipping ${context}`);
+    return false;
+  }
+  try {
+    const resp = await fetch(CHAT_POST_MESSAGE_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throwHttpError(resp, text, 'POST', 'chat.postMessage', { service: 'Slack' });
+    }
+    const data = await resp.json();
+    if (!data.ok) {
+      // Slack returns HTTP 200 on logical failures (invalid_auth, channel_not_found,
+      // not_in_channel). Treat these as structured errors so the catch block logs
+      // with the same shape as HTTP failures. err.kind distinguishes this from
+      // transport failures — the catch block logs kind so the telemetry doesn't
+      // lie about "no status" when really it's "HTTP 200 but Slack rejected it."
+      const err = new Error(`Slack chat.postMessage ok:false — ${data.error || 'unknown'}`);
+      err.kind = 'slack_logical';
+      err.slackError = data.error || null;
+      err.endpoint = 'chat.postMessage';
+      err.method = 'POST';
+      throw err;
+    }
+    touch('slack');
+    return true;
+  } catch (err) {
+    console.error(`Slack ${context} failed:`, err.message);
+    logEvent('integration', 'slack', `${context} failed: ${err.message}`, {
+      level: 'error',
+      detail: {
+        kind: err.kind,
+        status: err.status,
+        slackError: err.slackError,
+        body: typeof err.body === 'string' ? err.body.substring(0, 200) : undefined,
+      },
+    });
+    return false;
+  }
+}
 
 async function sendSlackAlert(message) {
   const webhookUrl = process.env.SLACK_SALES_WEBHOOK_URL;
@@ -10,22 +86,27 @@ async function sendSlackAlert(message) {
   }
 
   try {
-    const res = await fetch(webhookUrl, {
+    const resp = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(message),
     });
 
-    if (!res.ok) {
-      console.error('Slack alert failed:', res.status);
-      logEvent('integration', 'slack', `alert webhook failed: ${res.status}`, { level: 'error' });
-      return false;
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throwHttpError(resp, text, 'POST', 'slack_webhook', { service: 'Slack' });
     }
     touch('slack');
     return true;
   } catch (err) {
     console.error('Slack alert error:', err.message);
-    logEvent('integration', 'slack', `alert error: ${err.message}`, { level: 'error' });
+    logEvent('integration', 'slack', `alert error: ${err.message}`, {
+      level: 'error',
+      detail: {
+        status: err.status,
+        body: typeof err.body === 'string' ? err.body.substring(0, 200) : undefined,
+      },
+    });
     return false;
   }
 }
@@ -145,31 +226,12 @@ function formatAdminReport(data) {
 }
 
 async function sendAdminReport(message) {
-  const token = process.env.SLACK_BOT_TOKEN;
   const channel = process.env.SLACK_ADMIN_CHANNEL_ID;
-  if (!token || !channel) {
-    console.warn('SLACK_BOT_TOKEN or SLACK_ADMIN_CHANNEL_ID not set — skipping admin report');
+  if (!channel) {
+    console.warn('SLACK_ADMIN_CHANNEL_ID not set — skipping admin report');
     return false;
   }
-  try {
-    const res = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: JSON.stringify({ channel, ...message }),
-    });
-    const data = await res.json();
-    if (!data.ok) {
-      console.error('Slack admin report failed:', data.error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error('Slack admin report error:', err.message);
-    return false;
-  }
+  return postBotMessage({ channel, ...message }, 'admin_report');
 }
 
 /**
@@ -178,33 +240,14 @@ async function sendAdminReport(message) {
  * Tom needs to see as a sales manager, not just in server logs.
  */
 async function sendSystemAlert(text, blocks) {
-  const token = process.env.SLACK_BOT_TOKEN;
   const channel = process.env.SLACK_ADMIN_CHANNEL_ID;
-  if (!token || !channel) {
-    console.warn('SLACK_BOT_TOKEN or SLACK_ADMIN_CHANNEL_ID not set — skipping system alert');
+  if (!channel) {
+    console.warn('SLACK_ADMIN_CHANNEL_ID not set — skipping system alert');
     return false;
   }
-  try {
-    const payload = { channel, text };
-    if (blocks) payload.blocks = blocks;
-    const res = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!data.ok) {
-      console.error('Slack system alert failed:', data.error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error('Slack system alert error:', err.message);
-    return false;
-  }
+  const payload = { channel, text };
+  if (blocks) payload.blocks = blocks;
+  return postBotMessage(payload, 'system_alert');
 }
 
 /**
@@ -212,32 +255,9 @@ async function sendSystemAlert(text, blocks) {
  * Uses the bot token (chat:write scope).
  */
 async function sendSlackDM(channelOrUserId, text, blocks) {
-  const token = process.env.SLACK_BOT_TOKEN;
-  if (!token) {
-    console.warn('SLACK_BOT_TOKEN not set — skipping DM');
-    return false;
-  }
-  try {
-    const payload = { channel: channelOrUserId, text };
-    if (blocks) payload.blocks = blocks;
-    const res = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!data.ok) {
-      console.error('Slack DM failed:', data.error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error('Slack DM error:', err.message);
-    return false;
-  }
+  const payload = { channel: channelOrUserId, text };
+  if (blocks) payload.blocks = blocks;
+  return postBotMessage(payload, 'dm');
 }
 
 module.exports = { sendSlackAlert, sendAdminReport, sendSystemAlert, sendSlackDM, formatCallAlert, formatSimScorecard, formatAdminReport };

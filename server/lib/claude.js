@@ -5,6 +5,7 @@
 
 const { logEvent } = require('./debug-log');
 const { touch } = require('./health-tracker');
+const { throwHttpError } = require('./http-error');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
@@ -407,8 +408,8 @@ async function generateRapportIntel(contactData) {
     });
 
     if (!resp.ok) {
-      const body = await resp.text();
-      throw new Error(`Claude API ${resp.status}: ${body.substring(0, 200)}`);
+      const body = await resp.text().catch(() => '');
+      throwHttpError(resp, body, 'POST', 'v1/messages', { service: 'Claude' });
     }
 
     const result = await resp.json();
@@ -426,7 +427,14 @@ async function generateRapportIntel(contactData) {
       logEvent('integration', 'anthropic', 'timeout after 6s', { level: 'warn' });
     } else {
       console.error('Claude rapport generation failed:', err.message);
-      logEvent('integration', 'anthropic', `failed: ${err.message}`, { level: 'error' });
+      logEvent('integration', 'anthropic', `failed: ${err.message}`, {
+        level: 'error',
+        detail: {
+          status: err.status,
+          endpoint: err.endpoint,
+          body: typeof err.body === 'string' ? err.body.substring(0, 200) : undefined,
+        },
+      });
     }
     return buildFallback(contactData);
   } finally {

@@ -1,4 +1,5 @@
 const { normalizePhone } = require('./phone');
+const { throwHttpError } = require('./http-error');
 
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 const MAX_RETRIES = 3;
@@ -20,6 +21,7 @@ function headers() {
 
 async function hubspotFetch(path, options = {}, _retries = 0) {
   const url = `${HUBSPOT_BASE}${path}`;
+  const method = options.method || 'GET';
   const resp = await fetch(url, {
     ...options,
     headers: { ...headers(), ...options.headers },
@@ -27,7 +29,10 @@ async function hubspotFetch(path, options = {}, _retries = 0) {
 
   if (resp.status === 429) {
     if (_retries >= MAX_RETRIES) {
-      throw new Error(`HubSpot rate limited after ${MAX_RETRIES} retries: ${path}`);
+      // Structured error so callers can branch on err.status === 429 even
+      // after the retry loop gave up.
+      const text = await resp.text().catch(() => '');
+      throwHttpError(resp, text, method, path, { service: 'HubSpot' });
     }
     const retryAfter = Math.max(1, parseInt(resp.headers.get('retry-after') || '2', 10));
     await new Promise(r => setTimeout(r, retryAfter * 1000));
@@ -35,10 +40,8 @@ async function hubspotFetch(path, options = {}, _retries = 0) {
   }
 
   if (!resp.ok) {
-    const body = await resp.text();
-    const err = new Error(`HubSpot ${resp.status}: ${body.substring(0, 200)}`);
-    err.status = resp.status;
-    throw err;
+    const text = await resp.text().catch(() => '');
+    throwHttpError(resp, text, method, path, { service: 'HubSpot' });
   }
 
   return resp.status === 204 ? null : resp.json();
@@ -200,4 +203,5 @@ async function getCompany(companyId) {
 module.exports = {
   searchContacts, getContact, addNoteToContact,
   findContactByPhone, upsertContact, createDeal, getCompany,
+  MAX_RETRIES,
 };

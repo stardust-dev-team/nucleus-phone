@@ -1,19 +1,29 @@
 const { installFetchMock, mockFetchResponse, mockFetchError } = require('../../__tests__/helpers/mock-fetch');
 
+jest.mock('../debug-log', () => ({ logEvent: jest.fn() }));
+jest.mock('../health-tracker', () => ({ touch: jest.fn() }));
+
 let generateRapportIntel, clearCache;
+let logEvent, touch;
 
 beforeEach(() => {
   installFetchMock();
   process.env.ANTHROPIC_API_KEY = 'test-key';
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  jest.spyOn(console, 'log').mockImplementation(() => {});
   // Fresh module per test to reset cache
   jest.isolateModules(() => {
     ({ generateRapportIntel, clearCache } = require('../claude'));
+    ({ logEvent } = require('../debug-log'));
+    ({ touch } = require('../health-tracker'));
   });
 });
 
 afterEach(() => {
   delete global.fetch;
   delete process.env.ANTHROPIC_API_KEY;
+  jest.restoreAllMocks();
 });
 
 const CONTACT = { hubspotContactId: 'hs-1', name: 'Jane Doe', company: 'Acme', title: 'VP Ops' };
@@ -29,13 +39,24 @@ const CLAUDE_RESPONSE = {
 };
 
 describe('generateRapportIntel', () => {
-  test('calls Claude API and returns parsed intel', async () => {
+  test('POSTs to Anthropic API with correct headers/body and returns parsed intel', async () => {
     mockFetchResponse(CLAUDE_RESPONSE);
     const result = await generateRapportIntel(CONTACT);
     expect(result.fallback).toBe(false);
     expect(result.rapport_starters).toHaveLength(1);
     expect(result.opening_line).toBe('Hi Jane');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(touch).toHaveBeenCalledWith('anthropic');
+
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://api.anthropic.com/v1/messages');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers['x-api-key']).toBe('test-key');
+    expect(opts.headers['anthropic-version']).toBe('2023-06-01');
+    const body = JSON.parse(opts.body);
+    expect(body.model).toMatch(/claude-sonnet/);
+    expect(body.system).toMatch(/rapport/);
+    expect(body.messages[0].content).toContain('Jane Doe');
   });
 
   test('cache hit skips API call', async () => {
@@ -55,10 +76,23 @@ describe('generateRapportIntel', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('returns fallback on API error', async () => {
-    mockFetchResponse('Server error', { status: 500 });
+  test('returns fallback on API error + logs structured error to telemetry', async () => {
+    mockFetchResponse('{"error":"overloaded"}', { status: 529 });
     const result = await generateRapportIntel(CONTACT);
     expect(result.fallback).toBe(true);
+    expect(touch).not.toHaveBeenCalled();
+    expect(logEvent).toHaveBeenCalledWith(
+      'integration', 'anthropic',
+      expect.stringMatching(/Claude POST v1\/messages \(529\)/),
+      expect.objectContaining({
+        level: 'error',
+        detail: expect.objectContaining({
+          status: 529,
+          endpoint: 'v1/messages',
+          body: expect.stringContaining('overloaded'),
+        }),
+      }),
+    );
   });
 
   test('returns fallback on network error', async () => {
