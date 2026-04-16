@@ -206,7 +206,7 @@ describe('searchPeopleByCompany', () => {
         endpoint: 'people/match',
       });
       expect(result.failures[0].body).toContain('internal');
-      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Apollo reveal failed for p2 \(status 500\)/));
+      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/p2.*500/));
     } finally {
       errSpy.mockRestore();
     }

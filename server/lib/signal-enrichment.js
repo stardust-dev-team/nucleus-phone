@@ -147,15 +147,16 @@ async function runBatchEnrichment({ tiers = ['spear', 'targeted'], resumeFrom = 
           creditsUsed += result.creditsUsed;
         }
 
-        // Surface partial reveal failures loudly — if Apollo is rate-limiting
-        // or 500ing, we need to see it rather than silently return fewer contacts.
+        // Surface partial reveal failures — triage by status, not by ratio.
+        // 5xx = server-side outage (page-worthy), 4xx = client issue (visible but not alerting).
         if (result.failures?.length) {
-          const failuresDominated = result.failures.length > contacts.length;
-          const logFn = failuresDominated ? console.error : console.warn;
+          const statuses = result.failures.map(f => f.status || 'n/a');
+          const has5xx = result.failures.some(f => f.status >= 500);
+          const logFn = has5xx ? console.error : console.warn;
           logFn(
             `Apollo reveal partial failure for ${company.domain}: ` +
             `${result.failures.length} failed, ${contacts.length} succeeded. ` +
-            `Statuses: ${result.failures.map(f => f.status || 'n/a').join(',')}`,
+            `Statuses: ${statuses.join(',')}`,
           );
         }
 
