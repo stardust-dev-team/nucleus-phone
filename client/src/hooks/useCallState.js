@@ -1,6 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { initiateCall, joinCall, endCall } from '../lib/api';
 
+function toE164(phone) {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits[0] === '1') return `+${digits}`;
+  if (phone.startsWith('+') && digits.length >= 10) return `+${digits}`;
+  return null;
+}
+
 export default function useCallState(twilioHook) {
   const { makeCall, hangUp, status } = twilioHook;
 
@@ -32,8 +41,10 @@ export default function useCallState(twilioHook) {
   }, [status]);
 
   const startCall = useCallback(async (contact, identity) => {
-    const phone = contact.properties?.phone || contact.properties?.mobilephone;
-    if (!phone) throw new Error('Contact has no phone number');
+    const rawPhone = contact.properties?.phone || contact.properties?.mobilephone;
+    if (!rawPhone) throw new Error('Contact has no phone number');
+    const phone = toE164(rawPhone);
+    if (!phone) throw new Error(`Phone "${rawPhone}" could not be converted to E.164 format`);
 
     const { conferenceName, callId } = await initiateCall({
       to: phone,
