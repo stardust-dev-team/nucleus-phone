@@ -14,7 +14,6 @@ export default function useLiveAnalysis(callId, enabled = true) {
   // Conversation Navigator state
   const [phase, setPhase] = useState(null);                 // { phase, key_topic }
   const [sentiment, setSentiment] = useState(null);         // { customer, momentum, history[] }
-  const [suggestion, setSuggestion] = useState(null);       // latest suggestion (for compat)
   const [suggestionHistory, setSuggestionHistory] = useState([]); // last 5 suggestions
   const [objection, setObjection] = useState(null);         // { objection, rebuttal }
   const [navigatorStatus, setNavigatorStatus] = useState('ok');
@@ -26,6 +25,7 @@ export default function useLiveAnalysis(callId, enabled = true) {
   callIdRef.current = callId;
 
   const seenRef = useRef(new Set());
+  const suggestionSeqRef = useRef(0);
 
   // Navigator refs — mutated by WS messages without triggering re-renders.
   // The `transcript_chunk` handler reads `.current` to do Tier 0 matching.
@@ -39,7 +39,6 @@ export default function useLiveAnalysis(callId, enabled = true) {
     setRecommendation(null);
     setPhase(null);
     setSentiment(null);
-    setSuggestion(null);
     setSuggestionHistory([]);
     setObjection(null);
     setNavigatorStatus('ok');
