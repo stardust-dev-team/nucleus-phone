@@ -417,6 +417,7 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
   if (!window || window.length < 50) return;
 
   state.analysisInFlight = true;
+  const bufferLenAtStart = state.buffer.length;
   // Reset timer now that we're committed to work. On failure we still want
   // the 8s window to restart so the next cycle isn't timer-expired forever.
   state.lastAnalysis = Date.now();
@@ -438,8 +439,10 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
     return;
   }
 
-  // Success — clear buffer and reset failure counter.
-  state.buffer = [];
+  // Only clear chunks that existed when this cycle started. Chunks that
+  // arrived during the in-flight analysis stay in the buffer so the next
+  // cycle picks them up immediately instead of waiting a full 8s window.
+  state.buffer = state.buffer.slice(bufferLenAtStart);
   // Broadcast recovery BEFORE resetting the counter — the condition checks
   // the pre-reset value to know whether we were actually in degraded mode.
   if (state.consecutiveFailures >= DEGRADED_THRESHOLD) {

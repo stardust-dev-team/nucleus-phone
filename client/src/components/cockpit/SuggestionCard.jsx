@@ -13,7 +13,7 @@ const SOURCE_LABEL = {
  * SuggestionCard — single-slot, auto-dismissing response suggestion.
  *
  * Design:
- * - Max 2 lines (text-clamp via CSS).
+ * - Expands to fit full suggestion text (no line clamp).
  * - Violet left accent for normal suggestions; amber for exit_assist /
  *   objection rebuttals (styling is driven by `suggestion.trigger`).
  * - Auto-dismiss after 30s. Replacement resets the timer.
@@ -58,13 +58,7 @@ export default function SuggestionCard({ suggestion, onDismiss }) {
       <div className="flex-1 min-w-0">
         <p
           className="text-[13px] leading-[1.4]"
-          style={{
-            color: 'var(--cockpit-text)',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
+          style={{ color: 'var(--cockpit-text)' }}
         >
           {suggestion.text}
         </p>
