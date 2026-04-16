@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSignalContacts, getSignalCallbacks } from '../lib/api';
+import usePwaInstall from '../hooks/usePwaInstall';
 
 const TIER_COLORS = { spear: 'bg-jv-red', targeted: 'bg-jv-amber', awareness: 'bg-gray-500' };
 const TIER_BORDER = { spear: 'border-jv-red', targeted: 'border-jv-amber', awareness: 'border-gray-500' };
@@ -212,6 +213,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
   const [contactFilter, setContactFilter] = useState(FILTER_HAS_PHONE);
   const [now, setNow] = useState(() => new Date());
   const navigate = useNavigate();
+  const pwa = usePwaInstall();
 
   // Tick the clock every 60s for live local-time display
   useEffect(() => {
@@ -277,6 +279,40 @@ export default function Contacts({ identity, callState, twilioStatus }) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* PWA install banner */}
+      {pwa.showBanner && (
+        <div className="mx-4 mt-3 rounded-lg border border-jv-amber/30 bg-jv-amber/10 p-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/icons/icon-192.png" alt="" className="w-10 h-10 rounded-lg shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-jv-bone">Add Nucleus Phone to your home screen</p>
+              <p className="text-xs text-jv-muted truncate">
+                {pwa.isIos
+                  ? 'Tap the share button, then "Add to Home Screen"'
+                  : 'Quick access like a native app'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {pwa.canPrompt && (
+              <button
+                onClick={pwa.install}
+                className="px-3 py-1.5 rounded-lg bg-jv-amber text-jv-deep text-xs font-bold uppercase tracking-wide"
+              >
+                Install
+              </button>
+            )}
+            <button
+              onClick={pwa.dismiss}
+              className="text-jv-muted hover:text-jv-bone text-lg leading-none px-1"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Tier + state filters */}
       <div className="flex gap-2 px-4 pt-4 pb-2 flex-wrap">
         {['spear', 'targeted', 'awareness'].map(t => (
