@@ -58,7 +58,9 @@ app.use('/api/auth', require('./routes/auth'));
 //     scoreboard, cockpit, token).
 //   • Admin-only mounts apply rbac('admin') here.
 app.use('/api/token', apiKeyAuth, rbac('external_caller'), require('./routes/token'));
+app.use('/api/voice/main', require('./routes/main-line'));
 app.use('/api/voice/incoming', require('./routes/incoming'));
+app.use('/api/voice/investor', require('./routes/investor'));
 app.use('/api/voice', require('./routes/voice'));
 app.use('/api/call', require('./routes/call'));
 app.use('/api/call/recording-status', require('./routes/recording'));
