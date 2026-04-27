@@ -43,7 +43,7 @@ router.post('/', makeTwilioWebhook('/api/voice/investor'), (req, res) => {
   if (!forwardTo) {
     console.error('investor: INVESTOR_FORWARD_NUMBER not set');
     twiml.say({ voice: 'Polly.Joanna-Generative' },
-      'Thank you for calling jor-roo-va. We are unable to take your call right now. Please email tom at jor-roo-va dot com.');
+      'Thank you for calling jer-roo-va. We are unable to take your call right now. Please email tom at jer-roo-va dot com.');
     return res.type('text/xml').send(twiml.toString());
   }
 
