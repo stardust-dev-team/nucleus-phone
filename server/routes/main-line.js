@@ -43,7 +43,7 @@ router.post('/', makeTwilioWebhook('/api/voice/main'), (req, res) => {
 
   gather.say({
     voice: 'Polly.Joanna',
-  }, 'Thanks for calling Joruva Industrial. Press 2 for investor relations, or stay on the line.');
+  }, 'Thanks for calling Joruva Industrial. Press 1 for sales, press 2 for investor relations, or stay on the line.');
 
   // No input → fall through to the Vapi AI receptionist (existing flow).
   twiml.redirect({ method: 'POST' }, vapiFallbackUrl);
@@ -59,6 +59,9 @@ router.post('/menu', makeTwilioWebhook('/api/voice/main/menu'), (req, res) => {
 
   if (digit === '2') {
     twiml.redirect({ method: 'POST' }, `${baseUrl}/api/voice/investor`);
+  } else if (digit === '1') {
+    // Sales — fall into the per-DID INBOUND_ROUTES flow (toll-free → Alex).
+    twiml.redirect({ method: 'POST' }, `${baseUrl}/api/voice/incoming`);
   } else {
     // Anything else → Vapi AI receptionist (existing customer-service flow).
     twiml.redirect({ method: 'POST' }, vapiFallbackUrl);
