@@ -405,6 +405,14 @@ async function initSchema() {
         FOR EACH ROW EXECUTE FUNCTION update_npu_ts();
     `);
 
+    // 006_users_oid: Entra object-ID column for native-iOS dialer auth exchange.
+    // Captured on first /api/auth/exchange call. Email lookup remains canonical
+    // for M1; oid becomes the join key in a follow-up backfill bead.
+    await client.query(`
+      ALTER TABLE nucleus_phone_users ADD COLUMN IF NOT EXISTS oid UUID UNIQUE;
+      CREATE INDEX IF NOT EXISTS idx_npu_oid ON nucleus_phone_users(oid) WHERE oid IS NOT NULL;
+    `);
+
     // Seed internal @joruva.com users — idempotent, preserves is_active if
     // a user has been manually deactivated in a prior run.
     const SEED_USERS = [

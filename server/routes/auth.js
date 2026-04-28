@@ -1,11 +1,31 @@
 const { Router } = require('express');
 const msal = require('@azure/msal-node');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { sessionAuth, SESSION_TTL_SECONDS } = require('../middleware/auth');
 const { pool } = require('../db');
 const { encrypt } = require('../lib/crypto');
+const { verifyEntraIdToken } = require('../lib/entra-token');
 
 const router = Router();
+
+// Rate limits for /api/auth/exchange — applied as a chain (sustained + burst).
+// Both are scoped to this route only (mounted directly on the route handler).
+// Sustained: 10/min/IP. Burst: 5 per 10s/IP. Either tripping returns 429.
+const exchangeSustainedLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many exchange requests' },
+});
+const exchangeBurstLimiter = rateLimit({
+  windowMs: 10 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many exchange requests (burst)' },
+});
 
 // Look up an active user by email. Returns null if no row or is_active=false.
 // This replaces the pre-e5p hardcoded USER_MAP — identity/role/display_name
@@ -13,12 +33,30 @@ const router = Router();
 // a deploy.
 async function findActiveUserByEmail(email) {
   const { rows } = await pool.query(
-    `SELECT id, email, identity, role, display_name
+    `SELECT id, email, identity, role, display_name, oid
      FROM nucleus_phone_users
      WHERE email = $1 AND is_active = TRUE`,
     [email]
   );
   return rows[0] || null;
+}
+
+// Fail at boot, not at first login. A misconfigured deploy missing JWT_SECRET
+// would otherwise mint tokens via `jwt.sign(payload, undefined, ...)`, which
+// throws `secretOrPrivateKey must have a value` at the user — surfacing as a
+// 500 with a stack trace in logs. We'd rather the process refuse to start.
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set — refusing to start auth router');
+}
+
+// Mint a nucleus_session JWT. Used by the web cookie callback and the native
+// iOS bearer exchange — keep them in lockstep so secret/TTL/payload shape can
+// never drift. Payload carries only userId; sessionAuth re-resolves role +
+// is_active from the DB on every request (with a 5s cache).
+function mintSessionToken(userId) {
+  return jwt.sign({ userId }, process.env.JWT_SECRET, {
+    expiresIn: `${SESSION_TTL_SECONDS}s`,
+  });
 }
 
 // Identity whitelist for the Twilio token endpoint — checks the DB. Cached
@@ -136,14 +174,7 @@ router.get('/callback', async (req, res) => {
        .catch(err => console.error(`[auth] Failed to persist MSAL cache for ${email}:`, err.message));
     }
 
-    // Create session. JWT carries only userId — role + is_active are looked
-    // up from the DB on every request (with a 5s cache) so revocation is
-    // near-instant and role changes take effect without re-login.
-    const token = jwt.sign(
-      { userId: user.id },
-      process.env.JWT_SECRET,
-      { expiresIn: `${SESSION_TTL_SECONDS}s` }
-    );
+    const token = mintSessionToken(user.id);
 
     res.cookie('nucleus_session', token, {
       httpOnly: true,
@@ -184,4 +215,95 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-module.exports = Object.assign(router, { isValidIdentity });
+// POST /api/auth/exchange — native iOS dialer trades a Microsoft id_token for
+// the same 30-day nucleus_session JWT the web client uses (returned in the
+// response body, not as a cookie). The token is meant to be sent as
+// `Authorization: Bearer <jwt>` on subsequent calls — the consumer middleware
+// (`bearerAuth`) lands in nucleus-phone-8sq. Until that ships, the token is
+// a valid JWT but no API route will accept it.
+//
+// Kill-switch: ENABLE_NATIVE_EXCHANGE must be 'true' or this route returns 503.
+// The check runs before rate-limiting so a disabled route doesn't consume
+// rate-limit budget. Flipping the env var requires a Render redeploy (~3min) —
+// the flag is a kill-switch, not a runtime toggle.
+function nativeExchangeKillSwitch(req, res, next) {
+  if (process.env.ENABLE_NATIVE_EXCHANGE !== 'true') {
+    return res.status(503).json({ error: 'Native exchange disabled' });
+  }
+  next();
+}
+
+router.post('/exchange', nativeExchangeKillSwitch, exchangeSustainedLimiter, exchangeBurstLimiter, async (req, res, next) => {
+  try {
+    const { idToken } = req.body || {};
+    if (!idToken || typeof idToken !== 'string') {
+      return res.status(400).json({ error: 'idToken required' });
+    }
+
+    let claims;
+    try {
+      claims = await verifyEntraIdToken(idToken);
+    } catch (err) {
+      // jsonwebtoken / jwks failures all collapse to 401 — clients can't recover
+      // by retrying, and the specific reason isn't useful to leak to a caller.
+      console.warn('[auth/exchange] id_token verify failed:', err.message);
+      return res.status(401).json({ error: 'Invalid id_token' });
+    }
+
+    const user = await findActiveUserByEmail(claims.email);
+    if (!user) {
+      return res.status(403).json({ error: `No active Nucleus Phone account for ${claims.email}` });
+    }
+
+    // Stamp oid on first authenticated request. If a row already has an oid
+    // and the incoming claim differs, refuse — that means the email got
+    // re-mapped to a different Entra principal (admin merged accounts,
+    // mailbox handed off) and silently overwriting the column would let
+    // whoever logs in last take over the row. Force admin intervention.
+    //
+    // Compare case-insensitively. pg returns lowercase canonical UUIDs, but
+    // Microsoft's oid claim has been inconsistent across token versions. A
+    // single uppercase response would lock out every existing user on their
+    // next login.
+    if (user.oid === null) {
+      try {
+        await pool.query(
+          `UPDATE nucleus_phone_users SET oid = $1 WHERE id = $2`,
+          [claims.oid, user.id]
+        );
+      } catch (err) {
+        if (err.code === '23505') {
+          // unique_violation — another row already claims this oid
+          console.error('[auth/exchange] oid collision', { email: claims.email, oid: claims.oid });
+          return res.status(409).json({ error: 'oid already bound to another account' });
+        }
+        throw err;
+      }
+    } else if (user.oid.toLowerCase() !== claims.oid.toLowerCase()) {
+      console.error('[auth/exchange] oid mismatch on existing row', {
+        email: claims.email,
+        storedOid: user.oid,
+        claimedOid: claims.oid,
+      });
+      return res.status(409).json({ error: 'oid mismatch — contact admin' });
+    }
+
+    const token = mintSessionToken(user.id);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        identity: user.identity,
+        role: user.role,
+        displayName: user.display_name,
+      },
+      expiresAt: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = Object.assign(router, { isValidIdentity, findActiveUserByEmail });
