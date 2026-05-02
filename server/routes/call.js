@@ -184,6 +184,14 @@ router.post('/mute', ...callerGuard, async (req, res) => {
 // dialing — if the agent already has a live call on another device, the
 // initiator surfaces a "you're already on a call" alert and returns. The
 // filter applies uniformly to both 'live' and 'sim' entries.
+//
+// LIMITATION: filter matches startedBy only, not participants. Today every
+// outbound conference is 1:1 with the initiating rep, so "calls I started"
+// equals "calls I'm on." If a future flow adds rep-B-joins-rep-A patterns
+// (warm transfer, shadow listen, supervisor monitor), this filter will fail
+// open: rep B asking ?identity=B will not see A's conference and the iOS
+// dialer's double-dial guard will allow a second call. Tracked: see
+// nucleus-phone bead for participant-aware filter once such a flow lands.
 router.get('/active', ...callerGuard, async (req, res) => {
   const filterIdentity = typeof req.query.identity === 'string' && req.query.identity.length
     ? req.query.identity

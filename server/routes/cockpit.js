@@ -291,8 +291,12 @@ router.get('/:identifier', bearerOrApiKeyOrSession, rbac('external_caller'), asy
     }
 
     // Strip AI fields from priorCalls for API-key callers. See CLAUDE.md:70.
-    // Browser sessions get the full thing; API-key automation doesn't.
-    const responsePriorCalls = req.user?.authSource === 'session'
+    // Browser sessions AND iOS bearer get the full thing; API-key automation
+    // is the only caller withheld from ai_summary. Mirrors the parallel gate
+    // at contacts.js:111 — keep these two in sync.
+    const isInteractive = req.user?.authSource === 'session'
+      || req.user?.authSource === 'bearer';
+    const responsePriorCalls = isInteractive
       ? priorCalls
       : priorCalls.map(({ ai_summary, ai_action_items, ...rest }) => rest);
 

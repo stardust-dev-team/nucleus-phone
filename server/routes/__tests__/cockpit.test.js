@@ -201,6 +201,33 @@ describe('GET /api/cockpit/:identifier', () => {
     expect(res.body.priorCalls[0].ai_action_items).toBeUndefined();
   });
 
+  // zht.7 follow-up: parity with contacts.js:111 — iOS bearer callers get the
+  // full priorCalls payload (including ai_summary / ai_action_items) like web
+  // sessions. Only api-key automation remains stripped. Caught by Linus review:
+  // the cockpit gate was missed when contacts.js was updated.
+  test('bearer auth: priorCalls includes ai_summary + ai_action_items (parity with session)', async () => {
+    mockSession('ryann', 'caller');
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1, caller_identity: 'ryann', disposition: 'connected',
+          ai_summary: 'Discussed downtime concerns, wants quote by Friday',
+          ai_action_items: ['follow up tuesday'],
+        }],
+        rowCount: 1,
+      })
+      .mockResolvedValue({ rows: [], rowCount: 0 });
+
+    const res = await request(app)
+      .get('/api/cockpit/+16025551234')
+      .set('Authorization', 'Bearer fake-jwt')
+      .expect(200);
+
+    expect(res.body.priorCalls).toHaveLength(1);
+    expect(res.body.priorCalls[0].ai_summary).toBe('Discussed downtime concerns, wants quote by Friday');
+    expect(res.body.priorCalls[0].ai_action_items).toEqual(['follow up tuesday']);
+  });
+
   test('returns fallback data when all downstream sources fail', async () => {
     lookupCustomer.mockRejectedValueOnce(new Error('UCIL down'));
     // Persistent mock (not *Once) — route handler calls pool.query N times;

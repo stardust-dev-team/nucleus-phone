@@ -917,6 +917,21 @@ describe('POST /api/history/:id/disposition', () => {
       .expect(401);
   });
 
+  test('invalid Bearer with valid x-api-key: still 401 (no fallthrough on bearer failure)', async () => {
+    // Belt-and-suspenders: bearerAuth 401s inline on bad JWT and does not
+    // hand control back to the composer. A caller who sends a stale bearer
+    // token cannot accidentally authenticate via the synthetic api-key
+    // admin principal even if x-api-key is also valid. Locks the
+    // no-fallthrough invariant the composer relies on.
+    jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('Authorization', 'Bearer expired-jwt')
+      .set('x-api-key', API_KEY)
+      .send({ disposition: 'connected' })
+      .expect(401);
+  });
+
   test('Bearer wins over x-api-key when both are present (composer precedence)', async () => {
     // Composer order: bearer → apiKey → session. If a request sends BOTH
     // a valid bearer JWT AND a valid x-api-key, bearer must win — the
