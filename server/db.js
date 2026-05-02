@@ -413,6 +413,35 @@ async function initSchema() {
       CREATE INDEX IF NOT EXISTS idx_npu_oid ON nucleus_phone_users(oid) WHERE oid IS NOT NULL;
     `);
 
+    // 007_voip_tokens: per-user VoIP push token registry for native iOS dialer
+    // (zht.3 Phase H2). Path B — iOS SDK handles Twilio binding directly via
+    // TwilioVoiceSDK.register(); this table exists for server-side visibility
+    // + credential-rotation fan-out (which-tokens-against-which-credential at
+    // registration time). credential_sid was named voice_credential_binding_sid
+    // in the bead spec; renamed because Path B has no per-device binding SID
+    // to store, only the credential active when iOS bound. Rotation events
+    // are observed via debug_events 'state_change' rows from voice-push.js.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS nucleus_phone_voip_tokens (
+        user_id INTEGER PRIMARY KEY REFERENCES nucleus_phone_users(id) ON DELETE CASCADE,
+        push_token TEXT NOT NULL,
+        credential_sid TEXT NOT NULL,
+        environment TEXT NOT NULL CHECK (environment IN ('production','sandbox')),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE OR REPLACE FUNCTION update_npvt_ts()
+      RETURNS TRIGGER AS $$
+      BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_npvt_ts ON nucleus_phone_voip_tokens;
+      CREATE TRIGGER trg_npvt_ts
+        BEFORE UPDATE ON nucleus_phone_voip_tokens
+        FOR EACH ROW EXECUTE FUNCTION update_npvt_ts();
+    `);
+    console.log('nucleus_phone_voip_tokens table ready');
+
     // Seed internal @joruva.com users — idempotent, preserves is_active if
     // a user has been manually deactivated in a prior run.
     const SEED_USERS = [

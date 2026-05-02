@@ -11,6 +11,7 @@ requireEnv([
   'ENTRA_TENANT_ID',
   'ENABLE_NATIVE_EXCHANGE',
   'RECORDING_SIGNING_KEY',
+  'TWILIO_VOICE_PUSH_CREDENTIAL_SID',
 ]);
 
 const express = require('express');
@@ -71,6 +72,7 @@ app.use('/api/auth', require('./routes/auth'));
 //     scoreboard, cockpit, token).
 //   • Admin-only mounts apply rbac('admin') here.
 app.use('/api/token', bearerOrApiKeyOrSession, rbac('external_caller'), require('./routes/token'));
+app.use('/api/voice-push', bearerOrApiKeyOrSession, rbac('external_caller'), require('./routes/voice-push'));
 app.use('/api/voice/incoming', require('./routes/incoming'));
 app.use('/api/voice', require('./routes/voice'));
 app.use('/api/call', require('./routes/call'));

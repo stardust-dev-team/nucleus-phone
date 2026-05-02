@@ -1,0 +1,10 @@
+-- 007_voip_tokens.sql
+-- nucleus-phone-zht.3 (joruva-dialer-mac M2 Phase H2): nucleus_phone_voip_tokens
+--
+-- Schema lives canonically in server/db.js initSchema(). This file is
+-- intentionally a pointer — keeping the table definition in two places
+-- creates drift risk for the trigger function. See db.js for the table,
+-- trigger, and the rationale behind the credential_sid column name (the
+-- bead spec called it voice_credential_binding_sid; renamed because Path B
+-- has no per-device Twilio binding SID, only the credential SID active at
+-- registration).
