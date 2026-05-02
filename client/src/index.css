@@ -2,11 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Aunshin Brand Tokens · Twilight 60-30-10 ── */
+:root {
+  --color-aunshin-peach: #E1B482;
+  --color-aunshin-peach-light: #EFD1AF;
+  --color-aunshin-peach-deep: #A06343;
+  --color-aunshin-twilight: #2D1F1C;
+  --color-aunshin-twilight-2: #4A3631;
+  --color-aunshin-sodium: #F2B86A;
+  --color-aunshin-sodium-deep: #D89945;
+  --color-aunshin-rule: #C99A78;
+  --color-aunshin-rule-d: #5C392B;
+  --color-aunshin-quiet: #8A6B58;
+  --color-aunshin-quiet-d: #C99A78;
+}
+
 html, body, #root {
   height: 100%;
-  background: #06050F;
-  color: #F5F5F4;
-  font-family: 'Roboto', system-ui, sans-serif;
+  background: var(--color-aunshin-twilight);
+  color: var(--color-aunshin-peach-light);
+  font-family: 'Inter', system-ui, sans-serif;
 }
 
 /* PWA safe area insets for notched devices */
@@ -26,13 +41,13 @@ body {
   overscroll-behavior-y: contain;
 }
 
-/* ── Sentinel slit gradient utility ── */
-.sentinel-slit {
-  background: linear-gradient(to right, #F59E0B, #D97706, #8B5CF6);
+/* ── Aunshin twilight-to-sodium fade — replaces .sentinel-slit ── */
+.aunshin-fade {
+  background: linear-gradient(to right, #2D1F1C 0%, #A06343 50%, #F2B86A 100%);
 }
 
-/* ── Global scrollbar — Sentinel ── */
+/* ── Global scrollbar — Aunshin ── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.35); }
+::-webkit-scrollbar-thumb { background: rgba(242, 184, 106, 0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(242, 184, 106, 0.4); }

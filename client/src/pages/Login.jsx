@@ -1,38 +1,90 @@
-function SentinelMark({ size = 48 }) {
+function HorizonMark({ size = 64 }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width={size} height={size}>
-      <defs>
-        <linearGradient id="lpFace" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#1E1B4B"/><stop offset="50%" stopColor="#0F0D29"/><stop offset="100%" stopColor="#06050F"/>
-        </linearGradient>
-        <linearGradient id="lpSlit" x1="0%" y1="50%" x2="100%" y2="50%">
-          <stop offset="0%" stopColor="#F97316"/><stop offset="100%" stopColor="#DC2626"/>
-        </linearGradient>
-        <filter id="lpGlow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-      </defs>
-      <rect x="72" y="32" width="56" height="136" rx="2" fill="url(#lpFace)"/>
-      <rect x="82" y="92" width="36" height="3" rx="1.5" fill="url(#lpSlit)" filter="url(#lpGlow)"/>
-    </svg>
+    <div
+      role="img"
+      aria-label="Aunshin"
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        background: 'var(--color-aunshin-twilight)',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: '42%',
+          left: '50%',
+          width: '18.75%',
+          height: '18.75%',
+          borderRadius: '50%',
+          background: 'var(--color-aunshin-sodium)',
+          transform: 'translate(-50%, -50%)',
+          boxShadow: '0 0 18px rgba(242, 184, 106, 0.5)',
+        }}
+      />
+      <span
+        style={{
+          position: 'absolute',
+          top: '68%',
+          left: '50%',
+          width: '58%',
+          height: 1.5,
+          background: 'var(--color-aunshin-peach)',
+          opacity: 0.7,
+          transform: 'translateX(-50%)',
+        }}
+      />
+    </div>
   );
 }
 
 export default function Login() {
   return (
-    <div className="flex flex-col items-center justify-center h-full px-6" style={{ background: '#06050F' }}>
-      <SentinelMark size={64} />
+    <div
+      className="flex flex-col items-center justify-center h-full px-6"
+      style={{ background: 'var(--color-aunshin-twilight)' }}
+    >
+      <HorizonMark size={72} />
 
-      <h1 className="text-2xl font-black tracking-[4px] mt-4 mb-1" style={{ color: '#F5F5F4' }}>
-        NUCLEUS
+      <h1
+        className="mt-6 mb-1"
+        style={{
+          color: 'var(--color-aunshin-peach-light)',
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontWeight: 300,
+          fontSize: '3rem',
+          fontVariationSettings: '"opsz" 144, "SOFT" 100',
+          letterSpacing: '-0.04em',
+          lineHeight: 1,
+        }}
+      >
+        aunshin
       </h1>
-      <div className="h-[2px] w-24 rounded-full mb-1 sentinel-slit" />
-      <p className="text-[11px] tracking-[3px] uppercase mb-8" style={{ color: '#78716C' }}>
+      <div
+        className="h-[1.5px] w-24 mb-2"
+        style={{ background: 'var(--color-aunshin-peach)', opacity: 0.6 }}
+      />
+      <p
+        className="text-[11px] tracking-[3px] uppercase mb-8"
+        style={{ color: 'var(--color-aunshin-quiet-d)', fontFamily: 'JetBrains Mono, monospace' }}
+      >
         Phone
       </p>
 
       <a
         href="/api/auth/login"
-        className="w-full max-w-sm flex items-center justify-center gap-3 py-3 font-semibold text-sm uppercase tracking-wider transition-all"
-        style={{ background: '#F59E0B', color: '#000', borderRadius: '3px' }}
+        className="w-full max-w-sm flex items-center justify-center gap-3 py-3 font-semibold text-sm uppercase tracking-wider transition-colors"
+        style={{
+          background: 'var(--color-aunshin-sodium)',
+          color: 'var(--color-aunshin-twilight)',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: '12px',
+          letterSpacing: '0.18em',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-aunshin-sodium-deep)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-aunshin-sodium)'; }}
       >
         <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none">
           <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
@@ -43,7 +95,10 @@ export default function Login() {
         Sign in with Microsoft
       </a>
 
-      <p className="text-[11px] mt-8" style={{ color: '#78716C' }}>
+      <p
+        className="text-[11px] mt-8"
+        style={{ color: 'var(--color-aunshin-quiet-d)', fontFamily: 'JetBrains Mono, monospace' }}
+      >
         Use your @joruva.com account
       </p>
     </div>
