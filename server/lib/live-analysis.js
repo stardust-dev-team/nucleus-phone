@@ -5,8 +5,10 @@
  * /api/live-analysis. Browser clients subscribe to a callId and receive
  * equipment detections, sizing updates, and transcript chunks in real time.
  *
- * Auth: manually parses the Cookie header on upgrade (Express middleware
- * doesn't run for WebSocket upgrades) and verifies the JWT.
+ * Auth: manually parses Authorization: Bearer <jwt> first (native iOS
+ * dialer — URLSessionWebSocketTask doesn't carry cookies), then falls
+ * back to the nucleus_session cookie (browsers). Express middleware
+ * doesn't run for WebSocket upgrades, so we do this by hand.
  */
 
 const WebSocket = require('ws');
@@ -40,7 +42,12 @@ function attachWebSocket(httpServer) {
       return;
     }
 
-    const token = parseCookie(req.headers.cookie, 'nucleus_session');
+    // Mirrors `bearerOrSession` in server/middleware/auth.js: presence of the
+    // Authorization header is the discriminator (not its validity), so a
+    // malformed bearer doesn't silently fall back to the cookie path.
+    const token = req.headers.authorization
+      ? parseBearer(req.headers.authorization)
+      : parseCookie(req.headers.cookie, 'nucleus_session');
     if (!token) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -197,6 +204,16 @@ function setCallAirQuality(callId, aqClass) {
     return true;   // escalated
   }
   return false;     // no change
+}
+
+/**
+ * Parse the JWT out of an `Authorization: Bearer <jwt>` header.
+ * Returns null if the header is missing or doesn't start with "Bearer ".
+ */
+function parseBearer(authHeader) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice('Bearer '.length).trim();
+  return token || null;
 }
 
 /**
