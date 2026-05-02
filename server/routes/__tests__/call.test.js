@@ -1,4 +1,5 @@
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
+jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 jest.mock('../../lib/conference', () => ({
   createConference: jest.fn(),
   getConference: jest.fn(),
@@ -27,22 +28,45 @@ jest.mock('../../lib/slack', () => ({
 
 const request = require('supertest');
 const express = require('express');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 const { client } = require('../../lib/twilio');
+const { __testSetUser } = require('../../middleware/auth');
 
 const API_KEY = 'test-api-key';
+
+// Seed a session-cookie caller for tests that need to exercise the
+// non-admin auth path (e.g. zht.5's identity-filter 403). API-key auth
+// always grants synthetic admin, so it can't reach the 403 branch.
+let nextUserId = 7000;
+function mockSessionUser(identity, role = 'caller') {
+  const id = nextUserId++;
+  __testSetUser({
+    id,
+    email: `${identity}@joruva.com`,
+    identity,
+    role,
+    displayName: identity,
+  });
+  jwt.verify.mockReturnValue({ userId: id });
+  return { id, identity, role };
+}
 
 let app;
 beforeAll(() => {
   process.env.NUCLEUS_PHONE_API_KEY = API_KEY;
+  process.env.JWT_SECRET = 'test-secret';
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   app.use('/api/call', require('../call'));
 });
 
 afterAll(() => {
   delete process.env.NUCLEUS_PHONE_API_KEY;
+  delete process.env.JWT_SECRET;
 });
 
 beforeEach(() => {
@@ -325,6 +349,111 @@ describe('GET /api/call/active', () => {
       .expect(200);
 
     expect(res.body.calls[0].participants).toEqual([]);
+  });
+
+  // zht.5 — ?identity= filter for iOS OutboundCallCoordinator precheck
+
+  test('?identity= filters live calls to that rep only', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom', conferenceSid: null, startedAt: now, startedBy: 'tom', participants: [] },
+      { conferenceName: 'nucleus-call-kate', conferenceSid: null, startedAt: now, startedBy: 'kate', participants: [] },
+    ]);
+
+    const res = await request(app)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toHaveLength(1);
+    expect(res.body.calls[0].startedBy).toBe('tom');
+    expect(res.body.calls[0].type).toBe('live');
+  });
+
+  test('?identity= excludes sim entries even for admin', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom', conferenceSid: null, startedAt: now, startedBy: 'tom', participants: [] },
+    ]);
+    // The handler should NOT issue this query when ?identity= is set —
+    // mock it anyway so a regression that re-adds the sim block is
+    // caught by the excluded-from-response assertion below.
+    pool.query.mockResolvedValueOnce({
+      rows: [{ id: 99, caller_identity: 'tom', difficulty: 'easy', created_at: now, status: 'in-progress', monitor_listen_url: null }],
+      rowCount: 1,
+    });
+
+    const res = await request(app)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toHaveLength(1);
+    expect(res.body.calls[0].type).toBe('live');
+    expect(res.body.calls.some((c) => c.type === 'sim')).toBe(false);
+    // Stronger guarantee: the sim DB query was never even issued.
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('?identity= returning no matches yields empty calls array', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-kate', conferenceSid: null, startedAt: now, startedBy: 'kate', participants: [] },
+    ]);
+
+    const res = await request(app)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toEqual([]);
+  });
+
+  test('non-admin asking for own identity is allowed', async () => {
+    const user = mockSessionUser('kate', 'caller');
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-kate', conferenceSid: null, startedAt: now, startedBy: 'kate', participants: [] },
+      { conferenceName: 'nucleus-call-tom', conferenceSid: null, startedAt: now, startedBy: 'tom', participants: [] },
+    ]);
+
+    const res = await request(app)
+      .get(`/api/call/active?identity=${user.identity}`)
+      .set('Cookie', 'nucleus_session=stub')
+      .expect(200);
+
+    expect(res.body.calls).toHaveLength(1);
+    expect(res.body.calls[0].startedBy).toBe('kate');
+  });
+
+  test('non-admin asking for someone else gets 403', async () => {
+    mockSessionUser('kate', 'caller');
+
+    const res = await request(app)
+      .get('/api/call/active?identity=tom')
+      .set('Cookie', 'nucleus_session=stub')
+      .expect(403);
+
+    expect(res.body.error).toMatch(/identity must match/);
+    // listActiveConferences must not be called — the 403 is pre-work.
+    expect(conference.listActiveConferences).not.toHaveBeenCalled();
+  });
+
+  test('without ?identity=, admin still sees sim entries (existing behavior preserved)', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([]);
+    pool.query.mockResolvedValueOnce({
+      rows: [{ id: 7, caller_identity: 'tom', difficulty: 'medium', created_at: now, status: 'in-progress', monitor_listen_url: null }],
+      rowCount: 1,
+    });
+
+    const res = await request(app)
+      .get('/api/call/active')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toHaveLength(1);
+    expect(res.body.calls[0].type).toBe('sim');
   });
 });
 
