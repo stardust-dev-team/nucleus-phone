@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const twilio = require('twilio');
 const { pool } = require('../db');
 const { client } = require('../lib/twilio');
-const { apiKeyAuth } = require('../middleware/auth');
+const { bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac, hasMinRole } = require('../middleware/rbac');
 const {
   createConference, getConference, updateConference,
@@ -18,7 +18,7 @@ const router = Router();
 
 // Rep-facing endpoints need auth + at least external_caller. /status is a
 // Twilio webhook validated by signature, so it explicitly bypasses this.
-const callerGuard = [apiKeyAuth, rbac('external_caller')];
+const callerGuard = [bearerOrApiKeyOrSession, rbac('external_caller')];
 
 // Require session-auth callers (non-admin) to operate only on their own
 // identity. Admin principals (API key or admin role) bypass this check so
@@ -178,7 +178,16 @@ router.post('/mute', ...callerGuard, async (req, res) => {
 
 // GET /api/call/active — list active conferences with participants
 // Admins also see in-progress practice calls.
+//
+// Optional ?identity=<me> filter narrows the response to conferences started
+// by that identity. iOS dialer uses this as a precondition check before
+// dialing — if the agent already has a live call on another device, the
+// initiator surfaces a "you're already on a call" alert and returns. The
+// filter applies uniformly to both 'live' and 'sim' entries.
 router.get('/active', ...callerGuard, async (req, res) => {
+  const filterIdentity = typeof req.query.identity === 'string' && req.query.identity.length
+    ? req.query.identity
+    : null;
   const conferences = listActiveConferences();
 
   const enriched = await Promise.all(
@@ -243,7 +252,10 @@ router.get('/active', ...callerGuard, async (req, res) => {
     }
   }
 
-  res.json({ calls: enriched });
+  const filtered = filterIdentity
+    ? enriched.filter((c) => c.startedBy === filterIdentity)
+    : enriched;
+  res.json({ calls: filtered });
 });
 
 // POST /api/call/end — end a conference. Non-admin users can only end their

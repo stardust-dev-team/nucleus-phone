@@ -19,7 +19,7 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const { initSchema } = require('./db');
 const { errorHandler } = require('./middleware/error');
-const { apiKeyAuth, sessionAuth } = require('./middleware/auth');
+const { apiKeyAuth, sessionAuth, bearerOrApiKeyOrSession } = require('./middleware/auth');
 const { rbac } = require('./middleware/rbac');
 const { startSweep } = require('./lib/stale-sweep');
 const { attachWebSocket } = require('./lib/live-analysis');
@@ -70,7 +70,7 @@ app.use('/api/auth', require('./routes/auth'));
 //     with mixed per-endpoint policy handle their own guards (history,
 //     scoreboard, cockpit, token).
 //   • Admin-only mounts apply rbac('admin') here.
-app.use('/api/token', apiKeyAuth, rbac('external_caller'), require('./routes/token'));
+app.use('/api/token', bearerOrApiKeyOrSession, rbac('external_caller'), require('./routes/token'));
 app.use('/api/voice/incoming', require('./routes/incoming'));
 app.use('/api/voice', require('./routes/voice'));
 app.use('/api/call', require('./routes/call'));

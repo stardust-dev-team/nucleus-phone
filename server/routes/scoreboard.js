@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { apiKeyAuth } = require('../middleware/auth');
+const { bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { sendSlackAlert } = require('../lib/slack');
@@ -14,7 +14,7 @@ const nameMap = Object.fromEntries(
 // GET /api/scoreboard — rolling 7-day stats. Visible to all logged-in
 // callers (including external_caller) per 2026-04 decision — commission reps
 // see the full team leaderboard.
-router.get('/', apiKeyAuth, rbac('external_caller'), async (req, res) => {
+router.get('/', bearerOrApiKeyOrSession, rbac('external_caller'), async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT caller_identity,
@@ -67,7 +67,7 @@ router.get('/', apiKeyAuth, rbac('external_caller'), async (req, res) => {
 
 // POST /api/scoreboard/aggregate — nightly materialization. Admin-only;
 // this rewrites the ucil_agent_stats table and triggers Slack milestone alerts.
-router.post('/aggregate', apiKeyAuth, rbac('admin'), async (req, res) => {
+router.post('/aggregate', bearerOrApiKeyOrSession, rbac('admin'), async (req, res) => {
   try {
     const { rowCount } = await pool.query(`
       INSERT INTO ucil_agent_stats (agent_name, stat_date, calls_made, callbacks_done, leads_qualified, hot_leads, avg_call_duration)

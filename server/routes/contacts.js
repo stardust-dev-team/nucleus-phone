@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { apiKeyAuth } = require('../middleware/auth');
+const { bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { searchContacts, getContact } = require('../lib/hubspot');
 const { pool } = require('../db');
@@ -11,7 +11,7 @@ const router = Router();
 // Every contact route is available to external_caller — reps need the call
 // list + signal-scored contacts to do their job. Admin-only data (pipeline
 // management, credit spend) lives under /api/signals instead.
-router.use(apiKeyAuth, rbac('external_caller'));
+router.use(bearerOrApiKeyOrSession, rbac('external_caller'));
 
 const VALID_TIERS = new Set(['spear', 'targeted', 'awareness']);
 const VALID_TIMEZONES = new Set(Object.keys(TIMEZONE_GROUPS));
@@ -21,7 +21,7 @@ const VALID_TIMEZONES = new Set(Object.keys(TIMEZONE_GROUPS));
 // GET /api/contacts/signal — companies with nested contacts, ordered by signal_score
 // Note: timezone and geo_state are mutually exclusive. If both are sent, timezone wins
 // (geo_state is ignored). This is enforced in buildSignalWhere.
-router.get('/signal', apiKeyAuth, async (req, res) => {
+router.get('/signal', bearerOrApiKeyOrSession, async (req, res) => {
   try {
     const { signal_tier, geo_state, timezone, has_phone, limit = '50', offset = '0' } = req.query;
 
@@ -56,7 +56,7 @@ router.get('/signal', apiKeyAuth, async (req, res) => {
 });
 
 // GET /api/contacts/signal/:domain — all contacts at a specific signal-scored company
-router.get('/signal/:domain', apiKeyAuth, async (req, res) => {
+router.get('/signal/:domain', bearerOrApiKeyOrSession, async (req, res) => {
   try {
     const result = await getContactsForDomain(req.params.domain, {
       includeSummary: !!req.user,
@@ -72,7 +72,7 @@ router.get('/signal/:domain', apiKeyAuth, async (req, res) => {
 // ── HubSpot CRM contacts ────────────────────────────────────────────
 
 // GET /api/contacts — search/list HubSpot contacts
-router.get('/', apiKeyAuth, async (req, res) => {
+router.get('/', bearerOrApiKeyOrSession, async (req, res) => {
   const { q, limit = 50, after } = req.query;
 
   try {
@@ -106,7 +106,10 @@ router.get('/', apiKeyAuth, async (req, res) => {
         // Sensitive AI data (lastSummary) is only exposed to session-authed
         // browser callers, matching the /api/history policy at CLAUDE.md:70.
         // API-key callers (e.g. n8n, external tools) get call metadata only.
-        const includeSummary = req.user?.authSource === 'session';
+        // Bearer (iOS dialer) gets full response like web sessions; API-key
+        // automation is the only caller withheld from ai_summary.
+        const includeSummary = req.user?.authSource === 'session'
+          || req.user?.authSource === 'bearer';
 
         for (const row of result.rows) {
           const key = row.hubspot_contact_id || row.lead_phone;
@@ -137,7 +140,7 @@ router.get('/', apiKeyAuth, async (req, res) => {
 });
 
 // GET /api/contacts/:id — single contact detail
-router.get('/:id', apiKeyAuth, async (req, res) => {
+router.get('/:id', bearerOrApiKeyOrSession, async (req, res) => {
   const id = req.params.id;
   if (!/^\d+$/.test(id)) {
     return res.status(400).json({ error: 'id must be numeric' });

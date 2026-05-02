@@ -890,15 +890,63 @@ describe('POST /api/history/:id/disposition', () => {
       .expect(500);
   });
 
-  // Regression guard: POST disposition was NOT migrated to bearerOrSession
-  // (web automation depends on the cookie+API-key path). A bearer header on
-  // POST should be ignored — only API key + session-cookie+CSRF flows work.
-  test('Bearer header alone on POST is rejected (still apiKeyAuth+sessionAuth)', async () => {
+  // zht.7: POST disposition is now on bearerOrApiKeyOrSession — valid bearer
+  // (iOS dialer) is accepted alongside the existing API-key (automation) and
+  // session-cookie (web) paths.
+  test('valid Bearer on POST is accepted (zht.7 three-way auth)', async () => {
+    mockSession('ryann');
+    const updated = { ...SAMPLE_CALL, disposition: 'connected' };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ caller_identity: 'ryann' }], rowCount: 1 }) // ownership
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })                       // UPDATE
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });                      // enriched re-fetch
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('Authorization', 'Bearer fake-jwt')
+      .send({ disposition: 'connected' })
+      .expect(200);
+  });
+
+  test('invalid Bearer on POST is rejected with 401', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
     await request(app)
       .post('/api/history/1/disposition')
       .set('Authorization', 'Bearer some-token')
       .send({ disposition: 'connected' })
       .expect(401);
+  });
+
+  test('Bearer wins over x-api-key when both are present (composer precedence)', async () => {
+    // Composer order: bearer → apiKey → session. If a request sends BOTH
+    // a valid bearer JWT AND a valid x-api-key, bearer must win — the
+    // resulting principal is the bearer user (not the synthetic api-key admin).
+    // Proof: ownership check fires (req.user.role === 'caller'), so the call
+    // row's caller_identity must equal the bearer user's identity to pass.
+    const bearerUserId = 9001;
+    __testSetUser({
+      id: bearerUserId,
+      email: 'composer-test@joruva.com',
+      identity: 'composer-test',
+      role: 'caller',
+      displayName: 'composer-test',
+    });
+    jwt.verify.mockReturnValue({ userId: bearerUserId });
+    const updated = { ...SAMPLE_CALL, caller_identity: 'composer-test', disposition: 'connected' };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ caller_identity: 'composer-test' }], rowCount: 1 }) // ownership
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })                              // UPDATE
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });                             // enriched re-fetch
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('Authorization', 'Bearer fake-jwt')
+      .set('x-api-key', API_KEY)
+      .send({ disposition: 'connected' })
+      .expect(200);
+
+    // If api-key had won, req.user.role would be 'admin' — bypassing the
+    // ownership check entirely. Bearer winning means caller-role ownership
+    // ran, and 'composer-test' === SAMPLE_CALL.caller_identity check passed.
   });
 });
