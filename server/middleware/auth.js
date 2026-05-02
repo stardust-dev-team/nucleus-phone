@@ -174,6 +174,20 @@ function bearerOrSession(req, res, next) {
   return sessionAuth(req, res, next);
 }
 
+// Three-way composer: bearer → API key → session. Same precedence reasoning
+// as bearerOrSession (Authorization header wins because the dialer's URLSession
+// can carry legacy cookies). Falls through apiKeyAuth, which itself falls
+// through to sessionAuth when x-api-key is absent. Net resolution:
+//   Authorization: Bearer …  → bearerAuth   (authSource:'bearer')
+//   x-api-key: …             → apiKeyAuth   (authSource:'api_key')
+//   nucleus_session cookie   → sessionAuth  (authSource:'session')
+//   none                     → 401 from sessionAuth
+// Used on routes hit by all three callers (dialer, web, automation).
+function bearerOrApiKeyOrSession(req, res, next) {
+  if (req.headers.authorization) return bearerAuth(req, res, next);
+  return apiKeyAuth(req, res, next);
+}
+
 // Accepts API key OR session cookie. API key callers get a synthetic admin
 // principal — the key is a shared secret only given to server-side automation,
 // so equating it with admin is intentional. Wrong key is a hard 401.
@@ -212,6 +226,7 @@ module.exports = {
   sessionAuth,
   bearerAuth,
   bearerOrSession,
+  bearerOrApiKeyOrSession,
   loadUserById,
   invalidateUser,
   SESSION_TTL_SECONDS,

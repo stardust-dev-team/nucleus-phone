@@ -7,7 +7,11 @@ const client = twilio(
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
-function generateAccessToken(identity) {
+// incomingAllow controls whether Twilio will deliver TVOCallInvite events to
+// this token's bearer. PWA callers don't take inbound (default false). The
+// native iOS dialer needs incomingAllow:true so PushKit + CallKit can receive
+// TVOCallInvite — caller opts in via routes/token.js (?mode=mobile).
+function generateAccessToken(identity, { incomingAllow = false } = {}) {
   const AccessToken = twilio.jwt.AccessToken;
   const VoiceGrant = AccessToken.VoiceGrant;
 
@@ -20,7 +24,7 @@ function generateAccessToken(identity) {
 
   const grant = new VoiceGrant({
     outgoingApplicationSid: process.env.TWILIO_TWIML_APP_SID,
-    incomingAllow: false,
+    incomingAllow,
   });
 
   token.addGrant(grant);

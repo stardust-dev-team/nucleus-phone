@@ -31,8 +31,13 @@ router.get('/', async (req, res) => {
     return res.status(500).json({ error: 'Identity validation failed' });
   }
 
+  // ?mode=mobile opts the token into incomingAllow:true so the native iOS
+  // dialer can receive TVOCallInvite via PushKit. PWA continues to call
+  // without the param (default incomingAllow:false).
+  const incomingAllow = req.query.mode === 'mobile';
+
   try {
-    const token = generateAccessToken(identity);
+    const token = generateAccessToken(identity, { incomingAllow });
     res.json({ token, identity });
   } catch (err) {
     console.error('Token generation failed:', err);

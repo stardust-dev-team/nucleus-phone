@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { apiKeyAuth } = require('../middleware/auth');
+const { bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { resolve } = require('../lib/identity-resolver');
@@ -23,7 +23,7 @@ const router = Router();
 // completed call. Returns { next: { phone, full_name, company_name, signal_tier,
 // signal_score } } or { next: null } when the queue is empty.
 // Must be defined BEFORE /:identifier to avoid route shadowing.
-router.get('/next-uncalled', apiKeyAuth, rbac('external_caller'), async (req, res) => {
+router.get('/next-uncalled', bearerOrApiKeyOrSession, rbac('external_caller'), async (req, res) => {
   const { exclude } = req.query; // phone number of the current contact to skip past
 
   try {
@@ -68,7 +68,7 @@ router.get('/next-uncalled', apiKeyAuth, rbac('external_caller'), async (req, re
 // GET /api/cockpit/:identifier — full pre-call briefing. Open to any logged-in
 // caller (including external_caller) — cockpit data is lead-scoped, not
 // rep-scoped, and external reps need the briefing to make the call.
-router.get('/:identifier', apiKeyAuth, rbac('external_caller'), async (req, res) => {
+router.get('/:identifier', bearerOrApiKeyOrSession, rbac('external_caller'), async (req, res) => {
   const { identifier } = req.params;
   const refresh = req.query.refresh === 'true';
 

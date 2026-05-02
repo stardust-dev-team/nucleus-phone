@@ -326,6 +326,82 @@ describe('GET /api/call/active', () => {
 
     expect(res.body.calls[0].participants).toEqual([]);
   });
+
+  // zht.5: ?identity=<me> filter — iOS dialer precondition check
+  test('?identity=<me> filters to conferences started by that identity', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom',  conferenceSid: 'CF1', startedAt: now, startedBy: 'tom',  leadPhone: '+16025550001' },
+      { conferenceName: 'nucleus-call-kate', conferenceSid: 'CF2', startedAt: now, startedBy: 'kate', leadPhone: '+16025550002' },
+    ]);
+    client.conferences.mockReturnValue({
+      participants: { list: jest.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(app)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toHaveLength(1);
+    expect(res.body.calls[0].startedBy).toBe('tom');
+    expect(res.body.calls[0].type).toBe('live');
+  });
+
+  test('?identity=<me> with no match returns empty array (iOS proceeds with dial)', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-kate', conferenceSid: 'CF2', startedAt: now, startedBy: 'kate', leadPhone: '+16025550002' },
+    ]);
+    client.conferences.mockReturnValue({
+      participants: { list: jest.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(app)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toEqual([]);
+  });
+
+  test('absent identity param preserves existing unfiltered behavior', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom',  conferenceSid: 'CF1', startedAt: now, startedBy: 'tom',  leadPhone: '+16025550001' },
+      { conferenceName: 'nucleus-call-kate', conferenceSid: 'CF2', startedAt: now, startedBy: 'kate', leadPhone: '+16025550002' },
+    ]);
+    client.conferences.mockReturnValue({
+      participants: { list: jest.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(app)
+      .get('/api/call/active')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls).toHaveLength(2);
+  });
+
+  test('every live entry includes type:"live" and startedBy (iOS contract)', async () => {
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom', conferenceSid: 'CF1', startedAt: now, startedBy: 'tom', leadPhone: '+16025550001' },
+    ]);
+    client.conferences.mockReturnValue({
+      participants: { list: jest.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(app)
+      .get('/api/call/active')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls[0]).toEqual(expect.objectContaining({
+      type: 'live',
+      startedBy: 'tom',
+    }));
+  });
 });
 
 /* ───────────── POST /api/call/end ───────────── */
