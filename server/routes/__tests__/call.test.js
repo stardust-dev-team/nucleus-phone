@@ -391,8 +391,12 @@ describe('GET /api/call/active', () => {
     expect(res.body.calls).toHaveLength(1);
     expect(res.body.calls[0].type).toBe('live');
     expect(res.body.calls.some((c) => c.type === 'sim')).toBe(false);
-    // Stronger guarantee: the sim DB query was never even issued.
-    expect(pool.query).not.toHaveBeenCalled();
+    // Stronger guarantee: the sim DB query specifically was never issued.
+    // Asserting on the exact query (rather than `pool.query` overall) keeps
+    // the test from breaking if a future logging/audit query lands in this
+    // handler — only the optimization-relevant invariant is locked.
+    const queriedSql = pool.query.mock.calls.map((c) => c[0]).join(' ');
+    expect(queriedSql).not.toMatch(/FROM sim_call_scores/);
   });
 
   test('?identity= returning no matches yields empty calls array', async () => {
@@ -454,6 +458,20 @@ describe('GET /api/call/active', () => {
 
     expect(res.body.calls).toHaveLength(1);
     expect(res.body.calls[0].type).toBe('sim');
+  });
+
+  test('repeated ?identity= params (array) returns 400, not silent empty list', async () => {
+    // Express's default qs parser turns ?identity=tom&identity=kate into
+    // an array. Without an explicit type guard, the array slips past the
+    // 403 check (array !== string) but breaks the strict-equals filter,
+    // and admins get a misleading empty list. Linus catch on first review.
+    const res = await request(app)
+      .get('/api/call/active?identity=tom&identity=kate')
+      .set('x-api-key', API_KEY)
+      .expect(400);
+
+    expect(res.body.error).toMatch(/identity must be a single string/);
+    expect(conference.listActiveConferences).not.toHaveBeenCalled();
   });
 });
 

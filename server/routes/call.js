@@ -189,7 +189,18 @@ router.post('/mute', ...callerGuard, async (req, res) => {
 router.get('/active', ...callerGuard, async (req, res) => {
   const { identity } = req.query;
 
-  if (identity && req.user && !hasMinRole(req.user.role, 'admin') && identity !== req.user.identity) {
+  // Express's default qs parser turns `?identity=tom&identity=kate` into an
+  // array — reject explicitly so the 403 check and the downstream `===`
+  // filter both operate on a string. Without this, an array slips past the
+  // 403 check (array !== string) but makes the filter always-false, which
+  // looks like "no active calls" to the admin path. Misleading empty result.
+  if (identity !== undefined && typeof identity !== 'string') {
+    return res.status(400).json({ error: 'identity must be a single string value' });
+  }
+
+  // `req.user` is guaranteed by `callerGuard` (apiKeyAuth + rbac) — no
+  // null-check noise.
+  if (identity && !hasMinRole(req.user.role, 'admin') && identity !== req.user.identity) {
     return res.status(403).json({ error: 'identity must match your own identity' });
   }
 
