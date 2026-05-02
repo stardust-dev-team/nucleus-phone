@@ -5,10 +5,14 @@
  * calls so they get recording, RT transcription, Fireflies upload, equipment
  * detection, AI summary, and UCIL sync — the full Nucleus flywheel.
  *
- * Supports multiple inbound numbers, each forwarding to a different rep.
- * Routing is configured via INBOUND_ROUTES env var (JSON):
- *   { "+16026000188": { "forward": "+14803630494", "slack": "D0ANUHRTYCV", "name": "Ryann" },
- *     "+16029050230": { "forward": "+16027417970", "slack": "", "name": "Paul" } }
+ * Supports multiple inbound numbers, each routed to a different rep. A route
+ * may sink to either a PSTN forward number OR an iOS Twilio Client identity
+ * (registered via /api/voice-push/register). Routing config in INBOUND_ROUTES:
+ *   { "+16026000188": { "forward": "+14803630494", "slack": "D0...", "name": "Ryann" },
+ *     "+16029050230": { "iosIdentity": "paul", "slack": "D0...", "name": "Paul" } }
+ *
+ * When both `forward` and `iosIdentity` are set on one route, iosIdentity wins
+ * (Twilio Client dial preferred over PSTN). Every route must have at least one.
  *
  * Falls back to INBOUND_FORWARD_NUMBER for backwards compatibility.
  */
@@ -26,14 +30,17 @@ const router = Router();
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 
 // Parse per-number routing config. Each entry maps a Twilio number (E.164)
-// to { forward: E.164, slack: channel/DM ID, name: rep display name }.
+// to { forward?: E.164, iosIdentity?: string, slack: channel/DM ID, name: rep
+// display name }. Validator uses `.every` (not `.some`) so a single
+// misconfigured entry fails the whole boot — a partial route would otherwise
+// 500 only when its number was actually dialed.
 let inboundRoutes = {};
 if (process.env.INBOUND_ROUTES) {
   try {
     inboundRoutes = JSON.parse(process.env.INBOUND_ROUTES);
     const routes = Object.entries(inboundRoutes);
-    if (routes.length === 0 || !routes.some(([, v]) => v.forward)) {
-      throw new Error('INBOUND_ROUTES has no valid routes with "forward" field');
+    if (routes.length === 0 || !routes.every(([, v]) => v.forward || v.iosIdentity)) {
+      throw new Error('INBOUND_ROUTES: every route must have a "forward" or "iosIdentity" field');
     }
   } catch (err) {
     console.error('FATAL: INBOUND_ROUTES is invalid:', err.message);
@@ -42,8 +49,10 @@ if (process.env.INBOUND_ROUTES) {
 }
 
 /**
- * Resolve which rep to forward to based on the called number.
- * Returns { forward, slack, name } or null.
+ * Resolve which rep to route to based on the called number.
+ * Returns the route entry { forward?, iosIdentity?, slack, name } or null.
+ * When both sinks are present on one entry, the caller should prefer
+ * iosIdentity (Twilio Client) over forward (PSTN).
  */
 function resolveRoute(calledNumber) {
   // Try exact match in INBOUND_ROUTES
@@ -96,6 +105,7 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
 
+  const iosIdentity = route.iosIdentity;
   const forwardTo = route.forward;
   const repName = route.name;
   const repSlackDm = route.slack;
@@ -109,9 +119,13 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
 
-  const conferenceName = `nucleus-inbound-${uuidv4()}`;
+  // For iOS routes the prefix differentiates the audit trail — no Twilio
+  // conference is created server-side, but the DB row + voicemail callbacks
+  // still key off this name as a stable identifier.
+  const conferenceName = `${iosIdentity ? 'nucleus-inbound-ios' : 'nucleus-inbound'}-${uuidv4()}`;
 
-  console.log(`incoming: ${callerPhone} → ${repName} (${forwardTo}) — conference ${conferenceName}`);
+  const sink = iosIdentity ? `Client:${iosIdentity}` : forwardTo;
+  console.log(`incoming: ${callerPhone} → ${repName} (${sink}) — ${conferenceName}`);
 
   // Create DB row — same schema as outbound, but direction='inbound' and
   // lead_phone stores the CALLER's number (for identity resolution).
@@ -131,6 +145,36 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
 
+  // ─── iOS Client sink ─────────────────────────────────────────────
+  // Twilio delivers the call as a VoIP push to whatever device registered
+  // this identity (zht.3 binding). On accept, Twilio Voice SDK bridges
+  // media between caller and iOS — no Twilio conference is created, so
+  // the conference flywheel (recording, RT transcription, equipment
+  // detection) does NOT run for iOS-only routes. Future iOS-flywheel work
+  // (separate bead) would re-route inbound through a conference and have
+  // iOS join via Voice SDK Connect rather than direct Client dial.
+  if (iosIdentity) {
+    sendSlackAlert({
+      text: `:telephone_receiver: Inbound call from ${callerPhone} → ${repName} (iOS)`,
+    }).catch(() => {});
+    if (repSlackDm) {
+      sendSlackDM(repSlackDm,
+        `:telephone_receiver: Inbound call from ${callerPhone} — incoming on your iOS dialer`
+      ).catch(() => {});
+    }
+
+    const dial = twiml.dial({
+      callerId: callerPhone,
+      timeout: 30,
+      action: `${baseUrl}/api/voice/incoming/dial-complete?conf=${encodeURIComponent(conferenceName)}&from=${encodeURIComponent(callerPhone)}`,
+    });
+    dial.client(iosIdentity);
+
+    appendVoicemailTwiml(twiml, callerPhone, conferenceName);
+    return res.type('text/xml').send(twiml.toString());
+  }
+
+  // ─── PSTN/conference sink (unchanged) ────────────────────────────
   // Create in-memory conference state.
   // leadPhone = the rep's number (who gets dialed INTO the conference).
   // The status callback at /api/call/status reads conf.leadPhone to know
