@@ -75,7 +75,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-full bg-jv-elevated flex items-center justify-center shrink-0">
-              <span className="text-lg font-semibold text-jv-blue">
+              <span className="text-lg font-semibold text-jv-amber">
                 {(props.firstname || '?')[0].toUpperCase()}
               </span>
             </div>
@@ -136,7 +136,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
           /* Fallback: basic call screen for quick-dial / shadow joins */
           <div className="flex flex-col items-center justify-center py-16">
             <div className="w-20 h-20 rounded-full bg-jv-elevated flex items-center justify-center mb-4">
-              <span className="text-3xl font-semibold text-jv-blue">
+              <span className="text-3xl font-semibold text-jv-amber">
                 {(props.firstname || '?')[0].toUpperCase()}
               </span>
             </div>
@@ -195,7 +195,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
           <button
             onClick={() => setShowKeypad(!showKeypad)}
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
-              showKeypad ? 'bg-jv-blue/20 text-jv-blue' : 'bg-jv-elevated text-white'
+              showKeypad ? 'bg-jv-amber/20 text-jv-amber' : 'bg-jv-elevated text-white'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

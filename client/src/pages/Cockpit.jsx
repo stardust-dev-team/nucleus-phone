@@ -15,7 +15,7 @@ import LastCallCard from '../components/cockpit/LastCallCard';
 import QualScript from '../components/cockpit/QualScript';
 import CompanyIntel from '../components/cockpit/CompanyIntel';
 import ProductReference from '../components/cockpit/ProductReference';
-import ReactorContainer from '../components/cockpit/ReactorContainer';
+import LiveContainer from '../components/cockpit/LiveContainer';
 import CallControls from '../components/cockpit/CallControls';
 import PracticeCallButton from '../components/cockpit/PracticeCallButton';
 import PracticeHistory from '../components/cockpit/PracticeHistory';
@@ -125,7 +125,7 @@ function RealCallLayout({ d, callPhase, liveAnalysis, liveCallId, testCallId, on
         {/* CENTER — Viewscreen fills height, Company Intel anchored to bottom */}
         <div className="min-w-0 flex flex-col">
           <div className="cockpit-viewscreen">
-            <ReactorContainer data={liveAnalysis} active={callPhase === 'active' || !!testCallId || !!confParam} contact={d.identity} callId={liveCallId} isPractice={false} navigatorEnabled={navigatorEnabled} />
+            <LiveContainer data={liveAnalysis} active={callPhase === 'active' || !!testCallId || !!confParam} contact={d.identity} callId={liveCallId} isPractice={false} navigatorEnabled={navigatorEnabled} />
           </div>
           {isTestCompany(d) && (
             <div className="flex items-center gap-2 mt-1">
@@ -335,7 +335,7 @@ export default function Cockpit({ identity, role, callState, twilioStatus, force
                 {/* CENTER — Viewscreen */}
                 <div className="min-w-0 flex flex-col">
                   <div className="cockpit-viewscreen">
-                    <ReactorContainer data={liveAnalysis} active={!!activeSimCallId} contact={d.identity} callId={liveCallId} isPractice={true} navigatorEnabled={navigatorMode.navigatorEnabled} />
+                    <LiveContainer data={liveAnalysis} active={!!activeSimCallId} contact={d.identity} callId={liveCallId} isPractice={true} navigatorEnabled={navigatorMode.navigatorEnabled} />
                   </div>
                 </div>
 

@@ -2,7 +2,7 @@ import LiveAnalysis from './LiveAnalysis';
 import ConversationNavigator from './ConversationNavigator';
 
 /**
- * ReactorContainer — wraps LiveAnalysis (equipment) with the optional
+ * LiveContainer — wraps LiveAnalysis (equipment) with the optional
  * Conversation Navigator underlay.
  *
  * Layering rule (per plan): Navigator sits BELOW LiveAnalysis in the DOM.
@@ -14,7 +14,7 @@ import ConversationNavigator from './ConversationNavigator';
  * equipment fields into LiveAnalysis and route navigator fields into
  * ConversationNavigator.
  */
-export default function ReactorContainer({ data, active, contact, callId, isPractice = false, navigatorEnabled = true }) {
+export default function LiveContainer({ data, active, contact, callId, isPractice = false, navigatorEnabled = true }) {
   const safe = data || {};
 
   return (

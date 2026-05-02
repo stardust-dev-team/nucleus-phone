@@ -19,7 +19,7 @@ import { CALLER_OPTIONS } from '../lib/team';
 // Disposition → left-edge color bar
 const DISP_BAR = {
   connected: 'bg-jv-green',
-  voicemail: 'bg-jv-blue',
+  voicemail: 'bg-jv-amber',
   no_answer: 'bg-gray-600',
   callback_requested: 'bg-jv-amber',
   qualified_hot: 'bg-jv-red',
@@ -32,7 +32,7 @@ const DISP_BAR = {
 // Disposition label pill styling
 const DISP_PILL = {
   connected: 'bg-jv-green/20 text-jv-green',
-  voicemail: 'bg-jv-blue/20 text-jv-blue',
+  voicemail: 'bg-jv-amber/20 text-jv-amber',
   no_answer: 'bg-gray-500/20 text-gray-400',
   callback_requested: 'bg-jv-amber/20 text-jv-amber',
   qualified_hot: 'bg-jv-red/20 text-jv-red',
@@ -606,7 +606,7 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
                 href={detail.recording_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-jv-blue hover:underline block"
+                className="text-sm text-jv-amber hover:underline block"
               >
                 Listen to recording →
               </a>
