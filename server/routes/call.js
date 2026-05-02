@@ -176,9 +176,34 @@ router.post('/mute', ...callerGuard, async (req, res) => {
   }
 });
 
-// GET /api/call/active — list active conferences with participants
+// GET /api/call/active — list active conferences with participants.
 // Admins also see in-progress practice calls.
+//
+// Optional `?identity=<rep>` narrows results to live calls owned by that
+// identity (used by iOS OutboundCallCoordinator as a precondition check
+// before dialing — "do I have an active call on another device?"). When
+// the filter is present, sim entries are excluded entirely (the precheck
+// only cares about live conferences). Non-admin callers may only filter
+// by their own identity — same posture as `enforceOwnIdentity()` for the
+// state-changing endpoints.
 router.get('/active', ...callerGuard, async (req, res) => {
+  const { identity } = req.query;
+
+  // Express's default qs parser turns `?identity=tom&identity=kate` into an
+  // array — reject explicitly so the 403 check and the downstream `===`
+  // filter both operate on a string. Without this, an array slips past the
+  // 403 check (array !== string) but makes the filter always-false, which
+  // looks like "no active calls" to the admin path. Misleading empty result.
+  if (identity !== undefined && typeof identity !== 'string') {
+    return res.status(400).json({ error: 'identity must be a single string value' });
+  }
+
+  // `req.user` is guaranteed by `callerGuard` (apiKeyAuth + rbac) — no
+  // null-check noise.
+  if (identity && !hasMinRole(req.user.role, 'admin') && identity !== req.user.identity) {
+    return res.status(403).json({ error: 'identity must match your own identity' });
+  }
+
   const conferences = listActiveConferences();
 
   const enriched = await Promise.all(
@@ -214,7 +239,16 @@ router.get('/active', ...callerGuard, async (req, res) => {
     })
   );
 
-  // Admins see in-progress practice calls too
+  // Identity filter: narrow to live calls owned by this rep, skip sim
+  // listing entirely. iOS only uses this for the precondition check, so
+  // sim entries (admin-only, separate UX) would be noise.
+  if (identity) {
+    return res.json({
+      calls: enriched.filter((c) => c.startedBy === identity && c.type === 'live'),
+    });
+  }
+
+  // Admins see in-progress practice calls too (unfiltered listing only).
   if (req.user?.role === 'admin') {
     try {
       const { rows } = await pool.query(`
