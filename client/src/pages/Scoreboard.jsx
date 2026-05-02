@@ -56,7 +56,7 @@ function AgentCard({ agent, rank }) {
         <StatBadge label="Qualified" value={agent.leadsQualified} color="text-jv-green" />
         <StatBadge label="Hot" value={agent.hotLeads} color="text-jv-red" />
         <StatBadge label="Callbacks" value={agent.callbacks} color="text-jv-amber" />
-        <StatBadge label="Avg min" value={agent.avgDuration ? Math.round(agent.avgDuration / 60) : 0} color="text-jv-blue" />
+        <StatBadge label="Avg min" value={agent.avgDuration ? Math.round(agent.avgDuration / 60) : 0} color="text-jv-amber" />
       </div>
     </div>
   );

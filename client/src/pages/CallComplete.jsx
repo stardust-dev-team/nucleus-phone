@@ -5,7 +5,7 @@ import { formatDuration } from '../lib/format';
 
 const DISPOSITIONS = [
   { value: 'connected', label: 'Connected', color: 'bg-jv-green/20 text-jv-green border-jv-green/30' },
-  { value: 'voicemail', label: 'Voicemail', color: 'bg-jv-blue/20 text-jv-blue border-jv-blue/30' },
+  { value: 'voicemail', label: 'Voicemail', color: 'bg-jv-amber/20 text-jv-amber border-jv-amber/30' },
   { value: 'no_answer', label: 'No Answer', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
   { value: 'callback_requested', label: 'Callback', color: 'bg-jv-amber/20 text-jv-amber border-jv-amber/30' },
   { value: 'not_interested', label: 'Not Interested', color: 'bg-jv-red/20 text-jv-red border-jv-red/30' },
@@ -133,7 +133,7 @@ export default function CallComplete({ callState, identity, emailReady }) {
                   onClick={() => toggleProduct(p)}
                   className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                     products.includes(p)
-                      ? 'bg-jv-blue/20 text-jv-blue border-jv-blue/30'
+                      ? 'bg-jv-amber/20 text-jv-amber border-jv-amber/30'
                       : 'bg-jv-card border-jv-border text-jv-muted'
                   }`}
                 >
@@ -166,12 +166,12 @@ export default function CallComplete({ callState, identity, emailReady }) {
                   value={leadEmail}
                   onChange={(e) => setLeadEmail(e.target.value)}
                   placeholder="Lead email (optional — auto-resolves from HubSpot)"
-                  className="w-full px-4 py-2.5 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-blue text-sm"
+                  className="w-full px-4 py-2.5 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-amber text-sm"
                 />
               )}
               {!emailReady && (
                 <p className="text-xs text-jv-muted mt-1">
-                  <a href="/api/auth/login" className="text-jv-blue underline">Re-login</a> to enable email follow-ups
+                  <a href="/api/auth/login" className="text-jv-amber underline">Re-login</a> to enable email follow-ups
                 </p>
               )}
             </div>
@@ -186,7 +186,7 @@ export default function CallComplete({ callState, identity, emailReady }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
-          className="w-full px-4 py-3 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-blue text-sm resize-none"
+          className="w-full px-4 py-3 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-amber text-sm resize-none"
         />
       </div>
 
