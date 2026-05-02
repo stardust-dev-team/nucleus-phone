@@ -63,6 +63,16 @@ describe('POST /api/voice/incoming — legacy forward route', () => {
     expect(conference.createConference).toHaveBeenCalledTimes(1);
     const [, state] = conference.createConference.mock.calls[0];
     expect(state).toMatchObject({ to: '+14803630494', direction: 'inbound', repName: 'Ryann' });
+
+    // INSERT shape: catches column drift, table renames, lost CallSid/phone
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/INSERT INTO nucleus_phone_calls/);
+    expect(params).toEqual([
+      expect.stringMatching(/^nucleus-inbound-[0-9a-f-]{36}$/),
+      'inbound',
+      'CA-pstn-1',
+      '+14155551212',
+    ]);
   });
 });
 
@@ -80,8 +90,17 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
     expect(res.text).not.toContain('<Conference');
     expect(conference.createConference).not.toHaveBeenCalled();
 
-    // Hybrid B: server-side audit still fires for iOS routes
-    expect(pool.query).toHaveBeenCalled();
+    // Hybrid B: INSERT must hit nucleus_phone_calls with iOS-prefixed conf
+    // name, direction='inbound', and the actual CallSid/phone — not a
+    // half-populated row that a future bug could let slip through.
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/INSERT INTO nucleus_phone_calls/);
+    expect(params).toEqual([
+      expect.stringMatching(/^nucleus-inbound-ios-[0-9a-f-]{36}$/),
+      'inbound',
+      'CA-ios-1',
+      '+14155551212',
+    ]);
     expect(slack.sendSlackAlert).toHaveBeenCalled();
     expect(slack.sendSlackDM).toHaveBeenCalledWith('D-ios', expect.any(String));
   });
@@ -108,6 +127,9 @@ describe('POST /api/voice/incoming — hybrid route', () => {
 
 describe('INBOUND_ROUTES validator — boot-time', () => {
   test('exits when a route has neither forward nor iosIdentity', () => {
+    // Save the good config from beforeAll so any future test added below
+    // this one (or test reordering via --testNamePattern) sees a sane env.
+    const original = process.env.INBOUND_ROUTES;
     process.env.INBOUND_ROUTES = JSON.stringify({
       [PSTN_NUMBER]: { slack: 'D-broken', name: 'Broken' },
     });
@@ -117,16 +139,19 @@ describe('INBOUND_ROUTES validator — boot-time', () => {
     });
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    expect(() => {
-      jest.isolateModules(() => require('../incoming'));
-    }).toThrow('process.exit called');
+    try {
+      expect(() => {
+        jest.isolateModules(() => require('../incoming'));
+      }).toThrow('process.exit called');
 
-    expect(errSpy).toHaveBeenCalledWith(
-      'FATAL: INBOUND_ROUTES is invalid:',
-      expect.stringContaining('every route must have'),
-    );
-
-    exitSpy.mockRestore();
-    errSpy.mockRestore();
+      expect(errSpy).toHaveBeenCalledWith(
+        'FATAL: INBOUND_ROUTES is invalid:',
+        expect.stringContaining('every route must have'),
+      );
+    } finally {
+      process.env.INBOUND_ROUTES = original;
+      exitSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });
