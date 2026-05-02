@@ -15,7 +15,6 @@
 
 const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
-const twilio = require('twilio');
 const { VoiceResponse, client } = require('../lib/twilio');
 const { makeTwilioWebhook } = require('../lib/twilio-webhook');
 const { pool } = require('../db');
