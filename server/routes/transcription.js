@@ -15,7 +15,6 @@
  */
 
 const { Router } = require('express');
-const twilio = require('twilio');
 const { pool } = require('../db');
 const { broadcast } = require('../lib/live-analysis');
 const { track } = require('../lib/inflight');
@@ -29,10 +28,8 @@ const { touch } = require('../lib/health-tracker');
 const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
-const twilioWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/transcription`,
-});
+const { makeTwilioWebhook } = require('../lib/twilio-webhook');
+const twilioWebhook = makeTwilioWebhook('/api/transcription');
 
 router.post('/', twilioWebhook, async (req, res) => {
   touch('twilio.transcription');

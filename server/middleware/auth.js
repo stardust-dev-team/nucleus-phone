@@ -214,6 +214,15 @@ function apiKeyAuth(req, res, next) {
   return sessionAuth(req, res, next);
 }
 
+// Predicate for "interactive principal" — a real human behind a session
+// cookie or a bearer token, NOT API-key automation. Routes use this to
+// gate response fields that should reach humans but not n8n/scripts (e.g.
+// ai_summary on contacts/cockpit). Lives here so the gate is a constraint
+// instead of a comment that asks parallel sites to stay in sync.
+function isInteractiveCaller(req) {
+  return req.user?.authSource === 'session' || req.user?.authSource === 'bearer';
+}
+
 // Test helper — writes a user directly to the in-memory cache so integration
 // tests can mock jwt.verify to return `{userId}` and skip the DB round-trip
 // on sessionAuth. NOT intended for production code paths.
@@ -227,6 +236,7 @@ module.exports = {
   bearerAuth,
   bearerOrSession,
   bearerOrApiKeyOrSession,
+  isInteractiveCaller,
   loadUserById,
   invalidateUser,
   SESSION_TTL_SECONDS,

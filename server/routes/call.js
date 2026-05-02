@@ -1,6 +1,5 @@
 const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
-const twilio = require('twilio');
 const { pool } = require('../db');
 const { client } = require('../lib/twilio');
 const { bearerOrApiKeyOrSession } = require('../middleware/auth');
@@ -31,10 +30,8 @@ function enforceOwnIdentity(req, res, bodyIdentity) {
   return false;
 }
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
-const twilioWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/call/status`,
-});
+const { makeTwilioWebhook } = require('../lib/twilio-webhook');
+const twilioWebhook = makeTwilioWebhook('/api/call/status');
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 

@@ -1,5 +1,4 @@
 const { Router } = require('express');
-const twilio = require('twilio');
 const { VoiceResponse } = require('../lib/twilio');
 const { getConference } = require('../lib/conference');
 const { pool } = require('../db');
@@ -9,10 +8,8 @@ const { touch } = require('../lib/health-tracker');
 const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
-const twilioWebhook = twilio.webhook({
-  validate: process.env.NODE_ENV === 'production',
-  url: `${baseUrl}/api/voice`,
-});
+const { makeTwilioWebhook } = require('../lib/twilio-webhook');
+const twilioWebhook = makeTwilioWebhook('/api/voice');
 
 // POST /api/voice — TwiML webhook called by Twilio when PWA connects via Voice SDK
 router.post('/', twilioWebhook, async (req, res) => {

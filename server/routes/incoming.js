@@ -17,6 +17,7 @@ const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
 const twilio = require('twilio');
 const { VoiceResponse, client } = require('../lib/twilio');
+const { makeTwilioWebhook } = require('../lib/twilio-webhook');
 const { pool } = require('../db');
 const { createConference, getConference } = require('../lib/conference');
 const { sendSlackAlert, sendSlackDM } = require('../lib/slack');
@@ -60,13 +61,6 @@ function resolveRoute(calledNumber) {
     };
   }
   return null;
-}
-
-function makeTwilioWebhook(path) {
-  return twilio.webhook({
-    validate: process.env.NODE_ENV === 'production',
-    url: `${baseUrl}${path}`,
-  });
 }
 
 /**

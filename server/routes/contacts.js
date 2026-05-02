@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { bearerOrApiKeyOrSession } = require('../middleware/auth');
+const { bearerOrApiKeyOrSession, isInteractiveCaller } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { searchContacts, getContact } = require('../lib/hubspot');
 const { pool } = require('../db');
@@ -106,10 +106,9 @@ router.get('/', bearerOrApiKeyOrSession, async (req, res) => {
         // Sensitive AI data (lastSummary) is only exposed to session-authed
         // browser callers, matching the /api/history policy at CLAUDE.md:70.
         // API-key callers (e.g. n8n, external tools) get call metadata only.
-        // Bearer (iOS dialer) gets full response like web sessions; API-key
-        // automation is the only caller withheld from ai_summary.
-        const includeSummary = req.user?.authSource === 'session'
-          || req.user?.authSource === 'bearer';
+        // Interactive callers (session + bearer) get full response;
+        // API-key automation is the only caller withheld from ai_summary.
+        const includeSummary = isInteractiveCaller(req);
 
         for (const row of result.rows) {
           const key = row.hubspot_contact_id || row.lead_phone;
