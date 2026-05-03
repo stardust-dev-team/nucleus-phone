@@ -2,6 +2,7 @@ jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('../../lib/hubspot', () => ({
   searchContacts: jest.fn(),
   getContact: jest.fn(),
+  findContactByPhone: jest.fn(),
 }));
 jest.mock('jsonwebtoken');
 
@@ -294,5 +295,174 @@ describe('GET /api/contacts/:id', () => {
       .get('/api/contacts/999')
       .set('x-api-key', API_KEY)
       .expect(500);
+  });
+});
+
+/* ───────────── GET /api/contacts/lookup ───────────── */
+
+// Tests use unique phone numbers per case so the module-level 5s cache from
+// one test can't bleed into another. Cache key is the normalized phone, so
+// US 11-digit (+1XXXXXXXXXX) and bare 10-digit (XXXXXXXXXX) collapse to the
+// same entry — see the "cache key collapses equivalent formats" test.
+describe('GET /api/contacts/lookup', () => {
+  test('returns 401 without auth', async () => {
+    await request(app).get('/api/contacts/lookup?phone=%2B16025550001').expect(401);
+  });
+
+  test('returns 400 when phone query param is missing', async () => {
+    const res = await request(app)
+      .get('/api/contacts/lookup')
+      .set('x-api-key', API_KEY)
+      .expect(400);
+    expect(res.body.error).toMatch(/phone query param required/);
+  });
+
+  test('returns 400 when phone normalizes to null (too short)', async () => {
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=123')
+      .set('x-api-key', API_KEY)
+      .expect(400);
+    expect(res.body.error).toMatch(/valid E\.164/);
+  });
+
+  test('returns projected contact on hit', async () => {
+    hubspot.findContactByPhone.mockResolvedValue({
+      id: '12345',
+      properties: { firstname: 'Tom', lastname: 'Russo', company: 'Acme' },
+    });
+
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550002')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body).toEqual({ name: 'Tom Russo', company: 'Acme', hubspotId: '12345' });
+  });
+
+  test('returns all-null fields on miss (no HubSpot match)', async () => {
+    hubspot.findContactByPhone.mockResolvedValue(null);
+
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550003')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body).toEqual({ name: null, company: null, hubspotId: null });
+  });
+
+  test('partial name: only firstname → renders firstname alone', async () => {
+    hubspot.findContactByPhone.mockResolvedValue({
+      id: '201',
+      properties: { firstname: 'Tom', lastname: '', company: 'Acme' },
+    });
+
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550004')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body).toEqual({ name: 'Tom', company: 'Acme', hubspotId: '201' });
+  });
+
+  test('partial name: only lastname → renders lastname alone', async () => {
+    hubspot.findContactByPhone.mockResolvedValue({
+      id: '202',
+      properties: { firstname: null, lastname: 'Russo', company: null },
+    });
+
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550005')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body).toEqual({ name: 'Russo', company: null, hubspotId: '202' });
+  });
+
+  test('both names blank → name is null (company NOT folded into name)', async () => {
+    hubspot.findContactByPhone.mockResolvedValue({
+      id: '203',
+      properties: { firstname: '', lastname: null, company: 'Acme' },
+    });
+
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550006')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body).toEqual({ name: null, company: 'Acme', hubspotId: '203' });
+  });
+
+  test('cache hit: second call within 5s does NOT re-query HubSpot', async () => {
+    hubspot.findContactByPhone.mockResolvedValue({
+      id: '301',
+      properties: { firstname: 'Cached', lastname: 'Hit', company: 'Co' },
+    });
+
+    await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550007')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+    await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550007')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(hubspot.findContactByPhone).toHaveBeenCalledTimes(1);
+  });
+
+  test('cache key collapses equivalent formats (E.164 vs bare 10-digit)', async () => {
+    hubspot.findContactByPhone.mockResolvedValue({
+      id: '302',
+      properties: { firstname: 'Same', lastname: 'Number', company: null },
+    });
+
+    await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550008')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+    await request(app)
+      .get('/api/contacts/lookup?phone=6025550008')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(hubspot.findContactByPhone).toHaveBeenCalledTimes(1);
+  });
+
+  test('miss is also cached: repeat lookup of unknown number does not re-hit HubSpot', async () => {
+    hubspot.findContactByPhone.mockResolvedValue(null);
+
+    await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550009')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+    await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550009')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(hubspot.findContactByPhone).toHaveBeenCalledTimes(1);
+  });
+
+  test('returns 500 on HubSpot failure (and does NOT cache the error)', async () => {
+    hubspot.findContactByPhone
+      .mockRejectedValueOnce(new Error('HubSpot timeout'))
+      .mockResolvedValueOnce({
+        id: '401',
+        properties: { firstname: 'Recovered', lastname: 'Call', company: null },
+      });
+
+    await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550010')
+      .set('x-api-key', API_KEY)
+      .expect(500);
+
+    // Second call must retry HubSpot, proving the error path didn't poison the cache.
+    const res = await request(app)
+      .get('/api/contacts/lookup?phone=%2B16025550010')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.name).toBe('Recovered Call');
+    expect(hubspot.findContactByPhone).toHaveBeenCalledTimes(2);
   });
 });
