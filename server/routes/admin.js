@@ -15,12 +15,12 @@
 const { Router } = require('express');
 const { pool } = require('../db');
 const { invalidateUser } = require('../middleware/auth');
+const { isValidEmail } = require('../lib/validators');
 
 const router = Router();
 
 const VALID_ROLES = new Set(['external_caller', 'caller', 'admin']);
 const IDENTITY_RE = /^[a-z0-9_-]{2,32}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // GET /api/admin/users — full user list, admins see everything
 router.get('/users', async (_req, res) => {
@@ -41,7 +41,7 @@ router.get('/users', async (_req, res) => {
 //   body: { email, identity, role, displayName }
 router.post('/users', async (req, res) => {
   const { email, identity, role, displayName } = req.body || {};
-  if (!email || !EMAIL_RE.test(email)) {
+  if (!isValidEmail(email)) {
     return res.status(400).json({ error: 'Valid email required' });
   }
   if (!identity || !IDENTITY_RE.test(identity)) {
