@@ -168,7 +168,14 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
       timeout: 30,
       action: `${baseUrl}/api/voice/incoming/dial-complete?conf=${encodeURIComponent(conferenceName)}&from=${encodeURIComponent(callerPhone)}`,
     });
-    dial.client(iosIdentity);
+    // <Client> child node so we can attach <Parameter> children (TwiML
+    // Client supports custom parameters that surface to the Voice SDK as
+    // CallInvite.customParameters). dialer-mac bd-upq.17 reads `call_id`
+    // on the iOS side to populate Phase G's DispositionSheet after the
+    // inbound call ends — without this, the sheet has no way to map the
+    // CallInvite back to the DB row.
+    const clientNode = dial.client(iosIdentity);
+    clientNode.parameter({ name: 'call_id', value: String(dbRowId) });
 
     appendVoicemailTwiml(twiml, callerPhone, conferenceName);
     return res.type('text/xml').send(twiml.toString());

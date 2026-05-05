@@ -86,7 +86,13 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-1' })
       .expect(200);
 
-    expect(res.text).toContain('<Client>paul</Client>');
+    // <Client> now wraps a <Parameter name="call_id" .../> child (dialer-mac
+    // bd-upq.17) so the iOS dialer can map the inbound CallInvite back to
+    // the DB row for Phase G's DispositionSheet. Assert containment instead
+    // of full equality so future Parameter children don't break this gate.
+    expect(res.text).toContain('<Client>paul');
+    expect(res.text).toContain('</Client>');
+    expect(res.text).toContain('<Parameter name="call_id" value="1"/>');
     expect(res.text).not.toContain('<Conference');
     expect(conference.createConference).not.toHaveBeenCalled();
 
@@ -104,6 +110,21 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
     expect(slack.sendSlackAlert).toHaveBeenCalled();
     expect(slack.sendSlackDM).toHaveBeenCalledWith('D-ios', expect.any(String));
   });
+
+  test('call_id Parameter carries the inserted DB row id (not a hardcoded value)', async () => {
+    // Stub the INSERT to return a non-default id so we know the param
+    // tracks the actual returned id rather than coincidentally matching
+    // the default mock value.
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 4242 }], rowCount: 1 });
+
+    const res = await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-2' })
+      .expect(200);
+
+    expect(res.text).toContain('<Parameter name="call_id" value="4242"/>');
+  });
 });
 
 /* ─── (c) Hybrid route with both fields — iosIdentity wins ─── */
@@ -116,7 +137,10 @@ describe('POST /api/voice/incoming — hybrid route', () => {
       .send({ To: HYBRID_NUMBER, From: '+14155551212', CallSid: 'CA-hyb-1' })
       .expect(200);
 
-    expect(res.text).toContain('<Client>kate</Client>');
+    // Hybrid route also emits the call_id <Parameter> child since it
+    // routes through the iOS branch.
+    expect(res.text).toContain('<Client>kate');
+    expect(res.text).toContain('</Client>');
     expect(res.text).not.toContain('<Conference');
     expect(res.text).not.toContain('+19995551111');
     expect(conference.createConference).not.toHaveBeenCalled();
