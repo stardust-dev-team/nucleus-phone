@@ -86,13 +86,13 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-1' })
       .expect(200);
 
-    // <Client> now wraps a <Parameter name="call_id" .../> child (dialer-mac
+    // <Client> wraps a <Parameter name="call_id" .../> child (dialer-mac
     // bd-upq.17) so the iOS dialer can map the inbound CallInvite back to
-    // the DB row for Phase G's DispositionSheet. Assert containment instead
-    // of full equality so future Parameter children don't break this gate.
-    expect(res.text).toContain('<Client>paul');
-    expect(res.text).toContain('</Client>');
-    expect(res.text).toContain('<Parameter name="call_id" value="1"/>');
+    // the DB row for Phase G's DispositionSheet. Pin the structure with a
+    // regex rather than two open-ended substring matches; a stray
+    // </Client> from a different <Dial> block elsewhere in the output
+    // would silently pass under substring assertions.
+    expect(res.text).toMatch(/<Client>paul<Parameter name="call_id" value="\d+"\/><\/Client>/);
     expect(res.text).not.toContain('<Conference');
     expect(conference.createConference).not.toHaveBeenCalled();
 
@@ -139,8 +139,7 @@ describe('POST /api/voice/incoming — hybrid route', () => {
 
     // Hybrid route also emits the call_id <Parameter> child since it
     // routes through the iOS branch.
-    expect(res.text).toContain('<Client>kate');
-    expect(res.text).toContain('</Client>');
+    expect(res.text).toMatch(/<Client>kate<Parameter name="call_id" value="\d+"\/><\/Client>/);
     expect(res.text).not.toContain('<Conference');
     expect(res.text).not.toContain('+19995551111');
     expect(conference.createConference).not.toHaveBeenCalled();
