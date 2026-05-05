@@ -22,6 +22,9 @@ jest.mock('../../lib/format', () => ({
 jest.mock('../../lib/customer-lookup', () => ({
   lookupCustomer: jest.fn().mockResolvedValue(null),
 }));
+jest.mock('../../lib/email-sender', () => ({
+  sendFollowUpEmail: jest.fn().mockResolvedValue(undefined),
+}));
 
 const request = require('supertest');
 const express = require('express');
@@ -29,9 +32,10 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../../db');
 const { sendSlackAlert, formatCallAlert } = require('../../lib/slack');
-const { addNoteToContact } = require('../../lib/hubspot');
+const { addNoteToContact, getContact } = require('../../lib/hubspot');
 const { syncInteraction } = require('../../lib/interaction-sync');
 const { lookupCustomer } = require('../../lib/customer-lookup');
+const { sendFollowUpEmail } = require('../../lib/email-sender');
 const { __testSetUser, invalidateUser } = require('../../middleware/auth');
 
 const API_KEY = 'test-api-key';
@@ -963,5 +967,200 @@ describe('POST /api/history/:id/disposition', () => {
     // If api-key had won, req.user.role would be 'admin' — bypassing the
     // ownership check entirely. Bearer winning means caller-role ownership
     // ran, and 'composer-test' === SAMPLE_CALL.caller_identity check passed.
+  });
+
+  // The disposition UPDATE param order is [disposition, qualification, notes,
+  // products_discussed, lead_email, id]. These tests pin the lead_email slot
+  // by index from the END of the array (id is always last) so adding a column
+  // to the UPDATE later doesn't silently break this coupling.
+  const leadEmailParam = (call) => call[1].at(-2);
+
+  // Count pool.query calls that wrote the lead_email column. Both UPDATEs
+  // that touch it (main UPDATE via COALESCE, follow-up block's standalone
+  // SET lead_email = $1) match this regex; no other column in the table
+  // contains the substring `lead_email`.
+  const leadEmailWriteCount = (calls) =>
+    calls.filter(([sql]) => /SET[\s\S]*lead_email/.test(sql)).length;
+
+  // Persist a valid lead_email even when the rep doesn't trigger a follow-up.
+  // Locks the captured-but-unused-this-call address so the next session
+  // (or another rep) sees it pre-filled instead of having to re-collect it.
+  test('persists valid lead_email on UPDATE even when send_follow_up=false', async () => {
+    const updated = {
+      ...SAMPLE_CALL,
+      disposition: 'connected',
+      lead_email: 'jane@acme.com',
+    };
+    pool.query
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })  // UPDATE
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 }); // enriched re-fetch
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('x-api-key', API_KEY)
+      .send({
+        disposition: 'connected',
+        lead_email: 'jane@acme.com',
+        send_follow_up: false,
+      })
+      .expect(200);
+
+    expect(leadEmailParam(pool.query.mock.calls[0])).toBe('jane@acme.com');
+  });
+
+  // Garbage in body must not clobber a previously-saved address. The COALESCE
+  // pattern only writes when our validated parameter is non-null, so an
+  // invalid input arrives at the DB as NULL and is short-circuited.
+  test('drops malformed lead_email instead of overwriting saved column', async () => {
+    const updated = { ...SAMPLE_CALL, disposition: 'connected' };
+    pool.query
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('x-api-key', API_KEY)
+      .send({ disposition: 'connected', lead_email: 'not-an-email' })
+      .expect(200);
+
+    expect(leadEmailParam(pool.query.mock.calls[0])).toBeNull();
+  });
+
+  // Pre-existing bug surfaced by the bd-uqp fix: the email-trigger block
+  // used the RAW body lead_email for its !resolvedEmail short-circuit, so
+  // a garbage value like "asdf" passed the truthy check and blocked the
+  // HubSpot fallback entirely. Follow-up never sent even when HubSpot had
+  // a valid address. Fix: use validatedLeadEmail (null for invalid input)
+  // so the short-circuit reaches the fallback path. Without the fix, this
+  // test fails because getContact is never called.
+  test('garbage lead_email does not block HubSpot fallback in send_follow_up path', async () => {
+    mockSession('tom', 'admin');
+    const updated = {
+      ...SAMPLE_CALL,
+      disposition: 'connected',
+      hubspot_contact_id: '101',
+      follow_up_email_sent: false,
+    };
+
+    pool.query.mockResolvedValue({ rows: [updated], rowCount: 1 });
+    getContact.mockResolvedValueOnce({ properties: { email: 'jane@acme.com' } });
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({
+        disposition: 'connected',
+        lead_email: 'asdf',         // garbage in body
+        send_follow_up: true,
+      })
+      .expect(200);
+
+    await flushFireAndForget();
+
+    expect(getContact).toHaveBeenCalledWith('101');
+    expect(sendFollowUpEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ toEmail: 'jane@acme.com' })
+    );
+  });
+
+  // Anything past the RFC 5321 254-char limit is rejected before the regex
+  // ever sees it — both as a defense against unbounded user input on every
+  // disposition and as a sanity gate (a 10KB string with an `@` would
+  // otherwise pass shape validation).
+  test('rejects lead_email longer than 254 chars (RFC 5321 cap)', async () => {
+    const updated = { ...SAMPLE_CALL, disposition: 'connected' };
+    pool.query
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
+
+    const longLocal = 'a'.repeat(250);
+    const oversize = `${longLocal}@b.co`; // 257 chars — passes EMAIL_RE shape
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('x-api-key', API_KEY)
+      .send({ disposition: 'connected', lead_email: oversize })
+      .expect(200);
+
+    expect(leadEmailParam(pool.query.mock.calls[0])).toBeNull();
+  });
+
+  // bd-t8jo, common path: rep typed a valid email + ticked send_follow_up.
+  // Main UPDATE writes lead_email via COALESCE. Without the guard, the
+  // follow-up block would write the same value again — two round-trips, same
+  // result. With the guard, only the main UPDATE touches lead_email.
+  test('common path issues exactly one lead_email write (bd-t8jo)', async () => {
+    mockSession('tom', 'admin');
+    const updated = {
+      ...SAMPLE_CALL,
+      disposition: 'connected',
+      lead_email: 'jane@acme.com',  // post-UPDATE state matches body
+      hubspot_contact_id: null,      // skip HubSpot sync to keep mock chain clean
+      follow_up_email_sent: false,
+    };
+
+    pool.query.mockResolvedValue({ rows: [updated], rowCount: 1 });
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({
+        disposition: 'connected',
+        lead_email: 'jane@acme.com',
+        send_follow_up: true,
+      })
+      .expect(200);
+
+    await flushFireAndForget();
+
+    expect(leadEmailWriteCount(pool.query.mock.calls)).toBe(1);
+    expect(sendFollowUpEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ toEmail: 'jane@acme.com' })
+    );
+  });
+
+  // bd-t8jo, HubSpot fallback path: body has no lead_email, contact provides
+  // one. Main UPDATE preserves the existing column (COALESCE($null, ...)) so
+  // no body-driven write happens; the follow-up block's UPDATE is the ONLY
+  // place the resolved address gets persisted. Without that write, the
+  // address is sent but not saved — next call to the same lead loses it.
+  test('HubSpot fallback path persists lead_email exactly once (bd-t8jo)', async () => {
+    mockSession('tom', 'admin');
+    const updatedBeforeWrite = {
+      ...SAMPLE_CALL,
+      disposition: 'connected',
+      lead_email: null,              // nothing saved yet
+      hubspot_contact_id: '101',
+      follow_up_email_sent: false,
+    };
+
+    pool.query.mockResolvedValue({ rows: [updatedBeforeWrite], rowCount: 1 });
+    getContact.mockResolvedValueOnce({ properties: { email: 'jane@acme.com' } });
+
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({ disposition: 'connected', send_follow_up: true })
+      .expect(200);
+
+    await flushFireAndForget();
+
+    // Main UPDATE writes (COALESCE preserves null → null), follow-up block
+    // writes the resolved address. Both queries match the regex, so total = 2.
+    // Without the email-trigger UPDATE, the resolved address would be sent
+    // but not saved.
+    const writes = pool.query.mock.calls.filter(([sql]) =>
+      /SET[\s\S]*lead_email/.test(sql)
+    );
+    expect(writes).toHaveLength(2);
+    // The follow-up UPDATE is the one that carries the resolved address as $1.
+    const followUpWrite = writes.find(([sql]) => /^UPDATE.*SET lead_email = \$1/i.test(sql));
+    expect(followUpWrite[1][0]).toBe('jane@acme.com');
+    expect(sendFollowUpEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ toEmail: 'jane@acme.com' })
+    );
   });
 });

@@ -10,6 +10,7 @@
 const express = require('express');
 const { pool } = require('../db');
 const { sendSlackAlert } = require('../lib/slack');
+const { isValidEmail } = require('../lib/validators');
 
 const router = express.Router();
 
@@ -36,7 +37,6 @@ function formatEquipment(eq) {
 }
 
 const MAX_PAYLOAD_SIZE = 10240; // 10 KB — applies to recommendation and equipment
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 router.post('/', async (req, res) => {
   const { type, callId, email, consent, leadName, leadCompany, leadPhone, recommendation, equipment } = req.body;
@@ -98,7 +98,7 @@ router.post('/', async (req, res) => {
     if (!email || !consent) {
       return res.status(400).json({ error: 'Email and consent required' });
     }
-    if (!EMAIL_RE.test(email)) {
+    if (!isValidEmail(email)) {
       return res.status(400).json({ error: 'Invalid email address' });
     }
 

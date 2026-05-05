@@ -9,6 +9,7 @@ const { syncInteraction } = require('../lib/interaction-sync');
 const { sendFollowUpEmail } = require('../lib/email-sender');
 const { lookupCustomer } = require('../lib/customer-lookup');
 const { track } = require('../lib/inflight');
+const { isValidEmail } = require('../lib/validators');
 
 const router = Router();
 
@@ -259,17 +260,27 @@ router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller')
       }
     }
 
+    // Persist lead_email regardless of send_follow_up so a captured address
+    // survives "no email this time" dispositions for the next rep/contact.
+    // COALESCE preserves any previously-saved address when the client omits
+    // the field. isValidEmail rejects malformed input (`"asdf"`, `"@bar"`)
+    // and oversized input (>254 chars per RFC 5321); shaped-right typos
+    // like `jane@acme.con` still pass — that's an upstream verification job.
+    const validatedLeadEmail = isValidEmail(lead_email) ? lead_email : null;
+
     const result = await pool.query(
       `UPDATE nucleus_phone_calls
        SET disposition = $1, qualification = $2, notes = $3,
-           products_discussed = $4
-       WHERE id = $5
+           products_discussed = $4,
+           lead_email = COALESCE($5, lead_email)
+       WHERE id = $6
        RETURNING ${CALL_COLUMNS}`,
       [
         disposition,
         qualification || null,
         notes || null,
         JSON.stringify(products_discussed || []),
+        validatedLeadEmail,
         id,
       ]
     );
@@ -357,9 +368,14 @@ router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller')
     const repEmail = req.user?.email;
 
     if (send_follow_up && repEmail && !call.follow_up_email_sent) {
-      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      let resolvedEmail = lead_email;
+      // Use validatedLeadEmail (not the raw body field) so a garbage value
+      // doesn't poison the !resolvedEmail short-circuit and block the
+      // HubSpot fallback. With the raw field, `lead_email: "asdf"` was
+      // truthy enough to skip getContact() but invalid enough to fail the
+      // downstream EMAIL_RE check, so no email sent at all even when
+      // HubSpot had a real address. Pre-existing bug, surfaced by this
+      // diff because the form now auto-populates lead_email.
+      let resolvedEmail = validatedLeadEmail;
       if (!resolvedEmail && call.hubspot_contact_id) {
         try {
           const contact = await getContact(call.hubspot_contact_id);
@@ -369,8 +385,14 @@ router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller')
         }
       }
 
-      const validEmail = resolvedEmail && EMAIL_RE.test(resolvedEmail);
-      if (validEmail) {
+      const validEmail = isValidEmail(resolvedEmail);
+      // Skip the write when the main UPDATE already persisted this value.
+      // Common path (rep typed email + ticked send_follow_up): main UPDATE
+      // wrote validatedLeadEmail, so call.lead_email === resolvedEmail and
+      // we skip. HubSpot-fallback path (body empty, contact had email):
+      // resolvedEmail came from getContact and isn't yet in call.lead_email,
+      // so the write happens exactly once here.
+      if (validEmail && resolvedEmail !== call.lead_email) {
         await pool.query('UPDATE nucleus_phone_calls SET lead_email = $1 WHERE id = $2', [resolvedEmail, id]);
       }
 
