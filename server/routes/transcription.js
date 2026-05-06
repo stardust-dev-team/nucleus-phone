@@ -31,6 +31,18 @@ const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 const { makeTwilioWebhook } = require('../lib/twilio-webhook');
 const twilioWebhook = makeTwilioWebhook('/api/transcription');
 
+// Map Twilio RT Transcription's `Track` webhook field to the typed
+// `speaker` value clients expect. Twilio sends `inbound_track` /
+// `outbound_track` / `both_tracks`; iOS + PWA expect `agent` / `customer`
+// / `unknown`. Outbound = the rep's mic feed (us), inbound = the lead's.
+// joruva-dialer-mac-xft: pre-fix, raw Twilio values were forwarded and
+// iOS DecodingError tore the live-analysis WebSocket down on first chunk.
+function mapSpeaker(track) {
+  if (track === 'outbound_track') return 'agent';
+  if (track === 'inbound_track') return 'customer';
+  return 'unknown';
+}
+
 router.post('/', twilioWebhook, async (req, res) => {
   touch('twilio.transcription');
   res.sendStatus(204);
@@ -96,10 +108,16 @@ router.post('/', twilioWebhook, async (req, res) => {
     console.error('transcription: transcript accumulation failed:', err.message);
   }
 
-  // Broadcast raw transcript chunk
+  // Broadcast transcript chunk. Map Twilio's raw `Track` field to the
+  // typed `speaker` value the iOS LiveAnalysisClient (and the PWA cockpit)
+  // expects — `agent` / `customer` / `unknown`. Pre-fix this emitted the
+  // raw Twilio value (`outbound_track` / `inbound_track`), which iOS
+  // refused to decode (`TranscriptSpeaker` enum mismatch) and tore the
+  // WebSocket subscription down on the first chunk. See
+  // joruva-dialer-mac-xft.
   broadcast(callId, {
     type: 'transcript_chunk',
-    data: { text: transcriptText, speaker: Track || 'unknown' },
+    data: { text: transcriptText, speaker: mapSpeaker(Track) },
   });
 
   // Run entity extraction pipeline (fire-and-forget, don't block)
@@ -165,3 +183,4 @@ async function runPostCallSummary(callSid) {
 }
 
 module.exports = router;
+module.exports.mapSpeaker = mapSpeaker;
