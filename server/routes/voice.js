@@ -68,7 +68,19 @@ router.post('/', twilioWebhook, async (req, res) => {
       statusCallback: `${baseUrl}/api/call/status`,
       statusCallbackEvent: 'start end join leave',
       startConferenceOnEnter: true,
-      endConferenceOnExit: false,
+      // Outbound iOS-leg only — this `voice.js` `Action='initiate'`
+      // TwiML path is only reached for outbound calls (inbound iOS legs
+      // are connected via `<Client>tom</Client>` from `incoming.js`'s
+      // TwiML, which doesn't go through here). Hardcoding `true` is safe
+      // for outbound: when the rep ends the call, the conference dies
+      // and the lead leg drops, matching how the lead-leg flag works
+      // (`call.js:327` uses `!isInbound`). If a future refactor pushes
+      // inbound flows through this same TwiML, this becomes WRONG (the
+      // rep hanging up mid-voicemail-leave would cut the caller off);
+      // pin the assumption rather than mirror call.js blindly. Closes
+      // joruva-dialer-mac-lkk's leak path where iOS End Call dropped its
+      // leg but the lead leg + recording kept running until idle timeout.
+      endConferenceOnExit: true,
       beep: false,
     }, ConferenceName);
 
