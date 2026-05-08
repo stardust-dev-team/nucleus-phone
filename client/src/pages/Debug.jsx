@@ -24,7 +24,7 @@ function HealthCard({ source, data }) {
     >
       <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
       <div className="min-w-0">
-        <div className="text-sm font-medium text-jv-bone truncate">{source}</div>
+        <div className="text-sm font-medium text-aunshin-peach-light truncate">{source}</div>
         <div className="text-xs" style={{ color: 'rgba(245,245,244,0.5)' }}>
           {data ? formatAge(data.ageMinutes) : 'never seen'}
         </div>
@@ -39,7 +39,7 @@ function EventRow({ event, expanded, onToggle }) {
   return (
     <>
       <tr
-        className="cursor-pointer hover:bg-jv-elevated/50 transition-colors"
+        className="cursor-pointer hover:bg-aunshin-twilight-2/50 transition-colors"
         onClick={onToggle}
       >
         <td className="px-3 py-2 text-xs font-mono" style={{ color: 'rgba(245,245,244,0.5)' }}>{ts}</td>
@@ -47,9 +47,9 @@ function EventRow({ event, expanded, onToggle }) {
           <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: levelColor }} />
           <span className="text-xs" style={{ color: levelColor }}>{event.level}</span>
         </td>
-        <td className="px-3 py-2 text-xs text-jv-amber font-mono">{event.category}</td>
-        <td className="px-3 py-2 text-xs text-jv-bone font-mono">{event.source}</td>
-        <td className="px-3 py-2 text-xs text-jv-bone truncate max-w-[300px]">{event.summary}</td>
+        <td className="px-3 py-2 text-xs text-aunshin-sodium font-mono">{event.category}</td>
+        <td className="px-3 py-2 text-xs text-aunshin-peach-light font-mono">{event.source}</td>
+        <td className="px-3 py-2 text-xs text-aunshin-peach-light truncate max-w-[300px]">{event.summary}</td>
       </tr>
       {expanded && event.detail && (
         <tr>
@@ -77,7 +77,7 @@ export default function Debug() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-jv-muted">Loading debug data...</p>
+        <p className="text-aunshin-quiet-d">Loading debug data...</p>
       </div>
     );
   }
@@ -85,8 +85,8 @@ export default function Debug() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3">
-        <p className="text-jv-red text-sm">Failed to load debug data: {error}</p>
-        <button onClick={refresh} className="text-jv-amber text-sm underline">Retry</button>
+        <p className="text-aunshin-alert text-sm">Failed to load debug data: {error}</p>
+        <button onClick={refresh} className="text-aunshin-sodium text-sm underline">Retry</button>
       </div>
     );
   }
@@ -107,13 +107,13 @@ export default function Debug() {
           className="rounded-lg px-4 py-3 text-center text-sm"
           style={{ background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', color: '#F59E0B' }}
         >
-          DEBUG mode is off — set <code className="font-mono bg-jv-elevated px-1.5 py-0.5 rounded text-xs">DEBUG=1</code> in Render env vars to enable event logging
+          DEBUG mode is off — set <code className="font-mono bg-aunshin-twilight-2 px-1.5 py-0.5 rounded text-xs">DEBUG=1</code> in Render env vars to enable event logging
         </div>
       )}
 
       {/* Integration Health */}
       <section>
-        <h2 className="text-sm font-semibold text-jv-bone mb-3 tracking-wide uppercase">Integration Health</h2>
+        <h2 className="text-sm font-semibold text-aunshin-peach-light mb-3 tracking-wide uppercase">Integration Health</h2>
         {health?.db && (
           <div className="mb-3 flex items-center gap-3 text-xs" style={{ color: 'rgba(245,245,244,0.5)' }}>
             <span className="w-2 h-2 rounded-full" style={{ background: health.db.status === 'ok' ? '#22C55E' : '#DC2626' }} />
@@ -133,7 +133,7 @@ export default function Debug() {
 
       {/* Active Connections */}
       <section>
-        <h2 className="text-sm font-semibold text-jv-bone mb-3 tracking-wide uppercase">Active WebSocket Connections</h2>
+        <h2 className="text-sm font-semibold text-aunshin-peach-light mb-3 tracking-wide uppercase">Active WebSocket Connections</h2>
         {connections?.total > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {connections.websockets.map(ws => (
@@ -142,7 +142,7 @@ export default function Debug() {
                 className="rounded-lg px-4 py-3"
                 style={{ background: '#0F0D29', border: '1px solid rgba(49,46,129,0.5)' }}
               >
-                <div className="text-xs font-mono text-jv-amber truncate">{ws.callId}</div>
+                <div className="text-xs font-mono text-aunshin-sodium truncate">{ws.callId}</div>
                 <div className="text-xs" style={{ color: 'rgba(245,245,244,0.5)' }}>{ws.listenerCount} listener{ws.listenerCount !== 1 ? 's' : ''}</div>
               </div>
             ))}
@@ -155,12 +155,12 @@ export default function Debug() {
       {/* Event Log */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-jv-bone tracking-wide uppercase">Event Log</h2>
+          <h2 className="text-sm font-semibold text-aunshin-peach-light tracking-wide uppercase">Event Log</h2>
           <div className="flex items-center gap-2">
             <select
               value={category}
               onChange={e => setCategory(e.target.value)}
-              className="text-xs px-2 py-1 rounded border bg-jv-card text-jv-bone"
+              className="text-xs px-2 py-1 rounded border bg-aunshin-twilight-2 text-aunshin-peach-light"
               style={{ borderColor: 'rgba(49,46,129,0.5)' }}
             >
               {CATEGORIES.map(c => (
@@ -206,7 +206,7 @@ export default function Debug() {
 
       {/* Sweep History */}
       <section>
-        <h2 className="text-sm font-semibold text-jv-bone mb-3 tracking-wide uppercase">Sweep History</h2>
+        <h2 className="text-sm font-semibold text-aunshin-peach-light mb-3 tracking-wide uppercase">Sweep History</h2>
         {sweep?.events?.length > 0 ? (
           <div className="space-y-2">
             {sweep.events.map(event => (
@@ -218,7 +218,7 @@ export default function Debug() {
                 <span className="text-xs font-mono shrink-0" style={{ color: 'rgba(245,245,244,0.5)' }}>
                   {new Date(event.ts).toLocaleString()}
                 </span>
-                <span className="text-xs text-jv-bone">{event.summary}</span>
+                <span className="text-xs text-aunshin-peach-light">{event.summary}</span>
               </div>
             ))}
           </div>

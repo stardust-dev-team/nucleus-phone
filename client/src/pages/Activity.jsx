@@ -18,12 +18,12 @@ import { CALLER_OPTIONS } from '../lib/team';
 
 // Disposition → left-edge color bar
 const DISP_BAR = {
-  connected: 'bg-jv-green',
-  voicemail: 'bg-jv-amber',
+  connected: 'bg-aunshin-success',
+  voicemail: 'bg-aunshin-sodium',
   no_answer: 'bg-gray-600',
-  callback_requested: 'bg-jv-amber',
-  qualified_hot: 'bg-jv-red',
-  qualified_warm: 'bg-jv-amber',
+  callback_requested: 'bg-aunshin-sodium',
+  qualified_hot: 'bg-aunshin-alert',
+  qualified_warm: 'bg-aunshin-sodium',
   not_interested: 'bg-gray-500',
   wrong_number: 'bg-gray-500',
   gatekeeper: 'bg-gray-500',
@@ -31,22 +31,22 @@ const DISP_BAR = {
 
 // Disposition label pill styling
 const DISP_PILL = {
-  connected: 'bg-jv-green/20 text-jv-green',
-  voicemail: 'bg-jv-amber/20 text-jv-amber',
+  connected: 'bg-aunshin-success/20 text-aunshin-success',
+  voicemail: 'bg-aunshin-sodium/20 text-aunshin-sodium',
   no_answer: 'bg-gray-500/20 text-gray-400',
-  callback_requested: 'bg-jv-amber/20 text-jv-amber',
-  qualified_hot: 'bg-jv-red/20 text-jv-red',
-  qualified_warm: 'bg-jv-amber/20 text-jv-amber',
-  not_interested: 'bg-jv-red/20 text-jv-red',
-  wrong_number: 'bg-jv-red/20 text-jv-red',
+  callback_requested: 'bg-aunshin-sodium/20 text-aunshin-sodium',
+  qualified_hot: 'bg-aunshin-alert/20 text-aunshin-alert',
+  qualified_warm: 'bg-aunshin-sodium/20 text-aunshin-sodium',
+  not_interested: 'bg-aunshin-alert/20 text-aunshin-alert',
+  wrong_number: 'bg-aunshin-alert/20 text-aunshin-alert',
   gatekeeper: 'bg-gray-500/20 text-gray-400',
 };
 
 const SENTIMENT_DOT = {
-  positive: 'bg-jv-green',
+  positive: 'bg-aunshin-success',
   neutral: 'bg-gray-500',
-  negative: 'bg-jv-red',
-  mixed: 'bg-jv-amber',
+  negative: 'bg-aunshin-alert',
+  mixed: 'bg-aunshin-sodium',
 };
 
 const FILTER_PILLS = [
@@ -71,8 +71,8 @@ const DISPOSITION_OPTIONS = [
 ];
 
 const QUALIFICATION_OPTIONS = [
-  { value: 'hot', label: 'Hot', className: 'bg-jv-red/20 text-jv-red border-jv-red/40' },
-  { value: 'warm', label: 'Warm', className: 'bg-jv-amber/20 text-jv-amber border-jv-amber/40' },
+  { value: 'hot', label: 'Hot', className: 'bg-aunshin-alert/20 text-aunshin-alert border-aunshin-alert/40' },
+  { value: 'warm', label: 'Warm', className: 'bg-aunshin-sodium/20 text-aunshin-sodium border-aunshin-sodium/40' },
   { value: 'cold', label: 'Cold', className: 'bg-gray-500/20 text-gray-400 border-gray-500/40' },
 ];
 
@@ -80,7 +80,7 @@ const QUALIFICATION_OPTIONS = [
 
 function FilterBar({ search, setSearch, filter, setFilter, caller, setCaller, searchRef }) {
   return (
-    <div className="sticky top-0 z-10 bg-jv-bg/95 backdrop-blur-sm border-b border-jv-border pb-3">
+    <div className="sticky top-0 z-10 bg-aunshin-twilight/95 backdrop-blur-sm border-b border-aunshin-rule-d pb-3">
       <div className="px-4 pt-3 flex items-center gap-2">
         <div className="relative flex-1">
           <input
@@ -89,9 +89,9 @@ function FilterBar({ search, setSearch, filter, setFilter, caller, setCaller, se
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search notes, companies, products..."
-            className="w-full bg-jv-card border border-jv-border rounded-lg px-4 py-2 pl-9 text-sm text-white placeholder:text-jv-muted focus:outline-none focus:border-jv-amber/50"
+            className="w-full bg-aunshin-twilight-2 border border-aunshin-rule-d rounded-lg px-4 py-2 pl-9 text-sm text-white placeholder:text-aunshin-quiet-d focus:outline-none focus:border-aunshin-sodium/50"
           />
-          <svg className="absolute left-3 top-2.5 w-4 h-4 text-jv-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="absolute left-3 top-2.5 w-4 h-4 text-aunshin-quiet-d" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
@@ -99,7 +99,7 @@ function FilterBar({ search, setSearch, filter, setFilter, caller, setCaller, se
           <select
             value={caller}
             onChange={(e) => setCaller(e.target.value)}
-            className="bg-jv-card border border-jv-border rounded-lg px-3 py-2 text-sm text-white"
+            className="bg-aunshin-twilight-2 border border-aunshin-rule-d rounded-lg px-3 py-2 text-sm text-white"
           >
             <option value="">All callers</option>
             {CALLER_OPTIONS.map((o) => (
@@ -117,8 +117,8 @@ function FilterBar({ search, setSearch, filter, setFilter, caller, setCaller, se
               onClick={() => setFilter(p.key)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 active
-                  ? 'bg-jv-amber text-black'
-                  : 'bg-jv-card border border-jv-border text-jv-muted hover:text-white'
+                  ? 'bg-aunshin-sodium text-black'
+                  : 'bg-aunshin-twilight-2 border border-aunshin-rule-d text-aunshin-quiet-d hover:text-white'
               }`}
             >
               {p.label}
@@ -187,8 +187,8 @@ export function ActivityCard({ call, onOpen, selected }) {
       aria-pressed={selected}
       onClick={() => onOpen(call)}
       onKeyDown={handleKeyDown}
-      className={`w-full text-left bg-jv-card border rounded-xl overflow-hidden transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-jv-amber focus-visible:ring-offset-2 focus-visible:ring-offset-jv-bg ${
-        selected ? 'border-jv-amber/60' : 'border-jv-border hover:border-jv-amber/40'
+      className={`w-full text-left bg-aunshin-twilight-2 border rounded-xl overflow-hidden transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-aunshin-sodium focus-visible:ring-offset-2 focus-visible:ring-offset-aunshin-twilight ${
+        selected ? 'border-aunshin-sodium/60' : 'border-aunshin-rule-d hover:border-aunshin-sodium/40'
       }`}
     >
       <div className="flex">
@@ -200,10 +200,10 @@ export function ActivityCard({ call, onOpen, selected }) {
                 <p className="font-medium truncate text-white">{call.lead_name || 'Unknown'}</p>
                 <SentimentDot sentiment={call.sentiment} />
               </div>
-              <p className="text-sm text-jv-muted truncate">{call.lead_company || ''}</p>
+              <p className="text-sm text-aunshin-quiet-d truncate">{call.lead_company || ''}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs text-jv-muted">{formatDuration(call.duration_seconds)}</span>
+              <span className="text-xs text-aunshin-quiet-d">{formatDuration(call.duration_seconds)}</span>
               {call.disposition && (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${DISP_PILL[call.disposition] || 'bg-gray-500/20 text-gray-400'}`}>
                   {humanizeDisposition(call.disposition)}
@@ -214,7 +214,7 @@ export function ActivityCard({ call, onOpen, selected }) {
                   onClick={handleCockpitClick}
                   title="Open contact cockpit"
                   aria-label="Open contact cockpit"
-                  className="w-7 h-7 flex items-center justify-center rounded-full bg-jv-amber/10 text-jv-amber hover:bg-jv-amber/25 transition-colors"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-aunshin-sodium/10 text-aunshin-sodium hover:bg-aunshin-sodium/25 transition-colors"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -225,18 +225,18 @@ export function ActivityCard({ call, onOpen, selected }) {
           </div>
 
           {truncated && (
-            <p className="text-sm text-jv-bone/80 mt-2 leading-relaxed line-clamp-2">{truncated}</p>
+            <p className="text-sm text-aunshin-peach-light/80 mt-2 leading-relaxed line-clamp-2">{truncated}</p>
           )}
 
           <div className="flex items-center justify-between mt-3 gap-2">
             <div className="flex flex-wrap gap-1 min-w-0">
               {productList.slice(0, 3).map((p, i) => (
-                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-jv-amber/10 text-jv-amber truncate">
+                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-aunshin-sodium/10 text-aunshin-sodium truncate">
                   {p}
                 </span>
               ))}
             </div>
-            <div className="flex items-center gap-2 text-xs text-jv-muted shrink-0">
+            <div className="flex items-center gap-2 text-xs text-aunshin-quiet-d shrink-0">
               <span className="capitalize">{call.caller_identity}</span>
               <span>·</span>
               <span>{formatRelativeTime(call.created_at)}</span>
@@ -251,7 +251,7 @@ export function ActivityCard({ call, onOpen, selected }) {
 function DateGroup({ label, children }) {
   return (
     <div className="mb-4">
-      <h3 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-2 px-1">
+      <h3 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-2 px-1">
         {label}
       </h3>
       <div className="space-y-2">{children}</div>
@@ -293,7 +293,7 @@ function DispositionActions({ detail, emailReady, onSaved }) {
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-2">Disposition</h4>
+        <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-2">Disposition</h4>
         <div className="flex flex-wrap gap-1.5">
           {DISPOSITION_OPTIONS.map((o) => (
             <button
@@ -301,8 +301,8 @@ function DispositionActions({ detail, emailReady, onSaved }) {
               onClick={() => setDisposition(o.value)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 disposition === o.value
-                  ? 'bg-jv-amber/20 text-jv-amber border-jv-amber/50'
-                  : 'bg-jv-card text-jv-muted border-jv-border hover:border-jv-amber/30'
+                  ? 'bg-aunshin-sodium/20 text-aunshin-sodium border-aunshin-sodium/50'
+                  : 'bg-aunshin-twilight-2 text-aunshin-quiet-d border-aunshin-rule-d hover:border-aunshin-sodium/30'
               }`}
             >
               {o.label}
@@ -312,7 +312,7 @@ function DispositionActions({ detail, emailReady, onSaved }) {
       </div>
 
       <div>
-        <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-2">Qualification</h4>
+        <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-2">Qualification</h4>
         <div className="flex gap-1.5">
           {QUALIFICATION_OPTIONS.map((o) => (
             <button
@@ -321,7 +321,7 @@ function DispositionActions({ detail, emailReady, onSaved }) {
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 qualification === o.value
                   ? o.className
-                  : 'bg-jv-card text-jv-muted border-jv-border hover:border-jv-amber/30'
+                  : 'bg-aunshin-twilight-2 text-aunshin-quiet-d border-aunshin-rule-d hover:border-aunshin-sodium/30'
               }`}
             >
               {o.label}
@@ -331,13 +331,13 @@ function DispositionActions({ detail, emailReady, onSaved }) {
       </div>
 
       <div>
-        <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-2">Notes</h4>
+        <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-2">Notes</h4>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="Add call notes..."
-          className="w-full bg-jv-card border border-jv-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-jv-muted focus:outline-none focus:border-jv-amber/50 resize-none"
+          className="w-full bg-aunshin-twilight-2 border border-aunshin-rule-d rounded-lg px-3 py-2 text-sm text-white placeholder:text-aunshin-quiet-d focus:outline-none focus:border-aunshin-sodium/50 resize-none"
         />
       </div>
 
@@ -349,13 +349,13 @@ function DispositionActions({ detail, emailReady, onSaved }) {
           title={!emailReady ? 'Re-login required to enable email' : ''}
           className={`flex items-center gap-2 text-sm ${!emailReady ? 'opacity-40 cursor-not-allowed' : ''}`}
         >
-          <span className={`w-10 h-5 rounded-full transition-colors ${sendEmail && emailReady ? 'bg-jv-green' : 'bg-jv-border'} relative`}>
+          <span className={`w-10 h-5 rounded-full transition-colors ${sendEmail && emailReady ? 'bg-aunshin-success' : 'bg-aunshin-rule-d'} relative`}>
             <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${sendEmail && emailReady ? 'translate-x-5' : 'translate-x-0.5'}`} />
           </span>
-          <span className="text-jv-bone">Send follow-up email</span>
+          <span className="text-aunshin-peach-light">Send follow-up email</span>
         </button>
         {!emailReady && (
-          <p className="text-[11px] text-jv-amber mt-1">
+          <p className="text-[11px] text-aunshin-sodium mt-1">
             <a href="/api/auth/login" className="underline">Re-login</a> to enable email sending
           </p>
         )}
@@ -364,16 +364,16 @@ function DispositionActions({ detail, emailReady, onSaved }) {
       <button
         onClick={handleSave}
         disabled={saving || !disposition}
-        className="w-full py-2.5 rounded-lg bg-jv-amber text-black text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+        className="w-full py-2.5 rounded-lg bg-aunshin-sodium text-black text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
       >
         {saving ? 'Saving...' : 'Save'}
       </button>
 
       {status === 'saved' && (
-        <p className="text-xs text-jv-green text-center">Saved ✓</p>
+        <p className="text-xs text-aunshin-success text-center">Saved ✓</p>
       )}
       {status === 'error' && (
-        <p className="text-xs text-jv-red text-center">Failed to save — try again</p>
+        <p className="text-xs text-aunshin-alert text-center">Failed to save — try again</p>
       )}
     </div>
   );
@@ -409,21 +409,21 @@ function TimelineTab({ callId }) {
     };
   }, [callId]);
 
-  if (loading) return <p className="text-center text-jv-muted py-4 text-sm">Loading timeline...</p>;
-  if (error) return <p className="text-center text-jv-red py-4 text-sm">{error}</p>;
+  if (loading) return <p className="text-center text-aunshin-quiet-d py-4 text-sm">Loading timeline...</p>;
+  if (error) return <p className="text-center text-aunshin-alert py-4 text-sm">{error}</p>;
   if (!items || items.length === 0) {
-    return <p className="text-center text-jv-muted py-4 text-sm">No prior interactions with this contact.</p>;
+    return <p className="text-center text-aunshin-quiet-d py-4 text-sm">No prior interactions with this contact.</p>;
   }
 
   return (
     <div className="space-y-2">
       {items.map((it) => (
-        <div key={it.id} className="bg-jv-card/50 border border-jv-border rounded-lg p-3">
+        <div key={it.id} className="bg-aunshin-twilight-2/50 border border-aunshin-rule-d rounded-lg p-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-jv-muted capitalize">{it.channel}</span>
-            <span className="text-xs text-jv-muted">{formatRelativeTime(it.createdAt)}</span>
+            <span className="text-xs text-aunshin-quiet-d capitalize">{it.channel}</span>
+            <span className="text-xs text-aunshin-quiet-d">{formatRelativeTime(it.createdAt)}</span>
           </div>
-          {it.summary && <p className="text-sm text-jv-bone/80 leading-relaxed">{it.summary}</p>}
+          {it.summary && <p className="text-sm text-aunshin-peach-light/80 leading-relaxed">{it.summary}</p>}
           {it.disposition && (
             <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${DISP_PILL[it.disposition] || 'bg-gray-500/20 text-gray-400'}`}>
               {humanizeDisposition(it.disposition)}
@@ -453,11 +453,11 @@ function DetailModal({ detail, loading, emailReady, onClose, onUpdated }) {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: '100%', opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="relative bg-jv-card border border-jv-border rounded-t-2xl sm:rounded-2xl lg:rounded-none w-full sm:max-w-lg lg:max-w-xl max-h-[85vh] sm:max-h-[90vh] lg:max-h-screen lg:h-screen overflow-hidden flex flex-col"
+            className="relative bg-aunshin-twilight-2 border border-aunshin-rule-d rounded-t-2xl sm:rounded-2xl lg:rounded-none w-full sm:max-w-lg lg:max-w-xl max-h-[85vh] sm:max-h-[90vh] lg:max-h-screen lg:h-screen overflow-hidden flex flex-col"
           >
             {loading && !detail ? (
               <div className="flex-1 flex items-center justify-center p-8">
-                <p className="text-jv-muted">Loading...</p>
+                <p className="text-aunshin-quiet-d">Loading...</p>
               </div>
             ) : detail ? (
               <DetailContent detail={detail} emailReady={emailReady} onClose={onClose} onUpdated={onUpdated} />
@@ -483,29 +483,29 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
   return (
     <>
       {/* Sticky header */}
-      <div className="sticky top-0 bg-jv-card border-b border-jv-border px-4 py-3 flex items-center justify-between z-10 shrink-0">
+      <div className="sticky top-0 bg-aunshin-twilight-2 border-b border-aunshin-rule-d px-4 py-3 flex items-center justify-between z-10 shrink-0">
         <div className="min-w-0 flex-1">
           <p className="font-semibold truncate">{detail.lead_name || 'Unknown'}</p>
-          <p className="text-sm text-jv-muted truncate">{detail.lead_company || ''}</p>
+          <p className="text-sm text-aunshin-quiet-d truncate">{detail.lead_company || ''}</p>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-3">
-          <span className="text-xs text-jv-muted">{formatRelativeTime(detail.created_at)}</span>
+          <span className="text-xs text-aunshin-quiet-d">{formatRelativeTime(detail.created_at)}</span>
           {cockpitId && (
             <button
               onClick={() => navigate(`/cockpit/${encodeURIComponent(cockpitId)}`)}
-              className="text-xs px-3 py-1.5 rounded-full bg-jv-amber/15 text-jv-amber hover:bg-jv-amber/30 transition-colors font-semibold whitespace-nowrap"
+              className="text-xs px-3 py-1.5 rounded-full bg-aunshin-sodium/15 text-aunshin-sodium hover:bg-aunshin-sodium/30 transition-colors font-semibold whitespace-nowrap"
             >
               Cockpit →
             </button>
           )}
-          <button onClick={onClose} className="text-jv-muted hover:text-white text-lg w-8 h-8 flex items-center justify-center" aria-label="Close">
+          <button onClick={onClose} className="text-aunshin-quiet-d hover:text-white text-lg w-8 h-8 flex items-center justify-center" aria-label="Close">
             ×
           </button>
         </div>
       </div>
 
       {/* Meta row */}
-      <div className="px-4 py-2 border-b border-jv-border shrink-0 flex items-center gap-3 text-xs text-jv-muted">
+      <div className="px-4 py-2 border-b border-aunshin-rule-d shrink-0 flex items-center gap-3 text-xs text-aunshin-quiet-d">
         <span>{formatDuration(detail.duration_seconds)}</span>
         <span>·</span>
         <span className="capitalize">{detail.caller_identity}</span>
@@ -521,12 +521,12 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
 
       {/* Tabs */}
       <Tabs.Root defaultValue="summary" className="flex-1 flex flex-col overflow-hidden">
-        <Tabs.List className="flex border-b border-jv-border shrink-0 bg-jv-card">
+        <Tabs.List className="flex border-b border-aunshin-rule-d shrink-0 bg-aunshin-twilight-2">
           {['summary', 'transcript', 'actions', 'timeline'].map((val) => (
             <Tabs.Trigger
               key={val}
               value={val}
-              className="flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-jv-muted data-[state=active]:text-jv-amber data-[state=active]:border-b-2 data-[state=active]:border-jv-amber transition-colors"
+              className="flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-aunshin-quiet-d data-[state=active]:text-aunshin-sodium data-[state=active]:border-b-2 data-[state=active]:border-aunshin-sodium transition-colors"
             >
               {val}
             </Tabs.Trigger>
@@ -536,25 +536,25 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
         <div className="flex-1 overflow-y-auto scroll-container">
           <Tabs.Content value="summary" className="p-4 space-y-4">
             <div>
-              <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-1">Summary</h4>
+              <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-1">Summary</h4>
               <p className="text-sm leading-relaxed">{summary}</p>
             </div>
             {actionItems && (
               <div>
-                <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-1">Action Items</h4>
+                <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-1">Action Items</h4>
                 {Array.isArray(actionItems.action_items) ? (
                   <ul className="text-sm space-y-1">
                     {actionItems.action_items.map((item, i) => (
                       <li key={i} className="flex gap-2">
-                        <span className="text-jv-amber shrink-0">-</span>
+                        <span className="text-aunshin-sodium shrink-0">-</span>
                         <span>{item}</span>
                       </li>
                     ))}
                   </ul>
                 ) : typeof actionItems === 'object' ? (
                   <div className="text-sm space-y-1">
-                    {actionItems.next_step && <p><span className="text-jv-amber">Next:</span> {actionItems.next_step}</p>}
-                    {actionItems.disposition_suggestion && <p><span className="text-jv-muted">Suggested:</span> {actionItems.disposition_suggestion}</p>}
+                    {actionItems.next_step && <p><span className="text-aunshin-sodium">Next:</span> {actionItems.next_step}</p>}
+                    {actionItems.disposition_suggestion && <p><span className="text-aunshin-quiet-d">Suggested:</span> {actionItems.disposition_suggestion}</p>}
                   </div>
                 ) : (
                   <p className="text-sm">{String(actionItems)}</p>
@@ -563,17 +563,17 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
             )}
             {productList.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-1">Products Discussed</h4>
+                <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-1">Products Discussed</h4>
                 <div className="flex flex-wrap gap-1">
                   {productList.map((p, i) => (
-                    <span key={i} className="text-xs px-2 py-0.5 rounded bg-jv-amber/10 text-jv-amber">{p}</span>
+                    <span key={i} className="text-xs px-2 py-0.5 rounded bg-aunshin-sodium/10 text-aunshin-sodium">{p}</span>
                   ))}
                 </div>
               </div>
             )}
             {sentiment && (
               <div>
-                <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-1">Sentiment</h4>
+                <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-1">Sentiment</h4>
                 <p className="text-sm capitalize">
                   {typeof sentiment === 'object'
                     ? sentiment.overall || JSON.stringify(sentiment)
@@ -581,10 +581,10 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
                 </p>
                 {typeof sentiment === 'object' && sentiment.objections?.length > 0 && (
                   <div className="mt-1 text-sm">
-                    <span className="text-jv-muted text-xs">Objections:</span>
+                    <span className="text-aunshin-quiet-d text-xs">Objections:</span>
                     <ul className="mt-0.5 space-y-0.5">
                       {sentiment.objections.map((o, i) => (
-                        <li key={i} className="text-xs text-jv-bone/80">- {o}</li>
+                        <li key={i} className="text-xs text-aunshin-peach-light/80">- {o}</li>
                       ))}
                     </ul>
                   </div>
@@ -593,7 +593,7 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
             )}
             {competitive && (
               <div>
-                <h4 className="text-xs font-semibold tracking-wider uppercase text-jv-muted mb-1">Competitive Intel</h4>
+                <h4 className="text-xs font-semibold tracking-wider uppercase text-aunshin-quiet-d mb-1">Competitive Intel</h4>
                 <p className="text-sm">
                   {typeof competitive === 'object'
                     ? (competitive.mentions || competitive.equipment || []).join(', ') || JSON.stringify(competitive)
@@ -606,7 +606,7 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
                 href={detail.recording_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-jv-amber hover:underline block"
+                className="text-sm text-aunshin-sodium hover:underline block"
               >
                 Listen to recording →
               </a>
@@ -615,11 +615,11 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
 
           <Tabs.Content value="transcript" className="p-4">
             {transcript ? (
-              <pre className="text-xs text-jv-bone/80 leading-relaxed whitespace-pre-wrap font-sans">
+              <pre className="text-xs text-aunshin-peach-light/80 leading-relaxed whitespace-pre-wrap font-sans">
                 {transcript.length > 10000 ? transcript.substring(0, 10000) + '\n\n[truncated]' : transcript}
               </pre>
             ) : (
-              <p className="text-center text-jv-muted py-4 text-sm">No transcript available</p>
+              <p className="text-center text-aunshin-quiet-d py-4 text-sm">No transcript available</p>
             )}
           </Tabs.Content>
 
@@ -740,17 +740,17 @@ export default function Activity({ identity, role, emailReady }) {
 
       <div className="flex-1 overflow-y-auto scroll-container p-4">
         {!loading && total > 0 && (
-          <p className="text-xs text-jv-muted mb-3">
+          <p className="text-xs text-aunshin-quiet-d mb-3">
             {total} call{total !== 1 ? 's' : ''}
           </p>
         )}
 
         {loading && activity.length === 0 && (
-          <p className="text-center text-jv-muted py-8">Loading...</p>
+          <p className="text-center text-aunshin-quiet-d py-8">Loading...</p>
         )}
-        {error && <p className="text-center text-jv-red py-8">{error}</p>}
+        {error && <p className="text-center text-aunshin-alert py-8">{error}</p>}
         {!loading && !error && activity.length === 0 && (
-          <p className="text-center text-jv-muted py-8">
+          <p className="text-center text-aunshin-quiet-d py-8">
             {search || filter !== 'all' ? 'No matching activity' : 'No activity yet'}
           </p>
         )}
@@ -775,7 +775,7 @@ export default function Activity({ identity, role, emailReady }) {
         {hasMore && !loading && (
           <button
             onClick={loadMore}
-            className="w-full mt-4 py-2 text-sm text-jv-muted hover:text-white transition-colors"
+            className="w-full mt-4 py-2 text-sm text-aunshin-quiet-d hover:text-white transition-colors"
           >
             Load more
           </button>

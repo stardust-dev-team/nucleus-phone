@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        /* ── Aunshin · Twilight 60-30-10 (active brand 2026-05-01) ── */
+        /* ── Aunshin · Twilight 60-30-10 ── */
         'aunshin-peach':       '#E1B482',
         'aunshin-peach-light': '#EFD1AF',
         'aunshin-peach-deep':  '#A06343',
@@ -17,28 +17,9 @@ export default {
         'aunshin-quiet':       '#8A6B58',
         'aunshin-quiet-d':     '#C99A78',
 
-        /* ── Legacy Sentinel surfaces (cockpit UI; queued for migration to aunshin-* tokens) ── */
-        'jv-bg': '#06050F',
-        'jv-card': '#0F0D29',
-        'jv-elevated': '#1E1B4B',
-        'jv-border': 'rgba(49,46,129,0.5)',
-        'jv-muted': 'rgba(245,245,244,0.5)',
-
-        /* ── Legacy Sentinel dual-temperature (cockpit UI; queued for migration) ── */
-        'jv-amber': '#F59E0B',
-        'jv-amber-deep': '#D97706',
-        'jv-violet': '#8B5CF6',
-        'jv-violet-deep': '#6D28D9',
-        'jv-crown': '#4338CA',
-
-        /* ── Semantic states (brand-neutral; keep) ── */
-        'jv-green': '#22C55E',
-        'jv-red': '#DC2626',
-        /* jv-blue legacy alias removed 2026-05-01; consumers migrated to jv-amber (same hex). */
-
-        /* ── Text (legacy Sentinel; queued) ── */
-        'jv-bone': '#F5F5F4',
-        'jv-pewter': '#78716C',
+        /* ── Semantic states (brand-neutral) ── */
+        'aunshin-success': '#22C55E',
+        'aunshin-alert':   '#DC2626',
 
         /* ── Cockpit CSS-var bridges ── */
         'cp-bg': 'var(--cockpit-bg)',
@@ -49,15 +30,17 @@ export default {
         'cp-border': 'var(--cockpit-card-border)',
       },
       fontFamily: {
-        /* Aunshin display + body. Mono retained from Sentinel era. */
+        /* Aunshin display + body. */
         'aunshin-display': ['Fraunces', 'Georgia', 'serif'],
         'aunshin-body':    ['Inter', 'system-ui', 'sans-serif'],
-        sans: ['Roboto', 'system-ui', 'sans-serif'],   /* legacy cockpit body — queued for Inter swap */
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['JetBrains Mono', 'Berkeley Mono', 'Fira Code', 'monospace'],
       },
       borderRadius: {
-        aunshin: '0px',   /* hard edges — Aunshin uses sharp corners */
-        sentinel: '3px',  /* legacy; cockpit UI still uses */
+        /* Cross-platform parity with iOS NucleusDesignSystem AunshinSpacing.
+           Hard-edges rule applies to typography/marks/dividers, not card surfaces. */
+        aunshin: '3px',
+        'aunshin-lg': '6px',
       },
     },
   },

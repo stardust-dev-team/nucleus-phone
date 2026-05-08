@@ -4,18 +4,18 @@ import { saveDisposition } from '../lib/api';
 import { formatDuration } from '../lib/format';
 
 const DISPOSITIONS = [
-  { value: 'connected', label: 'Connected', color: 'bg-jv-green/20 text-jv-green border-jv-green/30' },
-  { value: 'voicemail', label: 'Voicemail', color: 'bg-jv-amber/20 text-jv-amber border-jv-amber/30' },
+  { value: 'connected', label: 'Connected', color: 'bg-aunshin-success/20 text-aunshin-success border-aunshin-success/30' },
+  { value: 'voicemail', label: 'Voicemail', color: 'bg-aunshin-sodium/20 text-aunshin-sodium border-aunshin-sodium/30' },
   { value: 'no_answer', label: 'No Answer', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-  { value: 'callback_requested', label: 'Callback', color: 'bg-jv-amber/20 text-jv-amber border-jv-amber/30' },
-  { value: 'not_interested', label: 'Not Interested', color: 'bg-jv-red/20 text-jv-red border-jv-red/30' },
-  { value: 'wrong_number', label: 'Wrong Number', color: 'bg-jv-red/20 text-jv-red border-jv-red/30' },
+  { value: 'callback_requested', label: 'Callback', color: 'bg-aunshin-sodium/20 text-aunshin-sodium border-aunshin-sodium/30' },
+  { value: 'not_interested', label: 'Not Interested', color: 'bg-aunshin-alert/20 text-aunshin-alert border-aunshin-alert/30' },
+  { value: 'wrong_number', label: 'Wrong Number', color: 'bg-aunshin-alert/20 text-aunshin-alert border-aunshin-alert/30' },
   { value: 'gatekeeper', label: 'Gatekeeper', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
 ];
 
 const QUALIFICATIONS = [
-  { value: 'hot', label: 'Hot', color: 'bg-jv-red/20 text-jv-red border-jv-red/30' },
-  { value: 'warm', label: 'Warm', color: 'bg-jv-amber/20 text-jv-amber border-jv-amber/30' },
+  { value: 'hot', label: 'Hot', color: 'bg-aunshin-alert/20 text-aunshin-alert border-aunshin-alert/30' },
+  { value: 'warm', label: 'Warm', color: 'bg-aunshin-sodium/20 text-aunshin-sodium border-aunshin-sodium/30' },
   { value: 'info_only', label: 'Info Only', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
 ];
 
@@ -82,20 +82,20 @@ export default function CallComplete({ callState, identity, emailReady }) {
       {/* Header */}
       <div className="text-center">
         <h2 className="text-lg font-semibold">{name}</h2>
-        <p className="text-sm text-jv-muted">{props.company || ''}</p>
-        <p className="text-sm text-jv-muted mt-1">Duration: {formatDuration(elapsed)}</p>
+        <p className="text-sm text-aunshin-quiet-d">{props.company || ''}</p>
+        <p className="text-sm text-aunshin-quiet-d mt-1">Duration: {formatDuration(elapsed)}</p>
       </div>
 
       {/* Disposition */}
       <div>
-        <label className="block text-sm text-jv-muted mb-2">How did it go?</label>
+        <label className="block text-sm text-aunshin-quiet-d mb-2">How did it go?</label>
         <div className="grid grid-cols-2 gap-2">
           {DISPOSITIONS.map((d) => (
             <button
               key={d.value}
               onClick={() => setDisposition(d.value)}
               className={`py-2.5 px-3 rounded-lg text-sm font-medium border transition-colors ${
-                disposition === d.value ? d.color : 'bg-jv-card border-jv-border text-jv-muted'
+                disposition === d.value ? d.color : 'bg-aunshin-twilight-2 border-aunshin-rule-d text-aunshin-quiet-d'
               }`}
             >
               {d.label}
@@ -108,14 +108,14 @@ export default function CallComplete({ callState, identity, emailReady }) {
       {disposition === 'connected' && (
         <>
           <div>
-            <label className="block text-sm text-jv-muted mb-2">How interested?</label>
+            <label className="block text-sm text-aunshin-quiet-d mb-2">How interested?</label>
             <div className="flex gap-2">
               {QUALIFICATIONS.map((q) => (
                 <button
                   key={q.value}
                   onClick={() => setQualification(q.value)}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
-                    qualification === q.value ? q.color : 'bg-jv-card border-jv-border text-jv-muted'
+                    qualification === q.value ? q.color : 'bg-aunshin-twilight-2 border-aunshin-rule-d text-aunshin-quiet-d'
                   }`}
                 >
                   {q.label}
@@ -125,7 +125,7 @@ export default function CallComplete({ callState, identity, emailReady }) {
           </div>
 
           <div>
-            <label className="block text-sm text-jv-muted mb-2">Products discussed</label>
+            <label className="block text-sm text-aunshin-quiet-d mb-2">Products discussed</label>
             <div className="flex flex-wrap gap-2">
               {PRODUCTS.map((p) => (
                 <button
@@ -133,8 +133,8 @@ export default function CallComplete({ callState, identity, emailReady }) {
                   onClick={() => toggleProduct(p)}
                   className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                     products.includes(p)
-                      ? 'bg-jv-amber/20 text-jv-amber border-jv-amber/30'
-                      : 'bg-jv-card border-jv-border text-jv-muted'
+                      ? 'bg-aunshin-sodium/20 text-aunshin-sodium border-aunshin-sodium/30'
+                      : 'bg-aunshin-twilight-2 border-aunshin-rule-d text-aunshin-quiet-d'
                   }`}
                 >
                   {p}
@@ -146,12 +146,12 @@ export default function CallComplete({ callState, identity, emailReady }) {
           {qualification && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-sm text-jv-muted">Send follow-up email</label>
+                <label className="text-sm text-aunshin-quiet-d">Send follow-up email</label>
                 <button
                   onClick={() => emailReady && setSendFollowUp(!sendFollowUp)}
                   disabled={!emailReady}
                   className={`w-10 h-5 rounded-full transition-colors relative ${
-                    sendFollowUp && emailReady ? 'bg-jv-green' : 'bg-jv-border'
+                    sendFollowUp && emailReady ? 'bg-aunshin-success' : 'bg-aunshin-rule-d'
                   } ${!emailReady ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                   title={!emailReady ? 'Re-login required to enable email' : ''}
                 >
@@ -166,12 +166,12 @@ export default function CallComplete({ callState, identity, emailReady }) {
                   value={leadEmail}
                   onChange={(e) => setLeadEmail(e.target.value)}
                   placeholder="Lead email (optional — auto-resolves from HubSpot)"
-                  className="w-full px-4 py-2.5 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-amber text-sm"
+                  className="w-full px-4 py-2.5 rounded-lg bg-aunshin-twilight-2 border border-aunshin-rule-d text-white placeholder-aunshin-quiet-d focus:outline-none focus:border-aunshin-sodium text-sm"
                 />
               )}
               {!emailReady && (
-                <p className="text-xs text-jv-muted mt-1">
-                  <a href="/api/auth/login" className="text-jv-amber underline">Re-login</a> to enable email follow-ups
+                <p className="text-xs text-aunshin-quiet-d mt-1">
+                  <a href="/api/auth/login" className="text-aunshin-sodium underline">Re-login</a> to enable email follow-ups
                 </p>
               )}
             </div>
@@ -181,12 +181,12 @@ export default function CallComplete({ callState, identity, emailReady }) {
 
       {/* Notes */}
       <div>
-        <label className="block text-sm text-jv-muted mb-2">Notes</label>
+        <label className="block text-sm text-aunshin-quiet-d mb-2">Notes</label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
-          className="w-full px-4 py-3 rounded-lg bg-jv-card border border-jv-border text-white placeholder-jv-muted focus:outline-none focus:border-jv-amber text-sm resize-none"
+          className="w-full px-4 py-3 rounded-lg bg-aunshin-twilight-2 border border-aunshin-rule-d text-white placeholder-aunshin-quiet-d focus:outline-none focus:border-aunshin-sodium text-sm resize-none"
         />
       </div>
 
@@ -195,7 +195,7 @@ export default function CallComplete({ callState, identity, emailReady }) {
         <button
           onClick={handleSave}
           disabled={!disposition || saving}
-          className="flex-1 py-3 rounded-sentinel bg-jv-amber text-black font-semibold disabled:opacity-40 transition-colors"
+          className="flex-1 py-3 rounded-aunshin bg-aunshin-sodium text-black font-semibold disabled:opacity-40 transition-colors"
         >
           {saving
             ? (sendFollowUp && emailReady && disposition === 'connected' && qualification ? 'Sending email...' : 'Saving...')
