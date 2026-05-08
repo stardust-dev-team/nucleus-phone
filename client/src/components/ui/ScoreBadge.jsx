@@ -2,10 +2,10 @@ import Tooltip from './Tooltip';
 
 const COLORS = {
   green:  { bg: 'var(--cockpit-green-50, #052e16)', text: 'var(--cockpit-green-500, #22C55E)' },
-  amber:  { bg: 'var(--cockpit-amber-50, #451a03)', text: 'var(--cockpit-amber-600, #D97706)' },
-  violet: { bg: 'var(--cockpit-purple-50, #2e1065)', text: 'var(--cockpit-purple-500, #8B5CF6)' },
+  amber:  { bg: 'var(--cockpit-amber-50, #451a03)', text: 'var(--cockpit-amber-600, #D89945)' },
+  violet: { bg: 'var(--cockpit-purple-50, #2e1065)', text: 'var(--cockpit-purple-500, #C99A78)' },
   red:    { bg: 'var(--cockpit-red-bg, #450a0a)', text: 'var(--cockpit-red-text, #DC2626)' },
-  gray:   { bg: 'var(--cockpit-gray-100, #1c1917)', text: 'var(--cockpit-text-muted, #78716C)' },
+  gray:   { bg: 'var(--cockpit-gray-100, #1c1917)', text: 'var(--cockpit-text-muted, #C99A78)' },
 };
 
 export default function ScoreBadge({ label, color = 'gray', tooltip }) {

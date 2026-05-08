@@ -23,16 +23,16 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header — Sentinel Abyss */}
-      <header className="flex items-center justify-between px-4 py-3 bg-aunshin-twilight-2" style={{ borderBottom: '1px solid rgba(49,46,129,0.3)' }}>
+      {/* Header */}
+      <header className="flex items-center justify-between px-4 py-3 bg-aunshin-twilight-2" style={{ borderBottom: '1px solid rgba(92,57,43,0.3)' }}>
         <div className="flex items-center gap-3">
           <img
             src="/joruva-logo-white.svg"
             alt="Aunshin"
             className="h-6"
           />
-          <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
-          <span className="text-[11px] font-semibold tracking-[2px] uppercase" style={{ color: '#F97316' }}>Phone</span>
+          <div className="h-4 w-px" style={{ background: 'rgba(92,57,43,0.4)' }} />
+          <span className="text-[11px] font-semibold tracking-[2px] uppercase" style={{ color: '#F2B86A' }}>Phone</span>
         </div>
         <div className="flex items-center gap-3">
           {role === 'admin' && (
@@ -40,7 +40,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
               href="/debug"
               onClick={(e) => { e.preventDefault(); navigate('/debug'); }}
               className="text-[11px] font-semibold tracking-wide transition-colors hover:text-white"
-              style={{ color: '#F59E0B', textDecoration: 'none' }}
+              style={{ color: '#F2B86A', textDecoration: 'none' }}
               title="Debug Dashboard"
               aria-label="Debug Dashboard"
             >
@@ -65,7 +65,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
           >
             Compressor Fundamentals
           </a>
-          <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
+          <div className="h-4 w-px" style={{ background: 'rgba(92,57,43,0.4)' }} />
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[deviceStatus] || 'bg-gray-500'}`} />
             <span className="text-sm capitalize text-aunshin-peach-light">{identity}</span>
@@ -73,7 +73,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
           <button
             onClick={onLogout}
             className="text-xs transition-colors"
-            style={{ color: '#78716C' }}
+            style={{ color: '#C99A78' }}
           >
             Logout
           </button>
@@ -92,8 +92,8 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
         <Outlet />
       </main>
 
-      {/* Bottom nav — Sentinel */}
-      <nav className="flex bg-aunshin-twilight-2 pb-[env(safe-area-inset-bottom)]" style={{ borderTop: '1px solid rgba(49,46,129,0.3)' }}>
+      {/* Bottom nav */}
+      <nav className="flex bg-aunshin-twilight-2 pb-[env(safe-area-inset-bottom)]" style={{ borderTop: '1px solid rgba(92,57,43,0.3)' }}>
         {tabs.map((tab) => {
           const active = location.pathname === tab.path;
           return (
@@ -101,7 +101,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
               key={tab.path}
               onClick={() => navigate(tab.path)}
               className="flex-1 flex flex-col items-center py-3 gap-1 transition-colors"
-              style={{ color: active ? '#F59E0B' : '#78716C' }}
+              style={{ color: active ? '#F2B86A' : '#C99A78' }}
             >
               <span className="text-lg">{tab.icon}</span>
               <span className="text-[10px] font-medium tracking-wider uppercase">{tab.label}</span>
