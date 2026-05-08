@@ -1,11 +1,11 @@
 {
-  "name": "Nucleus Phone",
-  "short_name": "Nucleus",
+  "name": "Aunshin Phone",
+  "short_name": "Aunshin",
   "description": "Joruva Sales Dialer",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#06050F",
-  "theme_color": "#F59E0B",
+  "background_color": "#18090A",
+  "theme_color": "#F2B86A",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }

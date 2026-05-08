@@ -71,22 +71,22 @@ export default function Dialer({ identity, twilioHook, callState }) {
   return (
     <div className="relative flex flex-col h-full">
       {/* Compact call bar — always visible */}
-      <div className="shrink-0 bg-jv-card border-b border-jv-border px-4 py-3">
+      <div className="shrink-0 bg-aunshin-twilight-2 border-b border-aunshin-rule-d px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-jv-elevated flex items-center justify-center shrink-0">
-              <span className="text-lg font-semibold text-jv-amber">
+            <div className="w-10 h-10 rounded-full bg-aunshin-twilight-2 flex items-center justify-center shrink-0">
+              <span className="text-lg font-semibold text-aunshin-sodium">
                 {(props.firstname || '?')[0].toUpperCase()}
               </span>
             </div>
             <div className="min-w-0">
               <p className="font-medium truncate text-sm">{name}</p>
-              <p className="text-xs text-jv-muted truncate">{props.company || ''}</p>
+              <p className="text-xs text-aunshin-quiet-d truncate">{props.company || ''}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <div className="text-right">
-              <p className={`text-xs ${status === 'connected' ? 'text-jv-green' : 'text-jv-amber'}`}>
+              <p className={`text-xs ${status === 'connected' ? 'text-aunshin-success' : 'text-aunshin-sodium'}`}>
                 {STATUS_TEXT[status] || status}
               </p>
               <p className="text-lg font-mono font-light tracking-wider">
@@ -101,7 +101,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
       <div className="flex-1 overflow-y-auto scroll-container px-4 py-4 space-y-4 pb-28">
         {cockpitData ? (
           <div
-            data-theme="dark" /* Hardcoded: Dialer chrome uses jv-* dark, so panels must match */
+            data-theme="dark" /* Hardcoded: Dialer chrome uses Aunshin twilight, so panels must match */
             className="bg-cp-bg text-cp-text rounded-lg"
           >
             <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-6 px-4 py-4">
@@ -135,28 +135,28 @@ export default function Dialer({ identity, twilioHook, callState }) {
         ) : (
           /* Fallback: basic call screen for quick-dial / shadow joins */
           <div className="flex flex-col items-center justify-center py-16">
-            <div className="w-20 h-20 rounded-full bg-jv-elevated flex items-center justify-center mb-4">
-              <span className="text-3xl font-semibold text-jv-amber">
+            <div className="w-20 h-20 rounded-full bg-aunshin-twilight-2 flex items-center justify-center mb-4">
+              <span className="text-3xl font-semibold text-aunshin-sodium">
                 {(props.firstname || '?')[0].toUpperCase()}
               </span>
             </div>
             <h2 className="text-xl font-semibold">{name}</h2>
-            <p className="text-jv-muted">{props.company || ''}</p>
-            <p className="text-sm text-jv-muted mt-1">{props.phone || props.mobilephone || ''}</p>
+            <p className="text-aunshin-quiet-d">{props.company || ''}</p>
+            <p className="text-sm text-aunshin-quiet-d mt-1">{props.phone || props.mobilephone || ''}</p>
           </div>
         )}
       </div>
 
       {/* Keypad overlay */}
       {showKeypad && (
-        <div className="fixed inset-0 bg-jv-bg/95 flex items-center justify-center z-10">
+        <div className="fixed inset-0 bg-aunshin-twilight/95 flex items-center justify-center z-10">
           <div className="text-center">
             <div className="grid grid-cols-3 gap-3 w-56 mb-6">
               {DIGITS.map((d) => (
                 <button
                   key={d}
                   onClick={() => sendDigits(d)}
-                  className="w-16 h-16 rounded-full bg-jv-elevated text-xl font-medium flex items-center justify-center hover:bg-jv-card transition-colors mx-auto"
+                  className="w-16 h-16 rounded-full bg-aunshin-twilight-2 text-xl font-medium flex items-center justify-center hover:bg-aunshin-twilight-2 transition-colors mx-auto"
                 >
                   {d}
                 </button>
@@ -164,7 +164,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
             </div>
             <button
               onClick={() => setShowKeypad(false)}
-              className="text-sm text-jv-muted hover:text-white"
+              className="text-sm text-aunshin-quiet-d hover:text-white"
             >
               Close
             </button>
@@ -173,13 +173,13 @@ export default function Dialer({ identity, twilioHook, callState }) {
       )}
 
       {/* Sticky bottom controls */}
-      <div className="sticky bottom-0 bg-jv-bg border-t border-jv-border px-4 py-3">
+      <div className="sticky bottom-0 bg-aunshin-twilight border-t border-aunshin-rule-d px-4 py-3">
         <div className="flex justify-center gap-6">
           {/* Mute */}
           <button
             onClick={toggleMute}
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
-              muted ? 'bg-jv-red/20 text-jv-red' : 'bg-jv-elevated text-white'
+              muted ? 'bg-aunshin-alert/20 text-aunshin-alert' : 'bg-aunshin-twilight-2 text-white'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -195,7 +195,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
           <button
             onClick={() => setShowKeypad(!showKeypad)}
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
-              showKeypad ? 'bg-jv-amber/20 text-jv-amber' : 'bg-jv-elevated text-white'
+              showKeypad ? 'bg-aunshin-sodium/20 text-aunshin-sodium' : 'bg-aunshin-twilight-2 text-white'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -206,7 +206,7 @@ export default function Dialer({ identity, twilioHook, callState }) {
           {/* End call */}
           <button
             onClick={endCurrentCall}
-            className="w-14 h-14 rounded-full bg-jv-red flex items-center justify-center hover:bg-red-600 transition-colors"
+            className="w-14 h-14 rounded-full bg-aunshin-alert flex items-center justify-center hover:bg-red-600 transition-colors"
           >
             <svg className="w-7 h-7 text-white rotate-[135deg]" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
