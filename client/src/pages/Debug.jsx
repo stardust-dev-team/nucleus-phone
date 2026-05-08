@@ -11,7 +11,7 @@ function formatAge(minutes) {
 function healthColor(ageMinutes) {
   if (ageMinutes == null) return '#DC2626';
   if (ageMinutes < 10) return '#22C55E';
-  if (ageMinutes < 60) return '#F59E0B';
+  if (ageMinutes < 60) return '#F2B86A';
   return '#DC2626';
 }
 
@@ -20,12 +20,12 @@ function HealthCard({ source, data }) {
   return (
     <div
       className="rounded-lg px-4 py-3 flex items-center gap-3"
-      style={{ background: '#0F0D29', border: '1px solid rgba(49,46,129,0.5)' }}
+      style={{ background: '#2A1213', border: '1px solid rgba(92,57,43,0.5)' }}
     >
       <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
       <div className="min-w-0">
         <div className="text-sm font-medium text-aunshin-peach-light truncate">{source}</div>
-        <div className="text-xs" style={{ color: 'rgba(245,245,244,0.5)' }}>
+        <div className="text-xs" style={{ color: 'rgba(239,209,175,0.5)' }}>
           {data ? formatAge(data.ageMinutes) : 'never seen'}
         </div>
       </div>
@@ -34,7 +34,7 @@ function HealthCard({ source, data }) {
 }
 
 function EventRow({ event, expanded, onToggle }) {
-  const levelColor = event.level === 'error' ? '#DC2626' : event.level === 'warn' ? '#F59E0B' : 'rgba(245,245,244,0.5)';
+  const levelColor = event.level === 'error' ? '#DC2626' : event.level === 'warn' ? '#F2B86A' : 'rgba(239,209,175,0.5)';
   const ts = new Date(event.ts).toLocaleTimeString();
   return (
     <>
@@ -42,7 +42,7 @@ function EventRow({ event, expanded, onToggle }) {
         className="cursor-pointer hover:bg-aunshin-twilight-2/50 transition-colors"
         onClick={onToggle}
       >
-        <td className="px-3 py-2 text-xs font-mono" style={{ color: 'rgba(245,245,244,0.5)' }}>{ts}</td>
+        <td className="px-3 py-2 text-xs font-mono" style={{ color: 'rgba(239,209,175,0.5)' }}>{ts}</td>
         <td className="px-3 py-2">
           <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: levelColor }} />
           <span className="text-xs" style={{ color: levelColor }}>{event.level}</span>
@@ -56,7 +56,7 @@ function EventRow({ event, expanded, onToggle }) {
           <td colSpan={5} className="px-3 py-2">
             <pre
               className="text-xs font-mono p-3 rounded overflow-x-auto"
-              style={{ background: '#06050F', color: 'rgba(245,245,244,0.7)', maxHeight: '200px' }}
+              style={{ background: '#18090A', color: 'rgba(239,209,175,0.7)', maxHeight: '200px' }}
             >
               {JSON.stringify(event.detail, null, 2)}
             </pre>
@@ -105,7 +105,7 @@ export default function Debug() {
       {debugOff && (
         <div
           className="rounded-lg px-4 py-3 text-center text-sm"
-          style={{ background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', color: '#F59E0B' }}
+          style={{ background: 'rgba(242,184,106,0.1)', border: '1px solid rgba(242,184,106,0.3)', color: '#F2B86A' }}
         >
           DEBUG mode is off — set <code className="font-mono bg-aunshin-twilight-2 px-1.5 py-0.5 rounded text-xs">DEBUG=1</code> in Render env vars to enable event logging
         </div>
@@ -115,7 +115,7 @@ export default function Debug() {
       <section>
         <h2 className="text-sm font-semibold text-aunshin-peach-light mb-3 tracking-wide uppercase">Integration Health</h2>
         {health?.db && (
-          <div className="mb-3 flex items-center gap-3 text-xs" style={{ color: 'rgba(245,245,244,0.5)' }}>
+          <div className="mb-3 flex items-center gap-3 text-xs" style={{ color: 'rgba(239,209,175,0.5)' }}>
             <span className="w-2 h-2 rounded-full" style={{ background: health.db.status === 'ok' ? '#22C55E' : '#DC2626' }} />
             DB: {health.db.status} ({health.db.latencyMs}ms)
             <span className="ml-4">Uptime: {Math.round(health.uptime_seconds / 60)}m</span>
@@ -126,7 +126,7 @@ export default function Debug() {
             <HealthCard key={source} source={source} data={data} />
           ))}
           {noIntegrations && !debugOff && (
-            <p className="text-xs col-span-full" style={{ color: 'rgba(245,245,244,0.4)' }}>No integrations tracked yet</p>
+            <p className="text-xs col-span-full" style={{ color: 'rgba(239,209,175,0.4)' }}>No integrations tracked yet</p>
           )}
         </div>
       </section>
@@ -140,15 +140,15 @@ export default function Debug() {
               <div
                 key={ws.callId}
                 className="rounded-lg px-4 py-3"
-                style={{ background: '#0F0D29', border: '1px solid rgba(49,46,129,0.5)' }}
+                style={{ background: '#2A1213', border: '1px solid rgba(92,57,43,0.5)' }}
               >
                 <div className="text-xs font-mono text-aunshin-sodium truncate">{ws.callId}</div>
-                <div className="text-xs" style={{ color: 'rgba(245,245,244,0.5)' }}>{ws.listenerCount} listener{ws.listenerCount !== 1 ? 's' : ''}</div>
+                <div className="text-xs" style={{ color: 'rgba(239,209,175,0.5)' }}>{ws.listenerCount} listener{ws.listenerCount !== 1 ? 's' : ''}</div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs" style={{ color: 'rgba(245,245,244,0.4)' }}>No active connections</p>
+          <p className="text-xs" style={{ color: 'rgba(239,209,175,0.4)' }}>No active connections</p>
         )}
       </section>
 
@@ -161,31 +161,31 @@ export default function Debug() {
               value={category}
               onChange={e => setCategory(e.target.value)}
               className="text-xs px-2 py-1 rounded border bg-aunshin-twilight-2 text-aunshin-peach-light"
-              style={{ borderColor: 'rgba(49,46,129,0.5)' }}
+              style={{ borderColor: 'rgba(92,57,43,0.5)' }}
             >
               {CATEGORIES.map(c => (
                 <option key={c} value={c}>{c === 'all' ? 'All categories' : c}</option>
               ))}
             </select>
-            <span className="text-xs" style={{ color: 'rgba(245,245,244,0.4)' }}>
+            <span className="text-xs" style={{ color: 'rgba(239,209,175,0.4)' }}>
               {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
               {events?.total > 0 && ` / ${events.total} total`}
             </span>
           </div>
         </div>
         {filteredEvents.length > 0 ? (
-          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(49,46,129,0.5)' }}>
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(92,57,43,0.5)' }}>
             <table className="w-full">
               <thead>
-                <tr style={{ background: '#0F0D29' }}>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(245,245,244,0.4)' }}>Time</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(245,245,244,0.4)' }}>Level</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(245,245,244,0.4)' }}>Category</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(245,245,244,0.4)' }}>Source</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(245,245,244,0.4)' }}>Summary</th>
+                <tr style={{ background: '#2A1213' }}>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(239,209,175,0.4)' }}>Time</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(239,209,175,0.4)' }}>Level</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(239,209,175,0.4)' }}>Category</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(239,209,175,0.4)' }}>Source</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(239,209,175,0.4)' }}>Summary</th>
                 </tr>
               </thead>
-              <tbody className="divide-y" style={{ borderColor: 'rgba(49,46,129,0.3)' }}>
+              <tbody className="divide-y" style={{ borderColor: 'rgba(92,57,43,0.3)' }}>
                 {filteredEvents.map(event => (
                   <EventRow
                     key={event.id}
@@ -198,7 +198,7 @@ export default function Debug() {
             </table>
           </div>
         ) : (
-          <p className="text-xs" style={{ color: 'rgba(245,245,244,0.4)' }}>
+          <p className="text-xs" style={{ color: 'rgba(239,209,175,0.4)' }}>
             {debugOff ? 'No events — DEBUG mode is off' : 'No events matching filter'}
           </p>
         )}
@@ -213,9 +213,9 @@ export default function Debug() {
               <div
                 key={event.id}
                 className="rounded-lg px-4 py-2 flex items-center gap-3"
-                style={{ background: '#0F0D29', border: '1px solid rgba(49,46,129,0.5)' }}
+                style={{ background: '#2A1213', border: '1px solid rgba(92,57,43,0.5)' }}
               >
-                <span className="text-xs font-mono shrink-0" style={{ color: 'rgba(245,245,244,0.5)' }}>
+                <span className="text-xs font-mono shrink-0" style={{ color: 'rgba(239,209,175,0.5)' }}>
                   {new Date(event.ts).toLocaleString()}
                 </span>
                 <span className="text-xs text-aunshin-peach-light">{event.summary}</span>
@@ -223,7 +223,7 @@ export default function Debug() {
             ))}
           </div>
         ) : (
-          <p className="text-xs" style={{ color: 'rgba(245,245,244,0.4)' }}>No sweep history</p>
+          <p className="text-xs" style={{ color: 'rgba(239,209,175,0.4)' }}>No sweep history</p>
         )}
       </section>
     </div>

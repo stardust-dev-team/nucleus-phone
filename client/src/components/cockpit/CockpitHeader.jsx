@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 import { formatTime } from '../../lib/format';
 
 const STATUS_BADGE = {
-  pre: { bg: 'rgba(139,92,246,0.12)', color: '#A78BFA', label: 'Pre-call', pulse: false },
-  active: { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', label: 'On call', pulse: true },
-  post: { bg: 'rgba(245,245,244,0.06)', color: 'rgba(245,245,244,0.5)', label: 'Post-call', pulse: false },
+  pre: { bg: 'rgba(201,154,120,0.12)', color: '#C99A78', label: 'Pre-call', pulse: false },
+  active: { bg: 'rgba(242,184,106,0.15)', color: '#F2B86A', label: 'On call', pulse: true },
+  post: { bg: 'rgba(239,209,175,0.06)', color: 'rgba(239,209,175,0.5)', label: 'Post-call', pulse: false },
 };
 
 export default function CockpitHeader({
@@ -38,16 +38,16 @@ export default function CockpitHeader({
       className="sticky top-0 z-20 flex items-center justify-between px-4 h-[44px] shrink-0"
       style={{ background: 'var(--cockpit-header-bg)', borderBottom: '1px solid var(--cockpit-header-border)' }}
     >
-      {/* Left: Sentinel mark + module label */}
+      {/* Left: brand mark + module label */}
       <div className="flex items-center gap-2.5">
         <img src="/joruva-logo-white.svg" alt="Aunshin" className="h-[20px] block" />
-        <div className="w-px h-[22px]" style={{ background: 'rgba(49,46,129,0.4)' }} />
+        <div className="w-px h-[22px]" style={{ background: 'rgba(92,57,43,0.4)' }} />
         {callPhase === 'pre' && (
-          <button onClick={onBack} className="text-xs hover:text-white/70 transition-colors hidden md:block" style={{ color: '#78716C' }}>
+          <button onClick={onBack} className="text-xs hover:text-white/70 transition-colors hidden md:block" style={{ color: '#C99A78' }}>
             &larr; Back
           </button>
         )}
-        <span className="text-[11px] font-semibold tracking-[1.5px] uppercase" style={{ color: '#F5F5F4' }}>Cockpit</span>
+        <span className="text-[11px] font-semibold tracking-[1.5px] uppercase" style={{ color: '#EFD1AF' }}>Cockpit</span>
       </div>
 
       {/* Center: gamification stats */}
@@ -57,16 +57,16 @@ export default function CockpitHeader({
             <div
               key={s.label}
               className="flex items-center gap-1 px-2 py-0.5 rounded-aunshin"
-              style={{ background: 'rgba(30,27,75,0.5)' }}
+              style={{ background: 'rgba(42,18,19,0.5)' }}
             >
               <span className="text-[11px]">{s.icon}</span>
-              <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{s.value}</span>
-              <span className="text-[11px]" style={{ color: '#78716C' }}>{s.label}</span>
+              <span className="text-[12px] font-semibold leading-none" style={{ color: '#EFD1AF' }}>{s.value}</span>
+              <span className="text-[11px]" style={{ color: '#C99A78' }}>{s.label}</span>
             </div>
           ))}
           {sorted.length > 0 && (
             <>
-              <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(49,46,129,0.4)' }} />
+              <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(92,57,43,0.4)' }} />
               <div className="flex items-center gap-0.5">
                 {sorted.slice(0, 3).map((m, i) => {
                   const isMe = m.identity === currentUser;
@@ -76,9 +76,9 @@ export default function CockpitHeader({
                       className="text-[11px] px-1.5 py-[1px] rounded-aunshin"
                       title={`${m.displayName}: ${m.callsMade} calls`}
                       style={{
-                        color: isMe ? '#F59E0B' : '#78716C',
+                        color: isMe ? '#F2B86A' : '#C99A78',
                         fontWeight: isMe ? 600 : 400,
-                        background: i === 0 ? 'rgba(245,158,11,0.12)' : 'transparent',
+                        background: i === 0 ? 'rgba(242,184,106,0.12)' : 'transparent',
                       }}
                     >
                       {i === 0 && '👑 '}{m.displayName || m.identity} {m.callsMade}
@@ -98,14 +98,14 @@ export default function CockpitHeader({
             <>
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-aunshin" style={{ background: 'var(--cockpit-purple-bg)' }}>
                 <span className="text-[11px]">🎯</span>
-                <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{practiceStats.practiceCount}</span>
-                <span className="text-[11px]" style={{ color: '#78716C' }}>Practice</span>
+                <span className="text-[12px] font-semibold leading-none" style={{ color: '#EFD1AF' }}>{practiceStats.practiceCount}</span>
+                <span className="text-[11px]" style={{ color: '#C99A78' }}>Practice</span>
               </div>
               {practiceStats.avgScore && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-aunshin" style={{ background: 'var(--cockpit-purple-bg)' }}>
                   <span className="text-[11px]">📊</span>
-                  <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{practiceStats.avgScore}</span>
-                  <span className="text-[11px]" style={{ color: '#78716C' }}>Avg</span>
+                  <span className="text-[12px] font-semibold leading-none" style={{ color: '#EFD1AF' }}>{practiceStats.avgScore}</span>
+                  <span className="text-[11px]" style={{ color: '#C99A78' }}>Avg</span>
                 </div>
               )}
             </>
@@ -116,7 +116,7 @@ export default function CockpitHeader({
       {/* Right: status + controls */}
       <div className="flex items-center gap-2">
         {callPhase === 'active' && (
-          <span className="text-sm font-semibold tabular-nums" style={{ color: '#F59E0B' }}>
+          <span className="text-sm font-semibold tabular-nums" style={{ color: '#F2B86A' }}>
             {formatTime(timer)}
           </span>
         )}
@@ -126,7 +126,7 @@ export default function CockpitHeader({
           style={{ background: badge.bg, color: badge.color }}
         >
           {badge.pulse && (
-            <span className="w-1.5 h-1.5 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: '#F59E0B' }} />
+            <span className="w-1.5 h-1.5 rounded-full animate-[pulse_1.5s_ease-in-out_infinite]" style={{ background: '#F2B86A' }} />
           )}
           {badge.label}
         </span>
@@ -135,7 +135,7 @@ export default function CockpitHeader({
           onClick={onRefresh}
           disabled={refreshing}
           className="transition-colors disabled:opacity-40"
-          style={{ color: '#78716C' }}
+          style={{ color: '#C99A78' }}
           title="Refresh intel"
         >
           <svg className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -154,9 +154,9 @@ export default function CockpitHeader({
             className="flex items-center gap-1 px-2 py-[3px] text-[11px] font-medium cursor-pointer transition-colors"
             style={{
               borderRadius: '3px',
-              border: '1px solid rgba(49,46,129,0.4)',
-              background: navigatorEnabled ? 'rgba(107,78,200,0.18)' : 'rgba(15,13,41,0.5)',
-              color: navigatorEnabled ? '#C4B5FD' : '#78716C',
+              border: '1px solid rgba(92,57,43,0.4)',
+              background: navigatorEnabled ? 'rgba(201,154,120,0.18)' : 'rgba(42,18,19,0.5)',
+              color: navigatorEnabled ? '#C99A78' : '#C99A78',
             }}
             title={`Conversation Navigator ${navigatorEnabled ? 'on' : 'off'}`}
             aria-pressed={navigatorEnabled}
@@ -170,9 +170,9 @@ export default function CockpitHeader({
           className="flex items-center gap-1 px-2 py-[3px] text-[11px] font-medium cursor-pointer transition-colors"
           style={{
             borderRadius: '3px',
-            border: '1px solid rgba(49,46,129,0.4)',
-            background: 'rgba(15,13,41,0.5)',
-            color: '#A8A29E',
+            border: '1px solid rgba(92,57,43,0.4)',
+            background: 'rgba(42,18,19,0.5)',
+            color: '#C99A78',
           }}
           title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >

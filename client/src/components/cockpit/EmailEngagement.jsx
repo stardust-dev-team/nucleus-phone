@@ -17,7 +17,7 @@ function relativeTime(dateStr) {
 const EVENT_STYLES = {
   open:  { dot: 'var(--cockpit-blue-500, #3B82F6)', label: 'Opened' },
   click: { dot: 'var(--cockpit-green-500, #22C55E)', label: 'Clicked' },
-  reply: { dot: 'var(--cockpit-amber-600, #D97706)', label: 'Replied' },
+  reply: { dot: 'var(--cockpit-amber-600, #D89945)', label: 'Replied' },
 };
 
 export default function EmailEngagement({ emailEngagement }) {

@@ -1,3 +1,6 @@
+// Component name retained for code-internal stability (file imports, hook,
+// route registration, server-side conversation table). User-facing strings
+// say "Aunshin" per the legal rename — see PR #4.
 import { useState, useRef, useEffect } from 'react';
 import useAskNucleus from '../hooks/useAskNucleus';
 
