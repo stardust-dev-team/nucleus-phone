@@ -19,8 +19,8 @@ export default function DataSourceIndicator({ sources = {} }) {
               className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-[1px] rounded transition-colors"
               style={{
                 background: active ? 'var(--cockpit-green-50, #052e16)' : 'transparent',
-                color: active ? 'var(--cockpit-green-500, #22C55E)' : 'var(--cockpit-text-muted, #78716C)',
-                border: `1px solid ${active ? 'var(--cockpit-green-500-20, rgba(34,197,94,0.2))' : 'var(--cockpit-card-border, rgba(49,46,129,0.3))'}`,
+                color: active ? 'var(--cockpit-green-500, #22C55E)' : 'var(--cockpit-text-muted, #C99A78)',
+                border: `1px solid ${active ? 'var(--cockpit-green-500-20, rgba(34,197,94,0.2))' : 'var(--cockpit-card-border, rgba(92,57,43,0.3))'}`,
                 opacity: active ? 1 : 0.5,
               }}
             >

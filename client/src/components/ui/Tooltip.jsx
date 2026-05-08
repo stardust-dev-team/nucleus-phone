@@ -15,9 +15,9 @@ export default function Tooltip({ children, content, side = 'top' }) {
           sideOffset={4}
           className="z-50 max-w-xs rounded px-3 py-2 text-xs leading-relaxed shadow-lg animate-in fade-in-0 zoom-in-95"
           style={{
-            background: 'var(--cockpit-card, #0F0D29)',
-            color: 'var(--cockpit-text, #F5F5F4)',
-            border: '1px solid var(--cockpit-card-border, rgba(49,46,129,0.5))',
+            background: 'var(--cockpit-card, #2A1213)',
+            color: 'var(--cockpit-text, #EFD1AF)',
+            border: '1px solid var(--cockpit-card-border, rgba(92,57,43,0.5))',
             whiteSpace: 'pre-line',
           }}
         >
@@ -25,7 +25,7 @@ export default function Tooltip({ children, content, side = 'top' }) {
           <T.Arrow
             width={8}
             height={4}
-            style={{ fill: 'var(--cockpit-card, #0F0D29)' }}
+            style={{ fill: 'var(--cockpit-card, #2A1213)' }}
           />
         </T.Content>
       </T.Portal>

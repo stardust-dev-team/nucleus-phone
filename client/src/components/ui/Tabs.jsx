@@ -12,7 +12,7 @@ export function TabsList({ children }) {
   return (
     <T.List
       className="flex gap-1 px-1 py-1 rounded-lg"
-      style={{ background: 'var(--cockpit-card, #0F0D29)' }}
+      style={{ background: 'var(--cockpit-card, #2A1213)' }}
     >
       {children}
     </T.List>
