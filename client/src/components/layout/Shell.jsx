@@ -1,11 +1,11 @@
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 
 const STATUS_COLORS = {
-  initializing: 'bg-jv-amber',
-  ready: 'bg-jv-green',
-  connecting: 'bg-jv-amber',
-  connected: 'bg-jv-green',
-  error: 'bg-jv-red',
+  initializing: 'bg-aunshin-sodium',
+  ready: 'bg-aunshin-success',
+  connecting: 'bg-aunshin-sodium',
+  connected: 'bg-aunshin-success',
+  error: 'bg-aunshin-alert',
 };
 
 export default function Shell({ identity, role, onLogout, deviceStatus, emailReady }) {
@@ -24,11 +24,11 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
   return (
     <div className="flex flex-col h-full">
       {/* Header — Sentinel Abyss */}
-      <header className="flex items-center justify-between px-4 py-3 bg-jv-card" style={{ borderBottom: '1px solid rgba(49,46,129,0.3)' }}>
+      <header className="flex items-center justify-between px-4 py-3 bg-aunshin-twilight-2" style={{ borderBottom: '1px solid rgba(49,46,129,0.3)' }}>
         <div className="flex items-center gap-3">
           <img
             src="/joruva-logo-white.svg"
-            alt="Nucleus"
+            alt="Aunshin"
             className="h-6"
           />
           <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
@@ -68,7 +68,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
           <div className="h-4 w-px" style={{ background: 'rgba(49,46,129,0.4)' }} />
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[deviceStatus] || 'bg-gray-500'}`} />
-            <span className="text-sm capitalize text-jv-bone">{identity}</span>
+            <span className="text-sm capitalize text-aunshin-peach-light">{identity}</span>
           </div>
           <button
             onClick={onLogout}
@@ -82,7 +82,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
 
       {/* Re-login banner for email sending */}
       {emailReady === false && (
-        <div className="bg-jv-amber/10 border-b border-jv-amber/30 px-4 py-1.5 text-center text-[11px] text-jv-amber shrink-0">
+        <div className="bg-aunshin-sodium/10 border-b border-aunshin-sodium/30 px-4 py-1.5 text-center text-[11px] text-aunshin-sodium shrink-0">
           <a href="/api/auth/login" className="underline font-medium">Re-login</a> to enable email follow-ups from your mailbox
         </div>
       )}
@@ -93,7 +93,7 @@ export default function Shell({ identity, role, onLogout, deviceStatus, emailRea
       </main>
 
       {/* Bottom nav — Sentinel */}
-      <nav className="flex bg-jv-card pb-[env(safe-area-inset-bottom)]" style={{ borderTop: '1px solid rgba(49,46,129,0.3)' }}>
+      <nav className="flex bg-aunshin-twilight-2 pb-[env(safe-area-inset-bottom)]" style={{ borderTop: '1px solid rgba(49,46,129,0.3)' }}>
         {tabs.map((tab) => {
           const active = location.pathname === tab.path;
           return (

@@ -40,7 +40,7 @@ export default function CockpitHeader({
     >
       {/* Left: Sentinel mark + module label */}
       <div className="flex items-center gap-2.5">
-        <img src="/joruva-logo-white.svg" alt="Nucleus" className="h-[20px] block" />
+        <img src="/joruva-logo-white.svg" alt="Aunshin" className="h-[20px] block" />
         <div className="w-px h-[22px]" style={{ background: 'rgba(49,46,129,0.4)' }} />
         {callPhase === 'pre' && (
           <button onClick={onBack} className="text-xs hover:text-white/70 transition-colors hidden md:block" style={{ color: '#78716C' }}>
@@ -56,7 +56,7 @@ export default function CockpitHeader({
           {stats.map((s) => (
             <div
               key={s.label}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-sentinel"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-aunshin"
               style={{ background: 'rgba(30,27,75,0.5)' }}
             >
               <span className="text-[11px]">{s.icon}</span>
@@ -73,7 +73,7 @@ export default function CockpitHeader({
                   return (
                     <span
                       key={m.identity}
-                      className="text-[11px] px-1.5 py-[1px] rounded-sentinel"
+                      className="text-[11px] px-1.5 py-[1px] rounded-aunshin"
                       title={`${m.displayName}: ${m.callsMade} calls`}
                       style={{
                         color: isMe ? '#F59E0B' : '#78716C',
@@ -96,13 +96,13 @@ export default function CockpitHeader({
         <div className="hidden md:flex items-center gap-1.5">
           {practiceStats.practiceCount > 0 && (
             <>
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-sentinel" style={{ background: 'var(--cockpit-purple-bg)' }}>
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-aunshin" style={{ background: 'var(--cockpit-purple-bg)' }}>
                 <span className="text-[11px]">🎯</span>
                 <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{practiceStats.practiceCount}</span>
                 <span className="text-[11px]" style={{ color: '#78716C' }}>Practice</span>
               </div>
               {practiceStats.avgScore && (
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-sentinel" style={{ background: 'var(--cockpit-purple-bg)' }}>
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-aunshin" style={{ background: 'var(--cockpit-purple-bg)' }}>
                   <span className="text-[11px]">📊</span>
                   <span className="text-[12px] font-semibold leading-none" style={{ color: '#F5F5F4' }}>{practiceStats.avgScore}</span>
                   <span className="text-[11px]" style={{ color: '#78716C' }}>Avg</span>

@@ -25,7 +25,7 @@ export function TabsTrigger({ value, children }) {
       value={value}
       className="px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wider transition-colors
                  data-[state=active]:text-white data-[state=inactive]:text-cp-text-muted
-                 data-[state=active]:bg-jv-amber/20"
+                 data-[state=active]:bg-aunshin-sodium/20"
       style={{
         borderBottom: 'var(--tab-active-border, none)',
       }}

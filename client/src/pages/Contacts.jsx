@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { getSignalContacts, getSignalCallbacks } from '../lib/api';
 import usePwaInstall from '../hooks/usePwaInstall';
 
-const TIER_COLORS = { spear: 'bg-jv-red', targeted: 'bg-jv-amber', awareness: 'bg-gray-500' };
-const TIER_BORDER = { spear: 'border-jv-red', targeted: 'border-jv-amber', awareness: 'border-gray-500' };
-const TIER_TEXT = { spear: 'text-jv-red', targeted: 'text-jv-amber', awareness: 'text-gray-400' };
+const TIER_COLORS = { spear: 'bg-aunshin-alert', targeted: 'bg-aunshin-sodium', awareness: 'bg-gray-500' };
+const TIER_BORDER = { spear: 'border-aunshin-alert', targeted: 'border-aunshin-sodium', awareness: 'border-gray-500' };
+const TIER_TEXT = { spear: 'text-aunshin-alert', targeted: 'text-aunshin-sodium', awareness: 'text-gray-400' };
 const PAGE_SIZE = 50;
 
 // Timezone filter options (labels only — mapping lives server-side in timezones.js)
@@ -41,20 +41,20 @@ function TierBadge({ tier }) {
 function callBadge(callHistory) {
   if (!callHistory) return { text: 'Never called', cls: 'text-gray-500' };
   const days = Math.floor((Date.now() - new Date(callHistory.lastCall).getTime()) / 86400000);
-  if (days === 0) return { text: 'Called today', cls: 'text-jv-green' };
-  if (days === 1) return { text: 'Yesterday', cls: 'text-jv-green' };
-  return { text: `${days}d ago`, cls: 'text-jv-muted' };
+  if (days === 0) return { text: 'Called today', cls: 'text-aunshin-success' };
+  if (days === 1) return { text: 'Yesterday', cls: 'text-aunshin-success' };
+  return { text: `${days}d ago`, cls: 'text-aunshin-quiet-d' };
 }
 
 function dispositionDot(callHistory) {
   if (!callHistory) return 'bg-gray-500';
   switch (callHistory.lastDisposition) {
-    case 'qualified_hot': return 'bg-jv-red';
-    case 'qualified_warm': return 'bg-jv-amber';
-    case 'callback_requested': return 'bg-jv-amber';
-    case 'connected': return 'bg-jv-green';
-    case 'not_interested': return 'bg-jv-red';
-    default: return 'bg-jv-green';
+    case 'qualified_hot': return 'bg-aunshin-alert';
+    case 'qualified_warm': return 'bg-aunshin-sodium';
+    case 'callback_requested': return 'bg-aunshin-sodium';
+    case 'connected': return 'bg-aunshin-success';
+    case 'not_interested': return 'bg-aunshin-alert';
+    default: return 'bg-aunshin-success';
   }
 }
 
@@ -79,8 +79,8 @@ function certBadge(expiryDate, standard) {
   const expiry = new Date(expiryDate);
   if (isNaN(expiry.getTime())) return null;
   const months = Math.round((expiry - Date.now()) / (30 * 86400000));
-  if (months < 0) return { text: `${standard || 'Cert'} EXPIRED`, cls: 'bg-jv-red/20 text-jv-red' };
-  if (months <= 9) return { text: `${standard || 'Cert'} ${months}mo`, cls: 'bg-jv-amber/20 text-jv-amber' };
+  if (months < 0) return { text: `${standard || 'Cert'} EXPIRED`, cls: 'bg-aunshin-alert/20 text-aunshin-alert' };
+  if (months <= 9) return { text: `${standard || 'Cert'} ${months}mo`, cls: 'bg-aunshin-sodium/20 text-aunshin-sodium' };
   return null; // Not urgent enough to badge
 }
 
@@ -96,7 +96,7 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
   ].filter(Boolean);
 
   return (
-    <div className={`rounded-xl bg-jv-card border-l-4 ${TIER_BORDER[company.signal_tier] || 'border-gray-500'} border border-jv-border overflow-hidden`}>
+    <div className={`rounded-xl bg-aunshin-twilight-2 border-l-4 ${TIER_BORDER[company.signal_tier] || 'border-gray-500'} border border-aunshin-rule-d overflow-hidden`}>
       {/* Company header */}
       <div className="p-3 pb-1">
         <div className="flex items-center gap-2">
@@ -111,17 +111,17 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
             <span className="text-[10px] font-bold text-blue-400 shrink-0" title="DoD contractor">🛡</span>
           )}
           {company.interaction_count > 0 && (
-            <span className="text-[10px] text-jv-muted shrink-0">{company.interaction_count} {company.interaction_count === 1 ? 'touch' : 'touches'}</span>
+            <span className="text-[10px] text-aunshin-quiet-d shrink-0">{company.interaction_count} {company.interaction_count === 1 ? 'touch' : 'touches'}</span>
           )}
           {localTime && (
-            <span className="text-[10px] text-jv-muted shrink-0" title={`Local time in ${company.geo_state}`}>
+            <span className="text-[10px] text-aunshin-quiet-d shrink-0" title={`Local time in ${company.geo_state}`}>
               {company.geo_state} {localTime}
             </span>
           )}
-          <span className="text-jv-amber text-xs ml-auto shrink-0">⚡ {company.signal_score}</span>
+          <span className="text-aunshin-sodium text-xs ml-auto shrink-0">⚡ {company.signal_score}</span>
         </div>
         {details.length > 0 && (
-          <p className="text-xs text-jv-muted mt-1 ml-8">
+          <p className="text-xs text-aunshin-quiet-d mt-1 ml-8">
             {details.join(' · ')}
           </p>
         )}
@@ -135,7 +135,7 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
             return (
               <div
                 key={`${contact.linkedin_url || contact.full_name}-${i}`}
-                className="flex items-center justify-between py-1.5 border-t border-jv-border/50 first:border-0"
+                className="flex items-center justify-between py-1.5 border-t border-aunshin-rule-d/50 first:border-0"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   {contact.call_history && (
@@ -143,13 +143,13 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
                   )}
                   <div className="min-w-0">
                     <span className="text-xs font-medium truncate block">{contact.full_name || 'Unknown'}</span>
-                    <span className="text-[10px] text-jv-muted truncate block">
+                    <span className="text-[10px] text-aunshin-quiet-d truncate block">
                       {contact.title || 'No title'}
                       {contact.phone && ` · ${contact.phone}`}
                     </span>
                     {contact.call_history?.lastSummary && (
                       <span
-                        className="text-[10px] text-jv-muted italic truncate block mt-0.5"
+                        className="text-[10px] text-aunshin-quiet-d italic truncate block mt-0.5"
                         title={contact.call_history.lastSummary}
                       >
                         {contact.call_history.lastSummary}
@@ -164,8 +164,8 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
                       onClick={() => navigate(`/cockpit/${encodeURIComponent(contact.phone || contact.email)}`)}
                       className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors ${
                         contact.phone
-                          ? 'bg-jv-green/20 text-jv-green hover:bg-jv-green/30'
-                          : 'bg-jv-accent/20 text-jv-accent hover:bg-jv-accent/30'
+                          ? 'bg-aunshin-success/20 text-aunshin-success hover:bg-aunshin-success/30'
+                          : 'bg-aunshin-sodium/20 text-aunshin-sodium hover:bg-aunshin-sodium/30'
                       }`}
                       title={contact.phone ? `Call ${contact.phone}` : `View briefing (${contact.email})`}
                     >
@@ -183,7 +183,7 @@ function CompanyCard({ company, navigate, twilioStatus, now }) {
             );
           })
         ) : (
-          <p className="text-xs text-jv-muted py-2 border-t border-jv-border/50">
+          <p className="text-xs text-aunshin-quiet-d py-2 border-t border-aunshin-rule-d/50">
             {company.no_phone_count > 0
               ? `${company.no_phone_count} contacts without phone`
               : 'No contacts found'}
@@ -281,12 +281,12 @@ export default function Contacts({ identity, callState, twilioStatus }) {
     <div className="flex flex-col h-full">
       {/* PWA install banner */}
       {pwa.showBanner && (
-        <div className="mx-4 mt-3 rounded-lg border border-jv-amber/30 bg-jv-amber/10 p-3 flex items-center justify-between gap-3">
+        <div className="mx-4 mt-3 rounded-lg border border-aunshin-sodium/30 bg-aunshin-sodium/10 p-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/icons/icon-192.png" alt="" className="w-10 h-10 rounded-lg shrink-0" />
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-jv-bone">Add Nucleus Phone to your home screen</p>
-              <p className="text-xs text-jv-muted truncate">
+              <p className="text-sm font-semibold text-aunshin-peach-light">Add Aunshin Phone to your home screen</p>
+              <p className="text-xs text-aunshin-quiet-d truncate">
                 {pwa.isIos
                   ? 'Tap the share button, then "Add to Home Screen"'
                   : 'Quick access like a native app'}
@@ -297,14 +297,14 @@ export default function Contacts({ identity, callState, twilioStatus }) {
             {pwa.canPrompt && (
               <button
                 onClick={pwa.install}
-                className="px-3 py-1.5 rounded-lg bg-jv-amber text-jv-deep text-xs font-bold uppercase tracking-wide"
+                className="px-3 py-1.5 rounded-lg bg-aunshin-sodium text-aunshin-twilight text-xs font-bold uppercase tracking-wide"
               >
                 Install
               </button>
             )}
             <button
               onClick={pwa.dismiss}
-              className="text-jv-muted hover:text-jv-bone text-lg leading-none px-1"
+              className="text-aunshin-quiet-d hover:text-aunshin-peach-light text-lg leading-none px-1"
               aria-label="Dismiss"
             >
               &times;
@@ -322,7 +322,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
             className={`px-3 py-1 rounded-full text-xs uppercase font-bold transition-colors ${
               tier === t
                 ? `${TIER_COLORS[t]} text-white`
-                : `bg-jv-card border ${TIER_BORDER[t]} ${TIER_TEXT[t]}`
+                : `bg-aunshin-twilight-2 border ${TIER_BORDER[t]} ${TIER_TEXT[t]}`
             }`}
           >
             {t}
@@ -331,7 +331,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
         <select
           value={timezone}
           onChange={e => { setTimezone(e.target.value); setState(''); }}
-          className="px-2 py-1 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted"
+          className="px-2 py-1 rounded-lg bg-aunshin-twilight-2 border border-aunshin-rule-d text-xs text-aunshin-quiet-d"
         >
           <option value="">All timezones</option>
           {TIMEZONE_OPTIONS.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
@@ -339,7 +339,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
         <select
           value={state}
           onChange={e => { setState(e.target.value); setTimezone(''); }}
-          className="px-2 py-1 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted"
+          className="px-2 py-1 rounded-lg bg-aunshin-twilight-2 border border-aunshin-rule-d text-xs text-aunshin-quiet-d"
         >
           <option value="">All states</option>
           {availableStates.map(s => <option key={s} value={s}>{s}</option>)}
@@ -347,7 +347,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
         <select
           value={contactFilter}
           onChange={e => setContactFilter(e.target.value)}
-          className="px-2 py-1 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted"
+          className="px-2 py-1 rounded-lg bg-aunshin-twilight-2 border border-aunshin-rule-d text-xs text-aunshin-quiet-d"
         >
           <option value="has_phone">With phone numbers</option>
           <option value="has_contacts">With any contacts</option>
@@ -357,19 +357,19 @@ export default function Contacts({ identity, callState, twilioStatus }) {
 
       {/* Callbacks banner */}
       {callbacks.length > 0 && (
-        <div className="mx-4 mb-3 rounded-lg bg-jv-red/10 border border-jv-red/30 p-3">
-          <p className="text-xs font-bold text-jv-red mb-1">CALLBACKS ({callbacks.length})</p>
+        <div className="mx-4 mb-3 rounded-lg bg-aunshin-alert/10 border border-aunshin-alert/30 p-3">
+          <p className="text-xs font-bold text-aunshin-alert mb-1">CALLBACKS ({callbacks.length})</p>
           {callbacks.slice(0, 3).map(cb => (
             <div key={cb.id} className="flex items-center justify-between py-1">
               <div className="text-xs">
                 <span className="text-white font-medium">{cb.company_name}</span>
-                <span className="text-jv-muted ml-2">
+                <span className="text-aunshin-quiet-d ml-2">
                   {cb.trigger_reason === 'lead_gen' ? 'Lead gen form' : 'Email replied'}
                 </span>
               </div>
               <button
                 onClick={() => navigate(`/cockpit/${encodeURIComponent(cb.domain)}`)}
-                className="text-xs px-2 py-0.5 rounded bg-jv-red/20 text-jv-red font-medium"
+                className="text-xs px-2 py-0.5 rounded bg-aunshin-alert/20 text-aunshin-alert font-medium"
               >
                 Call Now
               </button>
@@ -380,19 +380,19 @@ export default function Contacts({ identity, callState, twilioStatus }) {
 
       {/* Company list */}
       <div className="flex-1 overflow-y-auto scroll-container px-4 space-y-3 pb-4">
-        {loading && <p className="text-center text-jv-muted py-8">Loading signal queue...</p>}
+        {loading && <p className="text-center text-aunshin-quiet-d py-8">Loading signal queue...</p>}
         {!loading && (filterHidingResults ? (
           <div className="text-center py-8">
-            <p className="text-jv-muted">{companies.length} companies found, but none match the current filter.</p>
+            <p className="text-aunshin-quiet-d">{companies.length} companies found, but none match the current filter.</p>
             <button
               onClick={() => setContactFilter(FILTER_ALL)}
-              className="mt-2 px-3 py-1 rounded-lg bg-jv-accent/20 text-jv-accent text-sm hover:bg-jv-accent/30 transition-colors"
+              className="mt-2 px-3 py-1 rounded-lg bg-aunshin-sodium/20 text-aunshin-sodium text-sm hover:bg-aunshin-sodium/30 transition-colors"
             >
               Show all {companies.length} companies
             </button>
           </div>
         ) : companies.length === 0 && (
-          <p className="text-center text-jv-muted py-8">
+          <p className="text-center text-aunshin-quiet-d py-8">
             No companies match filters.{' '}
             {tier === '' ? 'Run signal loaders to populate the pipeline.' : 'Try a different tier.'}
           </p>
@@ -412,7 +412,7 @@ export default function Contacts({ identity, callState, twilioStatus }) {
           <button
             onClick={() => fetchPage(companies.length)}
             disabled={loadingMore}
-            className="w-full py-2 rounded-lg bg-jv-card border border-jv-border text-xs text-jv-muted hover:text-white transition-colors disabled:opacity-50"
+            className="w-full py-2 rounded-lg bg-aunshin-twilight-2 border border-aunshin-rule-d text-xs text-aunshin-quiet-d hover:text-white transition-colors disabled:opacity-50"
           >
             {loadingMore ? 'Loading...' : `Show more (${total - companies.length} remaining)`}
           </button>

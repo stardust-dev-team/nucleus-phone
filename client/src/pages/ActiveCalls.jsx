@@ -76,7 +76,7 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Live Calls</h2>
         {twilioHook.status !== 'ready' && (
-          <span className="text-xs px-2 py-1 rounded bg-jv-amber/20 text-jv-amber">
+          <span className="text-xs px-2 py-1 rounded bg-aunshin-sodium/20 text-aunshin-sodium">
             {twilioHook.status === 'error' ? '⚠ Audio device error — reload page' : '⏳ Audio device connecting...'}
           </span>
         )}
@@ -84,8 +84,8 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
 
       {calls.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-jv-muted text-lg mb-2">No active calls</p>
-          <p className="text-sm text-jv-muted">Live and practice calls will appear here</p>
+          <p className="text-aunshin-quiet-d text-lg mb-2">No active calls</p>
+          <p className="text-sm text-aunshin-quiet-d">Live and practice calls will appear here</p>
         </div>
       )}
 
@@ -93,34 +93,34 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
         {calls.map((call) => (
           <div
             key={call.conferenceName}
-            className="bg-jv-card border border-jv-border rounded-sentinel p-4"
+            className="bg-aunshin-twilight-2 border border-aunshin-rule-d rounded-aunshin p-4"
           >
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{call.leadName || 'Unknown'}</p>
                   {call.type === 'sim' && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-jv-violet/20 text-jv-violet">
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-aunshin-quiet-d/20 text-aunshin-quiet-d">
                       Practice
                     </span>
                   )}
                   {call.direction === 'inbound' && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-jv-amber/20 text-jv-amber">
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-aunshin-sodium/20 text-aunshin-sodium">
                       Inbound
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-jv-muted">{call.leadCompany || ''}</p>
+                <p className="text-sm text-aunshin-quiet-d">{call.leadCompany || ''}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm text-jv-green">{formatDuration(call.duration)}</p>
-                <p className="text-xs text-jv-muted capitalize">{call.startedBy}</p>
+                <p className="text-sm text-aunshin-success">{formatDuration(call.duration)}</p>
+                <p className="text-xs text-aunshin-quiet-d capitalize">{call.startedBy}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2 mb-3">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${call.type === 'sim' ? 'bg-jv-violet' : 'bg-jv-green'}`} />
-              <span className="text-xs text-jv-muted">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${call.type === 'sim' ? 'bg-aunshin-quiet-d' : 'bg-aunshin-success'}`} />
+              <span className="text-xs text-aunshin-quiet-d">
                 {call.type === 'sim'
                   ? (call.simStatus === 'scoring' ? 'Scoring…' : 'In progress')
                   : `${call.participants.length} participant${call.participants.length !== 1 ? 's' : ''}`}
@@ -131,10 +131,10 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
               call.hasListenUrl && call.simStatus === 'in-progress' && (
                 <button
                   onClick={() => handleListen(call)}
-                  className={`w-full py-2.5 rounded-sentinel text-sm font-medium transition-colors ${
+                  className={`w-full py-2.5 rounded-aunshin text-sm font-medium transition-colors ${
                     listenId === call.simCallId
-                      ? 'bg-jv-violet text-white'
-                      : 'bg-jv-elevated border border-jv-border hover:bg-jv-card'
+                      ? 'bg-aunshin-quiet-d text-white'
+                      : 'bg-aunshin-twilight-2 border border-aunshin-rule-d hover:bg-aunshin-twilight-2'
                   }`}
                 >
                   {listenId === call.simCallId ? '🔊 Listening — tap to stop' : '🎧 Listen In'}
@@ -147,21 +147,21 @@ export default function ActiveCalls({ identity, callState, twilioHook }) {
                     const cockpitId = (call.direction === 'inbound' ? call.leadName : call.leadPhone) || call.conferenceName;
                     navigate(`/cockpit/${encodeURIComponent(cockpitId)}?conf=${encodeURIComponent(call.conferenceName)}`);
                   }}
-                  className="flex-1 py-2.5 rounded-sentinel bg-jv-elevated border border-jv-border text-sm font-medium hover:bg-jv-card transition-colors"
+                  className="flex-1 py-2.5 rounded-aunshin bg-aunshin-twilight-2 border border-aunshin-rule-d text-sm font-medium hover:bg-aunshin-twilight-2 transition-colors"
                 >
                   Open Cockpit
                 </button>
                 <button
                   onClick={() => handleJoin(call, true)}
                   disabled={twilioHook.status !== 'ready'}
-                  className="flex-1 py-2.5 rounded-sentinel bg-jv-elevated border border-jv-border text-sm font-medium hover:bg-jv-card transition-colors disabled:opacity-40"
+                  className="flex-1 py-2.5 rounded-aunshin bg-aunshin-twilight-2 border border-aunshin-rule-d text-sm font-medium hover:bg-aunshin-twilight-2 transition-colors disabled:opacity-40"
                 >
                   Join Silent
                 </button>
                 <button
                   onClick={() => handleJoin(call, false)}
                   disabled={twilioHook.status !== 'ready'}
-                  className="flex-1 py-2.5 rounded-sentinel bg-jv-amber text-black text-sm font-semibold transition-colors disabled:opacity-40"
+                  className="flex-1 py-2.5 rounded-aunshin bg-aunshin-sodium text-black text-sm font-semibold transition-colors disabled:opacity-40"
                 >
                   Join Call
                 </button>
