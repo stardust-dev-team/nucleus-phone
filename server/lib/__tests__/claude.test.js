@@ -111,7 +111,7 @@ describe('generateRapportIntel', () => {
   test('clearCache removes specific key', async () => {
     mockFetchResponse(CLAUDE_RESPONSE);
     await generateRapportIntel(CONTACT);
-    clearCache('hs-1_v2');
+    clearCache('hs-1_v3');
     // Next call should hit API again
     mockFetchResponse(CLAUDE_RESPONSE);
     await generateRapportIntel(CONTACT);
