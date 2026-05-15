@@ -166,10 +166,10 @@ describe('recommendSystem', () => {
   });
 
   it('includes price: null for TBD items', () => {
-    const demand = calculateDemand([{ cfm_typical: 40, duty_cycle_pct: 100, count: 1 }]);
-    // adjustedCfm = ceil(40 * 1.25) = 50 → JRS-15E (54 CFM, rs_open preferred over JVSD-15 at 53)
+    const demand = calculateDemand([{ cfm_typical: 130, duty_cycle_pct: 100, count: 1 }]);
+    // demand = 130 → recommendSystem picks first cfm >= 130 → JRS-40 (155 CFM, still TBD pricing)
     const rec = recommendSystem(demand);
-    expect(rec.compressor.model).toBe('JRS-15E');
+    expect(rec.compressor.model).toBe('JRS-40');
     expect(rec.compressor.price).toBeNull();
   });
 
@@ -489,22 +489,21 @@ describe('CnC shop sizing scenarios', () => {
     expect(rec.salesChannel).toBe('ecommerce');
   });
 
-  it('JRS-25E compressor is ecommerce but system is direct (dryer gap)', () => {
-    // JRS-25E (102 CFM, ecommerce) needs JRD-200 (200 CFM, direct) because
-    // JRD-100 (100 CFM) is undersized for 102 CFM output
+  it('JRS-25E compressor + dryer both direct (above ecommerce boundary)', () => {
+    // JRS-25E (102 CFM) is direct per the >20 HP phone-sales hard rule.
+    // Dryer for 102 CFM output is also direct (JRD-100 undersized).
     const { rec } = sizeShop([{ cfm_typical: 80, duty_cycle_pct: 100, count: 1 }]);
     expect(rec.compressor.model).toBe('JRS-25E');
-    expect(rec.compressor.salesChannel).toBe('ecommerce');
+    expect(rec.compressor.salesChannel).toBe('direct');
     expect(rec.dryer.salesChannel).toBe('direct');
     expect(rec.salesChannel).toBe('direct');
   });
 
-  it('ecommerce/direct boundary: 103 CFM at duty → JRS-25E still ecommerce', () => {
-    // selectionCfm = ceil(82.4) = 83 → JRS-25E (102 CFM, ecommerce)
-    // Safety-adjusted 103 → growth headroom note suggests JRS-30
+  it('ecommerce/direct boundary: 83 CFM at duty → JRS-25E is direct', () => {
+    // selectionCfm = ceil(82.4) = 83 → JRS-25E (102 CFM, direct per >20 HP rule)
     const { rec } = sizeShop([{ cfm_typical: 82.4, duty_cycle_pct: 100, count: 1 }]);
     expect(rec.compressor.model).toBe('JRS-25E');
-    expect(rec.compressor.salesChannel).toBe('ecommerce');
+    expect(rec.compressor.salesChannel).toBe('direct');
   });
 
   it('ecommerce/direct boundary: 103 CFM at duty → compressor is direct', () => {
