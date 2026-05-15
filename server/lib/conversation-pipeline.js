@@ -10,6 +10,7 @@
 
 const { broadcast } = require('./live-analysis');
 const { logEvent } = require('./debug-log');
+const { maybeEmitCoachWhisper, cleanupCoachWhisperState } = require('./coach-whisper');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -489,6 +490,10 @@ async function processConversationChunk(callId, text) {
   // window. Intentional — we just analyzed the current transcript.
   if (QUESTION_REGEX.test(text)) {
     await runAnalysis(callId, state, { sourceTag: BYPASS_SOURCE_TAG });
+    // Fire-and-forget — `maybeEmitCoachWhisper` owns its own inFlight +
+    // cooldown gate (plan § 285: must NOT share state.analysisInFlight).
+    // Errors stay inside the whisper module (logEvent).
+    maybeEmitCoachWhisper(callId, state);
     return;
   }
 
@@ -498,6 +503,7 @@ async function processConversationChunk(callId, text) {
 
   if (bufferFull || timerExpired) {
     await runAnalysis(callId, state, { sourceTag: DEFAULT_SOURCE_TAG });
+    maybeEmitCoachWhisper(callId, state);
   }
 }
 
@@ -510,6 +516,11 @@ function cleanupConversation(callId) {
   // Only record the first abort timestamp — repeated cleanup calls must NOT
   // extend the zombie-guard window past its original expiry.
   if (!recentlyAborted.has(callId)) recentlyAborted.set(callId, Date.now());
+  // Drop the whisper-side state for the same callId. The whisper module
+  // doesn't share state.aborted, so an in-flight whisper Haiku call will
+  // still resolve and inspect `state.aborted` (we set it above) to no-op
+  // the broadcast — same gate runAnalysis uses.
+  cleanupCoachWhisperState(callId);
 }
 
 // ── Stale state sweep ───────────────────────────────────────────────────
@@ -529,6 +540,9 @@ const sweepInterval = setInterval(() => {
       state.aborted = true;
       callState.delete(callId);
       recentlyAborted.set(callId, now);
+      // Mirror cleanupConversation — without this, a call that goes idle
+      // for 30 min without an explicit cleanup leaks its whisper state.
+      cleanupCoachWhisperState(callId);
       logEvent('sweep', 'conversation-pipeline', `stale state cleared: ${callId}`);
     }
   }
