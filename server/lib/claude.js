@@ -10,7 +10,7 @@ const { throwHttpError } = require('./http-error');
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
-const CACHE_VERSION = 2; // Bump when prompt or data shape changes
+const CACHE_VERSION = 3; // Bump when prompt or data shape changes. v3: added brand_voice + competitive_watch (Phase D).
 const FETCH_TIMEOUT = 6000; // 6 seconds
 
 // Compact product catalog for Claude prompt — confirmed-pricing SKUs only.
@@ -47,6 +47,8 @@ Given contact data, produce a JSON object with these fields:
 - adapted_script: A 3-5 sentence tactical paragraph: what to lead with, what angle works for this title/industry, which product to recommend first and why, what NOT to do. Be specific and tactical, not generic.
 - watch_outs: Array of 1-3 things to avoid (competitor mentions, past complaints, sensitivity).
 - product_reference: Array of 2-5 specific products from the catalog below, formatted as "MODEL — specs, $price. Use case." Match products to the contact's industry, company size, and compliance requirements.
+- brand_voice: { avoid: [array of 2-3 B2B-jargon phrases to NOT say on this call], use: [array of 2-3 plainspoken phrases that fit Tom's voice for this prospect] }. Tom's voice is plainspoken, operator-to-operator, no corporate jargon. Avoid words like "leverage", "synergy", "solutions provider", "best-in-class". Prefer concrete trade-floor language ("we run it", "I'll get you on the phone with our tech", "I've seen this break"). Tailor the avoid/use pairs to this prospect's title and industry.
+- competitive_watch: { competitors: [array of 1-3 likely competitor brand names this prospect is comparing to, based on equipment, industry, region], reframe: "One sentence reframe — IF they mention any of those competitors, here is the angle to pivot to (e.g. assembled-in-Texas reliability, 1-year warranty, direct-to-rep service)." }
 
 ${PRODUCT_CATALOG}
 
@@ -283,6 +285,25 @@ function buildFallback(contactData) {
     script = `This contact's background: ${pb.summary.substring(0, 150)}. Tailor your approach accordingly.`;
   }
 
+  // Phase D structured fields. Fallback path emits a baseline pair so iOS
+  // cards render even when Claude is unreachable; rapport-quality is
+  // degraded but the surface is consistent.
+  const brandVoice = {
+    avoid: ['leverage', 'synergy', 'best-in-class solutions provider'],
+    use: [
+      angle ? `lead with ${angle.hook}` : 'plainspoken trade-floor language',
+      'we run it ourselves',
+    ],
+  };
+
+  const detectedCompetitors = vern?.competitorsMentioned?.length
+    ? vern.competitorsMentioned.slice(0, 3)
+    : ['Atlas Copco', 'Ingersoll Rand'];
+  const competitiveWatch = {
+    competitors: detectedCompetitors,
+    reframe: `If they mention ${detectedCompetitors[0]}, pivot to assembled-in-Texas reliability, 1-year warranty, and direct-rep service.`,
+  };
+
   return {
     fallback: true,
     rapport_starters: starters.slice(0, 5),
@@ -294,6 +315,8 @@ function buildFallback(contactData) {
       ...(vern?.competitorsMentioned?.length ? [`They know ${vern.competitorsMentioned[0]} — be ready with differentiators`] : []),
     ].slice(0, 3),
     product_reference: products,
+    brand_voice: brandVoice,
+    competitive_watch: competitiveWatch,
   };
 }
 

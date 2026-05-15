@@ -6,6 +6,7 @@ const { resolve } = require('../lib/identity-resolver');
 const { lookupCustomer } = require('../lib/customer-lookup');
 const { getCompany } = require('../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../lib/claude');
+const { personaDefaultsFor, pricedModelAtOrAbove } = require('../lib/compressor-catalog');
 const { buildVernacular } = require('../lib/company-vernacular');
 const { normalizePhone } = require('../lib/phone');
 const { normalizeCompanyName } = require('../lib/company-normalizer');
@@ -18,6 +19,45 @@ const SIM_MIKE_GARZA_BY_DIFFICULTY = {
 };
 
 const router = Router();
+
+/**
+ * Derive `relationship_value` LTV breakdown deterministically from contact
+ * title × persona defaults × compressor catalog pricing. Pure function.
+ *
+ * `qty` is persona.unitsPerYear — the rate at which this kind of buyer
+ * typically purchases. `product_reference` (rapport's list of LLM-flagged
+ * SKUs) is intentionally NOT used here: it's a "relevant SKUs to
+ * discuss" signal, not a purchase-quantity signal, and conflating the
+ * two double-counts the math (one mention ≠ one unit).
+ *
+ * Output shape (matches Phase D iOS RelationshipValue struct):
+ *   { y1_equipment, y2_5_parts, y6_10_service, total, currency, qty }
+ *
+ * Returns a zero-but-shaped object (not null) when no priced model
+ * matches the persona HP — the iOS card branches on `total > 0`, not on
+ * presence of the object.
+ */
+function deriveRelationshipValue({ title }) {
+  const persona = personaDefaultsFor(title);
+  const model = pricedModelAtOrAbove(persona.defaultHp);
+  if (!model) {
+    return { y1_equipment: 0, y2_5_parts: 0, y6_10_service: 0, total: 0, currency: 'USD', qty: persona.unitsPerYear };
+  }
+
+  const y1Equipment = model.price * persona.unitsPerYear;
+  const y2_5Parts = Math.round(y1Equipment * persona.partsRatio * 4); // 4 years of parts at partsRatio of equipment cost
+  const y6_10Service = Math.round(y1Equipment * persona.serviceRatio * 5); // 5 years of service at serviceRatio of equipment cost
+  const total = y1Equipment + y2_5Parts + y6_10Service;
+
+  return {
+    y1_equipment: y1Equipment,
+    y2_5_parts: y2_5Parts,
+    y6_10_service: y6_10Service,
+    total,
+    currency: 'USD',
+    qty: persona.unitsPerYear,
+  };
+}
 
 // GET /api/cockpit/next-uncalled — find next signal-scored contact without a
 // completed call. Returns { next: { phone, full_name, company_name, signal_tier,
@@ -290,6 +330,12 @@ router.get('/:identifier', bearerOrApiKeyOrSession, rbac('external_caller'), asy
       rapport.watch_outs = watchOuts;
     }
 
+    // Phase D: deterministic relationship_value LTV derivation.
+    // Done in JS rather than in the prompt — keeps the LLM call lean and
+    // makes the math testable, auditable, and stable across reruns.
+    // Pure function of (title × persona defaults × compressor catalog price).
+    const relationshipValue = deriveRelationshipValue({ title: identity.title });
+
     // Strip AI fields from priorCalls for API-key callers. See CLAUDE.md:70.
     // Interactive callers (session + bearer) get the full thing; API-key
     // automation is the only caller withheld from ai_summary.
@@ -300,6 +346,7 @@ router.get('/:identifier', bearerOrApiKeyOrSession, rbac('external_caller'), asy
     res.json({
       identity,
       rapport,
+      relationship_value: relationshipValue,
       interactionHistory,
       priorCalls: responsePriorCalls,
       pipelineData,
