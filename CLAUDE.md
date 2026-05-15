@@ -145,3 +145,18 @@ Jest + supertest. Config: `jest.config.js`. Tests in `server/lib/__tests__/` and
 - `client/src/pages/Pipeline.jsx` — team work queue (distinct from dashboard's Pipeline.tsx)
 - `server/routes/signals.js` — proxies to multichannel API. CRITICAL: /pipeline route MUST be before /:domain (Express route ordering)
 - Env: MULTICHANNEL_API_URL, MC_API_KEY
+
+## Follow-ups — HARD RULE
+
+**Never offer `/schedule` (or `/loop`, `CronCreate`, `ScheduleWakeup`) for one-off
+end-of-session follow-up checks** — the global `~/.claude/CLAUDE.md` rule, which
+overrides the harness's baked-in `/schedule` suggestion. Pattern was tried four
+times on `joruva-dialer-mac` and never worked.
+
+**Approved method:** append entries to `FOLLOWUPS.md` at the repo root. Format
+documented at the top of that file. Read it at the start of any session that
+might be affected by a pending follow-up; append at end-of-session when a
+verification is needed later but you're not landing it now.
+
+`/schedule` remains acceptable for proactive recurring routines Tom has already
+endorsed (e.g. weekly triage). Don't pitch it for "verify this in N days" checks.
