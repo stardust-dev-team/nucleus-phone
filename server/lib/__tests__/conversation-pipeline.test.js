@@ -13,6 +13,17 @@ jest.mock('../debug-log', () => ({
   logEvent: (...args) => mockLogEvent(...args),
 }));
 
+// Stub the coach-whisper hook so it doesn't double-count fetch calls in
+// tests that assert on `global.fetch.mock.calls.length`. The whisper
+// module has its own test suite (`coach-whisper.test.js`); the contract
+// here is just "the hook runs without blocking the chunk path."
+const mockMaybeEmitCoachWhisper = jest.fn();
+const mockCleanupCoachWhisperState = jest.fn();
+jest.mock('../coach-whisper', () => ({
+  maybeEmitCoachWhisper: (...args) => mockMaybeEmitCoachWhisper(...args),
+  cleanupCoachWhisperState: (...args) => mockCleanupCoachWhisperState(...args),
+}));
+
 // Suppress fetch calls — we mock callHaiku results via _handleAnalysisResult
 const {
   processConversationChunk,
@@ -53,6 +64,8 @@ beforeEach(() => {
   recentlyAborted.clear();
   mockBroadcast.mockClear();
   mockLogEvent.mockClear();
+  mockMaybeEmitCoachWhisper.mockClear();
+  mockCleanupCoachWhisperState.mockClear();
 });
 
 describe('buffer accumulation', () => {
@@ -508,6 +521,56 @@ describe('Tier 2 question bypass', () => {
     // Assert the reset actually moved close to "now" — staleTs was 10s ago,
     // so a real reset must land within 1s of staleTs+10000.
     expect(state.lastAnalysis).toBeGreaterThan(staleTs + 9000);
+  });
+});
+
+describe('coach-whisper hook integration', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+  });
+
+  it('calls maybeEmitCoachWhisper after timer-driven runAnalysis resolves', async () => {
+    global.fetch = jest.fn().mockResolvedValue(mockHaikuResponse({}));
+
+    const state = initState();
+    state.lastAnalysis = Date.now() - 10000;        // timer expired
+    state.history.push({ text: 'x'.repeat(60), ts: Date.now() });
+    callState.set('test-cw1', state);
+
+    await processConversationChunk('test-cw1', 'tell me about that');
+
+    expect(mockMaybeEmitCoachWhisper).toHaveBeenCalledTimes(1);
+    expect(mockMaybeEmitCoachWhisper).toHaveBeenCalledWith('test-cw1', state);
+  });
+
+  it('calls maybeEmitCoachWhisper after question-bypass runAnalysis resolves', async () => {
+    global.fetch = jest.fn().mockResolvedValue(mockHaikuResponse({}));
+
+    const state = initState();
+    state.lastAnalysis = Date.now();
+    state.history.push({ text: 'x'.repeat(60), ts: Date.now() });
+    callState.set('test-cw2', state);
+
+    await processConversationChunk('test-cw2', 'What is the lead time?');
+
+    expect(mockMaybeEmitCoachWhisper).toHaveBeenCalledTimes(1);
+    expect(mockMaybeEmitCoachWhisper).toHaveBeenCalledWith('test-cw2', state);
+  });
+
+  it('does NOT call maybeEmitCoachWhisper when no analysis cycle ran', async () => {
+    const state = initState();
+    state.lastAnalysis = Date.now();
+    // Empty buffer + non-question chunk → no runAnalysis, no whisper hook.
+    callState.set('test-cw3', state);
+
+    await processConversationChunk('test-cw3', 'mm-hmm');
+
+    expect(mockMaybeEmitCoachWhisper).not.toHaveBeenCalled();
+  });
+
+  it('cleanupConversation also clears whisper state', () => {
+    cleanupConversation('test-cw4');
+    expect(mockCleanupCoachWhisperState).toHaveBeenCalledWith('test-cw4');
   });
 });
 
