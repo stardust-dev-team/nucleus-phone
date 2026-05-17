@@ -58,6 +58,32 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
     expect(res.text).toMatch(/startConferenceOnEnter="true"/);
   });
 
+  test('initiate path emits partialResults="false" (joruva-dialer-mac-djy)', async () => {
+    // bd-djy: Twilio RT Transcription with partialResults=true emits
+    // every running-text fragment as a separate webhook ("A." → "A lot."
+    // → "A lot of." → …). The server broadcasts each fragment; iOS
+    // appends every one, rendering the same utterance multiple times
+    // with progressive expansion until the transcript is unreadable.
+    // partialResults=false makes Twilio buffer until utterance is
+    // complete and emit one webhook per finalized chunk per speaker leg.
+    //
+    // Pin the attribute on the TwiML so any refactor that drops the
+    // explicit `partialResults: false` (Twilio's default would matter
+    // here too — confirm via Twilio SDK source) trips this assertion.
+    const res = await request(app)
+      .post('/api/voice')
+      .send({
+        ConferenceName: 'nucleus-call-djy-1',
+        CallSid: 'CA0000000000000djy',
+      });
+
+    expect(res.text).toContain('<Transcription');
+    expect(res.text).toMatch(/partialResults="false"/);
+    // Sanity: track="both_tracks" is preserved — it's per-speaker
+    // diarization, not the dedup problem.
+    expect(res.text).toMatch(/track="both_tracks"/);
+  });
+
   test('join action does NOT set endConferenceOnExit="true" — secondary participants must not end the conference', async () => {
     const res = await request(app)
       .post('/api/voice')
