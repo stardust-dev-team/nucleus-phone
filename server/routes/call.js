@@ -390,6 +390,14 @@ router.post('/status', twilioWebhook, async (req, res) => {
     conf.participants = conf.participants.filter((p) => p.callSid !== CallSid);
   }
 
+  // bd-sgc: the `&& conf` guard is LOAD-BEARING for idempotency.
+  // POST /api/call/end now synchronously calls removeConference +
+  // the same DB UPDATE + the same three cleanup functions. When the
+  // Twilio webhook arrives 3-5s later, getConference returns undefined
+  // for the already-removed conf and the `&& conf` short-circuit
+  // prevents double-cleanup. If a future refactor removes that
+  // cleanup from /api/call/end, this arm must regain the SQL guard
+  // (`AND status != 'completed'`) and/or absorb the cleanup work.
   if (StatusCallbackEvent === 'conference-end' && conf) {
     const duration = Math.floor((Date.now() - conf.startedAt.getTime()) / 1000);
 
