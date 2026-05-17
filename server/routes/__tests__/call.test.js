@@ -428,7 +428,10 @@ describe('POST /api/call/end', () => {
   });
 
   test('ends conference via Twilio + removes from active map (bd-sgc)', async () => {
-    const startedAt = new Date(Date.now() - 30_000); // 30s ago
+    // Anchor startedAt 30s in the past so duration math has a known target.
+    // bd-sgc DB UPDATE binds Math.floor((Date.now() - startedAt) / 1000) as
+    // the first arg; we assert on the bind shape below.
+    const startedAt = new Date(Date.now() - 30_000);
     conference.getConference.mockReturnValue({ conferenceSid: 'CF999', startedAt });
     const mockUpdate = jest.fn().mockResolvedValue({});
     client.conferences.mockReturnValue({ update: mockUpdate });
@@ -444,6 +447,31 @@ describe('POST /api/call/end', () => {
     // bd-sgc: removeConference must fire synchronously so the next
     // /api/call/active poll doesn't echo the just-ended conference.
     expect(conference.removeConference).toHaveBeenCalledWith('nucleus-call-xyz');
+
+    // bd-sgc DB UPDATE shape — this assert is the contract the
+    // synchronous cleanup converges on with the /status webhook's
+    // conference-end arm. Both branches must produce the same row
+    // state; the `AND status != 'completed'` guard is what makes
+    // the second-to-arrive a no-op rather than re-stamping an
+    // already-completed call.
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringMatching(/UPDATE nucleus_phone_calls[\s\S]+SET status = 'completed'[\s\S]+AND status != 'completed'/),
+      expect.arrayContaining([
+        expect.any(Number),         // duration_seconds — Math.floor((now-startedAt)/1000)
+        'CF999',                    // conference_sid
+        'nucleus-call-xyz',         // conference_name
+      ])
+    );
+    // Pin the duration math (within ±1s of the 30s setup window — the
+    // request itself adds a few ms). If `Math.floor` ever gets dropped
+    // or the seconds-vs-ms unit slips, this catches it.
+    const dbCall = pool.query.mock.calls.find((c) =>
+      typeof c[0] === 'string' && c[0].includes('UPDATE nucleus_phone_calls'),
+    );
+    expect(dbCall).toBeDefined();
+    const duration = dbCall[1][0];
+    expect(duration).toBeGreaterThanOrEqual(29);
+    expect(duration).toBeLessThanOrEqual(31);
   });
 
   test('returns 500 when Twilio fails AND does not remove conference (bd-sgc)', async () => {
