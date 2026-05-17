@@ -50,13 +50,32 @@ router.post('/', twilioWebhook, async (req, res) => {
     // Enable Twilio Real-Time Transcription (only in initiator's TwiML, not
     // join participants — one transcription stream per conference is sufficient).
     // If RT Transcription isn't enabled on the account, this verb is silently ignored.
+    //
+    // joruva-dialer-mac-djy: `partialResults: false`. Twilio's RT
+    // Transcription with partial results enabled emits the running
+    // transcription as it builds up — one utterance becomes 5+
+    // webhooks ("A." → "A lot." → "A lot of." → …). The server
+    // broadcasts every chunk to subscribers; iOS appends each to the
+    // live transcript box, rendering the same utterance multiple
+    // times with progressive expansion. End-state UX: transcript is
+    // unreadable after 30s of conversation. With `partialResults:
+    // false`, Twilio buffers until utterance is complete (~500ms-1s
+    // latency tradeoff) and emits one webhook per finalized utterance
+    // per speaker leg. Acceptable latency for the live cockpit's
+    // read-by-rep use case.
+    //
+    // `track: 'both_tracks'` is preserved — that's per-speaker
+    // diarization, not the dedup problem. The "both tracks doubling
+    // when devices are co-located" subset of the original bd-djy
+    // symptom is out of scope (separate bead if it ever materially
+    // affects UX).
     const start = twiml.start();
     start.transcription({
       statusCallbackUrl: `${baseUrl}/api/transcription`,
       statusCallbackMethod: 'POST',
       track: 'both_tracks',
       languageCode: 'en-US',
-      partialResults: true,
+      partialResults: false,
       intelligenceService: process.env.TWILIO_INTELLIGENCE_SERVICE_SID || undefined,
     });
 
