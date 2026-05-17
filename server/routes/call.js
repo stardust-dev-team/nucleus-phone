@@ -265,6 +265,18 @@ router.get('/active', ...callerGuard, async (req, res) => {
 
 // POST /api/call/end — end a conference. Non-admin users can only end their
 // own conferences (identified by conf.callerIdentity from createConference).
+//
+// bd-sgc: after Twilio confirms the conference end, synchronously remove
+// the entry from the in-memory active map AND mark the DB row completed,
+// instead of waiting for the conference-end webhook (which arrives 3-5s
+// later — long enough that an iOS rep tapping "next call" immediately
+// after hangup hits the precondition guard's "already on a call" reject).
+//
+// Webhook arm at the /status route (`StatusCallbackEvent === 'conference-end'`)
+// is the cleanup safety net for paths where /api/call/end never fires
+// (lead hung up first, network drop, etc). It's idempotent against the
+// work done here: getConference returns undefined for the already-removed
+// conf and the `if (conf)` guard short-circuits.
 router.post('/end', ...callerGuard, async (req, res) => {
   const { conferenceName } = req.body;
 
@@ -281,11 +293,37 @@ router.post('/end', ...callerGuard, async (req, res) => {
 
   try {
     await client.conferences(conf.conferenceSid).update({ status: 'completed' });
-    res.json({ success: true });
   } catch (err) {
     console.error('End conference failed:', err.message);
-    res.status(500).json({ error: 'Failed to end conference' });
+    return res.status(500).json({ error: 'Failed to end conference' });
   }
+
+  // bd-sgc cleanup. Snapshot the fields we need BEFORE removeConference;
+  // after removal, getConference() returns undefined. Duration is computed
+  // from the same `conf.startedAt` the webhook arm uses so this race
+  // converges to the same row value.
+  const duration = Math.floor((Date.now() - conf.startedAt.getTime()) / 1000);
+  const sid = conf.conferenceSid;
+  removeConference(conferenceName);
+  try {
+    await pool.query(
+      `UPDATE nucleus_phone_calls
+       SET status = 'completed', duration_seconds = $1, conference_sid = $2
+       WHERE conference_name = $3 AND status != 'completed'`,
+      [duration, sid, conferenceName]
+    );
+  } catch (err) {
+    console.error('bd-sgc DB cleanup failed:', err.message);
+    // Don't fail the response — the row update is a follow-up, the
+    // Twilio conference is already ended and the in-memory entry is
+    // already gone. Stale-sweep / Twilio webhook will retry on the
+    // next opportunity.
+  }
+  cleanupConversation(conferenceName);
+  cleanupPipelineState(conferenceName);
+  cleanupCall(conferenceName);
+
+  res.json({ success: true });
 });
 
 // POST /api/call/status — Twilio conference status callback

@@ -427,8 +427,9 @@ describe('POST /api/call/end', () => {
       .expect(404);
   });
 
-  test('ends conference via Twilio', async () => {
-    conference.getConference.mockReturnValue({ conferenceSid: 'CF999' });
+  test('ends conference via Twilio + removes from active map (bd-sgc)', async () => {
+    const startedAt = new Date(Date.now() - 30_000); // 30s ago
+    conference.getConference.mockReturnValue({ conferenceSid: 'CF999', startedAt });
     const mockUpdate = jest.fn().mockResolvedValue({});
     client.conferences.mockReturnValue({ update: mockUpdate });
 
@@ -440,10 +441,13 @@ describe('POST /api/call/end', () => {
 
     expect(res.body.success).toBe(true);
     expect(mockUpdate).toHaveBeenCalledWith({ status: 'completed' });
+    // bd-sgc: removeConference must fire synchronously so the next
+    // /api/call/active poll doesn't echo the just-ended conference.
+    expect(conference.removeConference).toHaveBeenCalledWith('nucleus-call-xyz');
   });
 
-  test('returns 500 when Twilio fails', async () => {
-    conference.getConference.mockReturnValue({ conferenceSid: 'CF999' });
+  test('returns 500 when Twilio fails AND does not remove conference (bd-sgc)', async () => {
+    conference.getConference.mockReturnValue({ conferenceSid: 'CF999', startedAt: new Date() });
     client.conferences.mockReturnValue({
       update: jest.fn().mockRejectedValue(new Error('nope')),
     });
@@ -453,6 +457,12 @@ describe('POST /api/call/end', () => {
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-xyz' })
       .expect(500);
+
+    // bd-sgc: when Twilio refuses, we leave the in-memory entry so the
+    // stale-sweep / a manual retry can clean up. Otherwise a stuck
+    // Twilio conference would lose its in-memory anchor and become
+    // un-cleanupable.
+    expect(conference.removeConference).not.toHaveBeenCalled();
   });
 });
 
