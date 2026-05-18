@@ -12,20 +12,11 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
+const { PRODUCT_CATALOG } = require('../server/lib/product-catalog');
+
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5-20251001';
 const FETCH_TIMEOUT = 10000;
-
-// SYNC CHECK: copied from server/lib/claude.js PRODUCT_CATALOG to avoid coupling.
-// If production catalog changes, update this string to match.
-const PRODUCT_CATALOG = `Joruva Industrial products (confirmed pricing):
-Compressors: JRS-7.5E 7.5HP 28CFM $7,495 | JRS-10E 10HP 38CFM $9,495 | JRS-30 30HP 125CFM $19,500 (direct)
-Dryers (refrigerated): JRD-30 $2,195 | JRD-40 $2,495 | JRD-60 $2,895 | JRD-80 $3,195 | JRD-100 $3,595
-Dryers (desiccant, -60°F, molecular sieve, wall-mount): JDD-40 40CFM $7,495 | JDD-80 80CFM $11,895
-Filters: JPF-70 particulate 1µm $399 | JPF-130 $499 | JCF-70 coalescing 0.01µm $349 | JCF-130 $449
-OWS (oil-water separator): OWS75 $234 | OWS150 $1,092
-Larger systems (30HP+): direct sale, custom quote required.
-For AS9100/aerospace: recommend desiccant dryer + coalescing filter. General mfg: refrigerated dryer.`;
 
 // Common objection/rebuttal pairs (from sim-scorer.js and sales knowledge)
 const OBJECTION_PAIRS = `Common objections and rebuttals:
