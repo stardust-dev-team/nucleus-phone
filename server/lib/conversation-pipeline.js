@@ -12,6 +12,7 @@ const { broadcast } = require('./live-analysis');
 const { logEvent } = require('./debug-log');
 const { maybeEmitCoachWhisper, cleanupCoachWhisperState } = require('./coach-whisper');
 const { PRODUCT_CATALOG } = require('./product-catalog');
+const { OBJECTION_PAIRS } = require('./objection-pairs');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -64,13 +65,6 @@ const EXIT_ASSIST_SOURCE_TAG = 'exit_assist';    // hostile/tanking off-ramp
 // Keep key=value pipe-delimited. "-" is the sentinel for missing values.
 
 // ── System prompt (same as validated in scripts/test-conversation-latency.js) ──
-
-const OBJECTION_PAIRS = `Common objections and rebuttals:
-- "Too expensive" / "We're cheaper than the downtime you're paying for now. JRS-10E pays for itself in 18 months vs ongoing recip maintenance."
-- "We already have a vendor" / "Totally get it. Most of our customers had a vendor too. We're not asking you to switch tomorrow — just worth a comparison on the next replacement cycle."
-- "Never heard of Joruva" / "Fair point. We're newer to the market, which means better pricing and actual phone support — not a 1-800 number."
-- "Just looking" / "No pressure at all. Let me send you specs so when the time comes, you've got everything in front of you."
-- "Need to talk to my partner/boss" / "Of course. Want me to put together a one-pager you can share? Makes the conversation easier."`;
 
 const SYSTEM_PROMPT = `You are a real-time conversation analyst for Joruva Industrial sales calls. Joruva sells compressed air systems (rotary screw compressors, dryers, filters, oil-water separators) to manufacturing shops, job shops, and industrial facilities. The caller is a Joruva sales rep. The prospect is typically a shop owner, plant manager, or maintenance lead.
 
