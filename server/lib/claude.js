@@ -6,24 +6,13 @@
 const { logEvent } = require('./debug-log');
 const { touch } = require('./health-tracker');
 const { throwHttpError } = require('./http-error');
+const { PRODUCT_CATALOG } = require('./product-catalog');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const CACHE_VERSION = 3; // Bump when prompt or data shape changes. v3: added brand_voice + competitive_watch (Phase D).
 const FETCH_TIMEOUT = 6000; // 6 seconds
-
-// Compact product catalog for Claude prompt — confirmed-pricing SKUs only.
-// Source: compressor-catalog.js + sizing-engine.js (read-only, not imported to avoid coupling)
-// Last synced: 2026-04-04. If prices change in source files, update this string.
-const PRODUCT_CATALOG = `Joruva Industrial products (confirmed pricing):
-Compressors: JRS-7.5E 7.5HP 28CFM $7,495 | JRS-10E 10HP 38CFM $9,495 | JRS-30 30HP 125CFM $19,500 (direct)
-Dryers (refrigerated): JRD-30 $2,195 | JRD-40 $2,495 | JRD-60 $2,895 | JRD-80 $3,195 | JRD-100 $3,595
-Dryers (desiccant, -60°F, molecular sieve, wall-mount): JDD-40 40CFM $7,495 | JDD-80 80CFM $11,895
-Filters: JPF-70 particulate 1µm $399 | JPF-130 $499 | JCF-70 coalescing 0.01µm $349 | JCF-130 $449
-OWS (oil-water separator): OWS75 $234 | OWS150 $1,092
-Larger systems (30HP+): direct sale, custom quote required.
-For AS9100/aerospace: recommend desiccant dryer + coalescing filter. General mfg: refrigerated dryer.`;
 
 // In-memory cache: Map<string, { data, expiresAt }>
 const cache = new Map();
