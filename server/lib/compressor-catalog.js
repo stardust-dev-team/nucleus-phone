@@ -209,6 +209,34 @@ for (let i = 1; i < _pricedConfirmed.length; i++) {
   }
 }
 
+// Module-init invariant: >20 HP is phone-sales-only per
+// feedback_cas_pricing_boundary.md (HARD RULE). Any catalog entry with
+// hp > 20 && salesChannel anything other than 'direct' is a
+// published-pricing leak waiting to happen. This was silently violated
+// by JRS-25E until 2026-05-14 — multiple Linus passes on the catalog
+// file failed to catch it. Fail load-time so the server refuses to
+// start on regression. Extracted to a pure function so the negative
+// case is unit-testable without poking the module's internal const
+// arrays.
+//
+// Predicate is `!== 'direct'` rather than `=== 'ecommerce'` so a future
+// edit that introduces a typo ('Ecommerce', 'e-commerce') or a new
+// channel value ('web', 'partner') doesn't slip past the guard. The
+// safe default above 20 HP is phone-sales — anything not explicitly
+// 'direct' is untrusted.
+function assertDirectSalesAbove20Hp(catalog) {
+  for (const m of catalog) {
+    if (m.hp > 20 && m.salesChannel !== 'direct') {
+      throw new Error(
+        `compressor-catalog: hard-rule violation. ${m.model} (${m.hp} HP) ` +
+        `has salesChannel='${m.salesChannel}'. >20 HP must be 'direct' per ` +
+        `feedback_cas_pricing_boundary.md.`
+      );
+    }
+  }
+}
+assertDirectSalesAbove20Hp(COMPRESSOR_CATALOG);
+
 module.exports = {
   COMPRESSOR_CATALOG,
   RS_OPEN_FRAME,
@@ -218,4 +246,5 @@ module.exports = {
   GENERIC_PERSONA_DEFAULT,
   personaDefaultsFor,
   pricedModelAtOrAbove,
+  assertDirectSalesAbove20Hp,
 };
