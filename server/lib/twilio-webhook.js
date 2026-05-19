@@ -18,7 +18,22 @@ function makeTwilioWebhook(path) {
   return function hook(req, res, next) {
     const baseUrl = process.env.APP_URL || DEFAULT_BASE_URL;
     const validate = process.env.NODE_ENV === 'production';
-    return twilio.webhook({ validate, url: `${baseUrl}${path}` })(req, res, next);
+    // Twilio computes the signature over the FULL request URL including
+    // query string. Pre-2026-05-19 we passed `url: ${baseUrl}${path}` which
+    // dropped the query — twilio.webhook() honors `options.url` AS-IS
+    // (see node_modules/twilio/lib/webhooks/webhooks.js validateIncomingRequest)
+    // so signatures mismatched on every action-URL callback (dial-complete,
+    // rep-status, voicemail, voicemail-complete) and Twilio got a 403.
+    // The bug was silently masked on PSTN inbound because Twilio falls back
+    // to the inline TwiML safety net after a 403 from the action URL.
+    // Surfaced when iOS dial timed out and Twilio retried the number-level
+    // fallback URL → caller heard the "technical difficulties" message.
+    //
+    // req.originalUrl includes both pathname AND query string as received
+    // from the proxy (Render terminates TLS and forwards unchanged), so
+    // `${baseUrl}${req.originalUrl}` is the exact URL Twilio signed.
+    // The `path` argument is preserved as call-site documentation.
+    return twilio.webhook({ validate, url: `${baseUrl}${req.originalUrl}` })(req, res, next);
   };
 }
 
