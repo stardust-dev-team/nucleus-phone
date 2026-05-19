@@ -25,7 +25,7 @@ function loadPersonas() {
 
 /**
  * Public personas list — the shape served by GET /api/sim/personas.
- * Strips `assistantEnvVars` (server-only secret-ish metadata) before returning.
+ * Strips `assistantEnvVars` (internal mapping, not part of the public contract).
  *
  * Architecture B (the active choice as of 2026-05-19): no `assistantInboundNumbers`
  * field. If we ever flip to Architecture A, add the field to personas.json and
@@ -41,9 +41,20 @@ function listPersonas() {
  * legacy fallback is set — caller decides between 500 (server misconfig) and
  * 404 (unknown persona/difficulty).
  *
- * Legacy fallback: VAPI_SIM_{DIFFICULTY}_ID. This is what the PWA was using
- * before this helper existed; keeping it here means the PWA can migrate to
- * resolveAssistantId() without an env-var rename on Render between deploys.
+ * Precedence:
+ *   1. `process.env[persona.assistantEnvVars[difficulty]]` (the new var name).
+ *   2. `process.env["VAPI_SIM_" + difficulty.toUpperCase() + "_ID"]` (legacy fallback).
+ *   3. undefined.
+ *
+ * Empty-string env values are treated as unset at each step (Render's UI can't
+ * save "" by accident, but JS test setups can). If a future use case needs
+ * "explicit empty = disable this slot, do NOT fall through", change this — the
+ * test at sim-lib/personas.test.js "empty-string env value is treated as unset"
+ * pins the current behavior.
+ *
+ * Returns undefined when persona is unknown or the difficulty is not in
+ * persona.difficulties — keeps callers from accidentally getting a legacy
+ * fallback for a persona/difficulty pair that doesn't exist.
  */
 function resolveAssistantId({ personaId, difficulty }) {
   const personas = loadPersonas();
@@ -57,16 +68,23 @@ function resolveAssistantId({ personaId, difficulty }) {
 }
 
 /**
- * Startup validation — warns (does not crash) when an `assistantEnvVars` entry
- * resolves to undefined after fallback. Keeps the PWA path working unchanged
- * while flagging Render env-var drift in deploy logs.
+ * Validate the persona config against the current process env. Warns (does
+ * not throw) for each persona/difficulty slot that resolves to undefined
+ * after fallback. Intended to be called once from server bootstrap, AFTER
+ * dotenv + requireEnv have populated process.env.
+ *
+ * Returns the count of slots that failed to resolve, so callers can decide
+ * whether to surface it in a /health response or just rely on the warn-only
+ * deploy-log behavior.
  */
-function validateOnStartup() {
+function validatePersonaConfig() {
   const personas = loadPersonas();
+  let missing = 0;
   for (const persona of personas) {
     for (const difficulty of persona.difficulties) {
       const resolved = resolveAssistantId({ personaId: persona.id, difficulty });
       if (!resolved) {
+        missing += 1;
         const newVar = persona.assistantEnvVars?.[difficulty];
         const legacyVar = `VAPI_SIM_${difficulty.toUpperCase()}_ID`;
         console.warn(
@@ -76,12 +94,12 @@ function validateOnStartup() {
       }
     }
   }
+  return missing;
 }
-
-validateOnStartup();
 
 module.exports = {
   listPersonas,
   resolveAssistantId,
-  _resetCacheForTests: () => { cache = null; },
+  validatePersonaConfig,
+  _resetCache: () => { cache = null; },
 };
