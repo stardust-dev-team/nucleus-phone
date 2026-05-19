@@ -30,6 +30,23 @@ Keep entries terse but self-contained — a fresh session should be able to act 
 
 ## Open Follow-ups
 
+### 2026-05-19 — Britt inbound DID provisioning (deferred from drift-cleanup session)
+
+**Trigger:** Britt expands beyond Sales Discovery into closing / inbound coverage, OR she explicitly asks to receive inbound calls on her iOS dialer.
+
+**Action:**
+1. Buy a Phoenix-area Twilio DID via the Twilio Numbers API (`twilio api:core:available-phone-numbers:local:list --country-code US --area-code 602` or 480/623).
+2. Point its voiceUrl at `https://nucleus-phone.onrender.com/api/voice/incoming`.
+3. Add an entry to `server/config/inbound-routes.json` with `iosIdentity: "britt"` (her registered VoIP token receives push directly — no PSTN forward needed). Slack field stays `""` until she joins the workspace.
+4. Add a drift sentinel test for her route in `server/routes/__tests__/incoming.conformance.test.js` mirroring the Ryann + Tom sentinels.
+5. Update `memory/runbooks/twilio-voice.md` + hub mirror.
+
+**Why it matters:** Britt has a VoIP token registered in `nucleus_phone_voip_tokens` (user_id=4, registered 2026-05-17) so the iOS app is live for outbound. Inbound requires the DID + route entry. Easy to forget if not tracked here.
+
+**Owner:** Tom.
+
+---
+
 ### 2026-05-14 — Verify CAS pricing for JRS-5E / 15E / 20E / 25E with Billy (compressor-catalog patch)
 
 **Trigger:** Next conversation with Billy at CAS, OR before any customer-facing surface (website, chatbot, quote PDF) consumes the new `JRS-5E $6,995 confirmed` / `JRS-15E $11,995 confirmed` values from `server/lib/compressor-catalog.js`.
