@@ -14,12 +14,14 @@ jest.mock('../auth', () => ({
 const request = require('supertest');
 const express = require('express');
 const { generateAccessToken } = require('../../lib/twilio');
+const { pool } = require('../../db');
 const { apiKeyAuth } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
 
 const API_KEY = 'test-api-key';
 
 let app;
+let appWithSession;
 beforeAll(() => {
   process.env.NUCLEUS_PHONE_API_KEY = API_KEY;
   app = express();
@@ -28,6 +30,17 @@ beforeAll(() => {
   // admin principal). The composer-precedence path is covered separately in
   // history.test.js.
   app.use('/api/token', apiKeyAuth, rbac('external_caller'), require('../token'));
+
+  // Second app mount with a fake session-style auth that injects a real
+  // req.user.id — needed to exercise the nucleus_phone_voip_tokens lookup
+  // path (the API-key principal has id:0 and skips the lookup).
+  appWithSession = express();
+  appWithSession.use(express.json());
+  appWithSession.use((req, _res, next) => {
+    req.user = { id: 1, identity: 'tom', authSource: 'session', role: 'admin' };
+    next();
+  });
+  appWithSession.use('/api/token', rbac('external_caller'), require('../token'));
 });
 
 afterAll(() => {
@@ -36,6 +49,8 @@ afterAll(() => {
 
 beforeEach(() => {
   generateAccessToken.mockClear();
+  pool.query.mockReset();
+  pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
 describe('GET /api/token', () => {
@@ -65,5 +80,66 @@ describe('GET /api/token', () => {
       .expect(200);
 
     expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
+  });
+});
+
+// Regression for the 2026-05-19 APNs 52143 root cause: iOS register() was
+// binding to Twilio's auto-picked (legacy Flex) APN credential because the
+// VoiceGrant had no pushCredentialSid. /api/token?mode=mobile now looks up
+// the user's registered env in nucleus_phone_voip_tokens and forwards the
+// matching credential_sid into the grant.
+describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode)', () => {
+  test('mobile + session user + voip_tokens row → forwards credential_sid', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{ credential_sid: 'CRsandbox123' }],
+      rowCount: 1,
+    });
+
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+
+    // Verify the lookup ran with the right user_id (drift sentinel: if
+    // someone changes the SQL to filter by something else, this catches it).
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringMatching(/nucleus_phone_voip_tokens/),
+      [1],
+    );
+    expect(generateAccessToken).toHaveBeenCalledWith('tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRsandbox123',
+    });
+  });
+
+  test('mobile + session user + NO voip_tokens row → omits pushCredentialSid (graceful)', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+
+    // The call signature must remain byte-identical to the legacy shape
+    // when there's no cred to forward — otherwise existing API-key callers
+    // that pin the call args via toHaveBeenCalledWith would silently break.
+    expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: true });
+  });
+
+  test('NO mode (default) → no lookup runs, no pushCredentialSid forwarded', async () => {
+    await request(appWithSession).get('/api/token').expect(200);
+
+    expect(pool.query).not.toHaveBeenCalled();
+    expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
+  });
+
+  test('mobile + DB query throws → graceful fallthrough (token still issued)', async () => {
+    pool.query.mockRejectedValueOnce(new Error('connection refused'));
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+      expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: true });
+      expect(errSpy).toHaveBeenCalledWith(
+        'token: voip_tokens lookup failed:',
+        'connection refused',
+      );
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
