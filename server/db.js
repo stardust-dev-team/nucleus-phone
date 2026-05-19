@@ -131,13 +131,17 @@ async function initSchema() {
       CREATE INDEX IF NOT EXISTS idx_sim_vapi ON sim_call_scores(vapi_call_id);
     `);
 
-    // Add columns introduced after initial schema (safe for existing deployments)
+    // Add columns introduced after initial schema (safe for existing deployments).
+    // persona_id (B2b) lets the conference-start webhook recover the
+    // persona/difficulty pair after a process restart wipes the in-memory
+    // activeConferences map.
     await client.query(`
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_listen_url TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_control_url TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS conference_name TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS conference_sid TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS twilio_vapi_leg_sid TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS persona_id TEXT;
     `);
 
     // Stale sweep is handled by lib/stale-sweep.js (runs on interval + startup)

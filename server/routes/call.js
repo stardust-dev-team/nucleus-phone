@@ -11,7 +11,10 @@ const {
 const { cleanupCall } = require('../lib/live-analysis');
 const { cleanupConversation } = require('../lib/conversation-pipeline');
 const { cleanupPipelineState } = require('../lib/equipment-pipeline');
-const { sendSlackAlert } = require('../lib/slack');
+const { sendSlackAlert, sendSystemAlert } = require('../lib/slack');
+const { createOutboundCall } = require('../lib/vapi');
+const { resolveAssistantId } = require('../lib/personas');
+const { pickGreeting } = require('../lib/sim-greetings');
 
 const router = Router();
 
@@ -354,6 +357,22 @@ router.post('/status', twilioWebhook, async (req, res) => {
 
   const conf = getConference(FriendlyName);
 
+  // ── SIM bridge (B2b, Architecture B) ─────────────────────────────────────
+  // For sim conferences (FriendlyName === `sim-{id}`), the second participant
+  // is Vapi-as-Mike-Garza, not a PSTN lead. On conference-start we dial Vapi
+  // outbound to NUCLEUS_SIM_CONFERENCE_NUMBER. Vapi's inbound TwiML
+  // (provisioned separately — see follow-up bead) connects that leg into
+  // this same conference. Idempotency via SELECT FOR UPDATE on vapi_call_id.
+  //
+  // This branch returns 204 inside handleSimConferenceStart and short-
+  // circuits the rest of the handler so the real-call lead-dial path
+  // doesn't run for sims (sim conf.leadPhone is null anyway, so it would
+  // no-op — but explicit is better than relying on that invariant).
+  if (StatusCallbackEvent === 'conference-start' && ConferenceSid && typeof FriendlyName === 'string' && FriendlyName.startsWith('sim-')) {
+    await handleSimConferenceStart({ FriendlyName, ConferenceSid, conf });
+    return res.sendStatus(204);
+  }
+
   // On conference-start or first participant-join: save SID and dial the lead.
   // participant-join typically arrives ~800ms before conference-start, so we
   // trigger on whichever lands first. claimLeadDial() prevents double-dialing.
@@ -441,4 +460,165 @@ router.post('/status', twilioWebhook, async (req, res) => {
   res.sendStatus(204);
 });
 
-module.exports = router;
+/**
+ * Handle Twilio's conference-start callback for a sim conference (B2b).
+ *
+ * Architecture B: Vapi-initiated. After the rep's Voice SDK leg lands in the
+ * conference, we dial Vapi outbound to NUCLEUS_SIM_CONFERENCE_NUMBER. Vapi's
+ * inbound TwiML (separate follow-up bead) connects that leg into this
+ * conference, so Vapi-as-Mike-Garza ends up as the second participant.
+ *
+ * Idempotency: Twilio retries non-2xx and slow webhook responses. We wrap the
+ * dial path in an explicit BEGIN/SELECT-FOR-UPDATE/COMMIT transaction on
+ * sim_call_scores so a retry seeing vapi_call_id IS NOT NULL short-circuits.
+ *
+ * On failure: row marked 'score-failed', system alert fired, conference is
+ * ended (rep's iOS leg gets remoteHangup and surfaces the scoring sheet's
+ * failure path).
+ *
+ * Errors are swallowed and never re-thrown — caller (the /status route)
+ * always wants to return 204. If we threw, Twilio would retry the webhook,
+ * and the SELECT FOR UPDATE would correctly short-circuit, but the row
+ * UPDATE on the failure path would never run.
+ */
+async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
+  const simConferenceNumber = process.env.NUCLEUS_SIM_CONFERENCE_NUMBER;
+  if (!simConferenceNumber) {
+    console.error(`sim-bridge: NUCLEUS_SIM_CONFERENCE_NUMBER not set — cannot dial Vapi for ${FriendlyName}`);
+    sendSystemAlert(
+      `🔴 Sim Bridge Misconfigured — NUCLEUS_SIM_CONFERENCE_NUMBER unset`,
+      [{
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${FriendlyName}* could not bridge to Vapi: NUCLEUS_SIM_CONFERENCE_NUMBER env var is not set on this deploy.\n\n*Action:* set the env var to the Twilio inbound number whose TwiML conferences into \`sim-{id}\`.` },
+      }]
+    ).catch(() => {});
+    await markSimFailed(FriendlyName, 'NUCLEUS_SIM_CONFERENCE_NUMBER unset').catch(() => {});
+    return;
+  }
+
+  const dbClient = await pool.connect();
+  let simRow = null;
+  try {
+    await dbClient.query('BEGIN');
+
+    // Look up sim row by conference_name (B2a's column). FOR UPDATE locks
+    // the row so a concurrent Twilio retry blocks here until COMMIT, then
+    // sees vapi_call_id populated and short-circuits.
+    const { rows } = await dbClient.query(
+      `SELECT id, persona_id, difficulty, vapi_call_id, status
+       FROM sim_call_scores WHERE conference_name = $1 FOR UPDATE`,
+      [FriendlyName]
+    );
+
+    if (!rows.length) {
+      console.warn(`sim-bridge: no sim_call_scores row for conference_name=${FriendlyName}`);
+      await dbClient.query('COMMIT');
+      return;
+    }
+    simRow = rows[0];
+
+    // Idempotency sentinel.
+    if (simRow.vapi_call_id) {
+      console.log(`sim-bridge: ${FriendlyName} already has vapi_call_id=${simRow.vapi_call_id}, short-circuit`);
+      await dbClient.query('COMMIT');
+      return;
+    }
+
+    // If the user cancelled or sweep marked the row in the narrow window
+    // between sim-call-ios POST and Twilio's conference-start arriving,
+    // don't dial Vapi.
+    if (simRow.status !== 'in-progress') {
+      console.warn(`sim-bridge: ${FriendlyName} status is ${simRow.status}, refusing to dial Vapi`);
+      await dbClient.query('COMMIT');
+      return;
+    }
+
+    // Recover persona+difficulty. Primary path uses the in-memory map (set
+    // by sim-call-ios). Fallback uses the DB row's persona_id/difficulty
+    // columns when the map was wiped (process restart).
+    const personaId = (conf && conf.type === 'sim' && conf.personaId) || simRow.persona_id;
+    const difficulty = (conf && conf.type === 'sim' && conf.difficulty) || simRow.difficulty;
+    const assistantId = (conf && conf.type === 'sim' && conf.assistantId)
+      || (personaId && difficulty ? resolveAssistantId({ personaId, difficulty }) : undefined);
+
+    if (!assistantId) {
+      console.error(`sim-bridge: cannot resolve assistantId for ${FriendlyName} (persona=${personaId}, difficulty=${difficulty})`);
+      await dbClient.query('COMMIT');
+      await markSimFailed(FriendlyName, 'assistantId unresolved').catch(() => {});
+      return;
+    }
+
+    let vapiCall;
+    try {
+      vapiCall = await createOutboundCall({
+        assistantId,
+        customerNumber: simConferenceNumber,
+        assistantOverrides: {
+          firstMessage: pickGreeting(difficulty),
+          variableValues: { simCallId: String(simRow.id), conferenceName: FriendlyName },
+        },
+      });
+    } catch (err) {
+      console.error(`sim-bridge: Vapi createOutboundCall failed for ${FriendlyName}:`, err.message);
+      await dbClient.query('ROLLBACK');
+      await markSimFailed(FriendlyName, `Vapi dial failed: ${err.message}`).catch(() => {});
+      // End the conference so the rep's leg drops cleanly into the scoring
+      // sheet's failure-path instead of hanging in silence.
+      client.conferences(ConferenceSid).update({ status: 'completed' })
+        .catch((endErr) => console.error(`sim-bridge: failed to end conference ${ConferenceSid} after Vapi error:`, endErr.message));
+      sendSystemAlert(
+        `🔴 Sim Bridge Failed — Vapi dial error`,
+        [{
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*${FriendlyName}* could not connect to Vapi.\n*assistantId:* \`${assistantId}\`\n*Error:* ${err.message}` },
+        }]
+      ).catch(() => {});
+      return;
+    }
+
+    await dbClient.query(
+      `UPDATE sim_call_scores
+       SET vapi_call_id = $1,
+           monitor_listen_url = $2,
+           monitor_control_url = $3,
+           conference_sid = $4
+       WHERE id = $5`,
+      [
+        vapiCall.id,
+        vapiCall.monitor?.listenUrl || null,
+        vapiCall.monitor?.controlUrl || null,
+        ConferenceSid,
+        simRow.id,
+      ]
+    );
+
+    await dbClient.query('COMMIT');
+
+    // Cache the SID in the in-memory map so downstream conference-end /
+    // participant-leave events on the same FriendlyName have the SID handy.
+    updateConference(FriendlyName, { conferenceSid: ConferenceSid });
+
+    console.log(`sim-bridge: ${FriendlyName} → vapi=${vapiCall.id} (conf=${ConferenceSid})`);
+  } catch (err) {
+    console.error(`sim-bridge: transaction failed for ${FriendlyName}:`, err.message);
+    try { await dbClient.query('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    await markSimFailed(FriendlyName, `bridge error: ${err.message}`).catch(() => {});
+  } finally {
+    dbClient.release();
+  }
+}
+
+/** Mark a sim row 'score-failed' with an error message. Used by the bridge
+ *  failure paths so iOS poll sees status='failed' on /api/sim/call/:id/score.
+ */
+async function markSimFailed(conferenceName, errorMessage) {
+  await pool.query(
+    `UPDATE sim_call_scores
+     SET status = 'score-failed',
+         caller_debrief = COALESCE(caller_debrief, $1)
+     WHERE conference_name = $2 AND status IN ('in-progress', 'scoring')`,
+    [`Practice call could not start: ${errorMessage}`, conferenceName]
+  );
+}
+
+module.exports = Object.assign(router, { __testing: { handleSimConferenceStart, markSimFailed } });

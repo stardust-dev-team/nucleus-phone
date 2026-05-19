@@ -12,8 +12,9 @@ const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { createOutboundCall, stopCall, stopCallAndLog, getCall } = require('../lib/vapi');
 const { listPersonas, resolveAssistantId } = require('../lib/personas');
-const { createConference, updateConference, removeConference } = require('../lib/conference');
-const { generateAccessToken } = require('../lib/twilio');
+const { createConference, updateConference, removeConference, getConference } = require('../lib/conference');
+const { generateAccessToken, client: twilioClient } = require('../lib/twilio');
+const { pickGreeting } = require('../lib/sim-greetings');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
@@ -64,33 +65,6 @@ const DIFFICULTY_TO_ASSISTANT = {
   medium: 'VAPI_SIM_MEDIUM_ID',
   hard: 'VAPI_SIM_HARD_ID',
 };
-
-// Greeting pools — randomized per call so reps don't memorize the opener.
-const GREETING_POOLS = {
-  easy: [
-    "Garza Precision, this is Mike. What can I do for you?",
-    "Hey, Mike Garza.",
-    "This is Mike at Garza Precision, how can I help you?",
-    "Garza Precision, Mike speaking.",
-  ],
-  medium: [
-    "Yeah, this is Mike.",
-    "Mike speaking.",
-    "Garza Precision.",
-    "This is Mike.",
-  ],
-  hard: [
-    "Garza Precision.",
-    "Yeah.",
-    "Mike.",
-    "Hello???",
-  ],
-};
-
-function pickGreeting(difficulty) {
-  const pool = GREETING_POOLS[difficulty];
-  return pool[Math.floor(Math.random() * pool.length)];
-}
 
 // Load phone numbers from gitignored secrets file, fall back to env vars (PHONE_TOM, etc.)
 let phoneSecrets = {};
@@ -671,7 +645,7 @@ async function webhookHandler(req, res) {
            cost_cents = $5,
            status = 'scoring'
          WHERE vapi_call_id = $1
-         RETURNING id, caller_identity, difficulty`,
+         RETURNING id, caller_identity, difficulty, conference_sid, conference_name`,
         [vapiCallId, transcript, recording, duration, costCents]
       ));
     } catch (err) {
@@ -693,6 +667,41 @@ async function webhookHandler(req, res) {
   const row = rows[0];
   const webhookNavEvents = getCallEventLog(`sim-${row.id}`);
   cleanupConversation(`sim-${row.id}`);
+
+  // B2b: defensive Twilio conference cleanup for iOS sim conferences.
+  //
+  // Vapi just ended its leg (end-of-call-report fired). The cleanest exit is
+  // for the rep's iOS leg to drop too, so iOS sees .disconnected and
+  // surfaces the scoring sheet. The bridging TwiML for
+  // NUCLEUS_SIM_CONFERENCE_NUMBER sets endConferenceOnExit:true on Vapi's
+  // <Conference> verb, so the conference normally ends on its own. This
+  // explicit `.update({status:'completed'})` is the belt-and-suspenders
+  // path for: (a) bridging TwiML misconfigured, (b) Vapi's leg ended but
+  // Twilio didn't auto-end (rare race when the rep's leg is also leaving),
+  // (c) future architectures where endConferenceOnExit isn't applicable.
+  //
+  // PWA browser-mode sims have no conference_sid (their Vapi call runs
+  // directly in the browser via Vapi Web SDK, no Twilio conference involved),
+  // so this is a no-op for them. iOS sims always have conference_sid set by
+  // B2b's conference-start handler.
+  if (row.conference_sid) {
+    twilioClient.conferences(row.conference_sid).update({ status: 'completed' })
+      .catch((err) => {
+        // 404 / 20404: conference already ended on Twilio's side. Expected on
+        // the happy path because endConferenceOnExit fired first. Log at info
+        // for forensics, not warn — this isn't actionable.
+        if (err && (err.status === 404 || err.code === 20404)) {
+          console.log(`sim webhook: conference ${row.conference_sid} already ended (expected on happy path)`);
+        } else {
+          console.warn(`sim webhook: failed to end conference ${row.conference_sid}:`, err.message);
+        }
+      });
+    // In-memory map cleanup is idempotent with the conference-end Twilio
+    // webhook arm in routes/call.js — whichever fires first wins.
+    if (row.conference_name && getConference(row.conference_name)) {
+      removeConference(row.conference_name);
+    }
+  }
 
   // Async scoring pipeline (fire-and-forget after 200 response).
   (async () => {
@@ -853,14 +862,17 @@ async function simCallIos(req, res) {
   }
 
   // INSERT the row → we have the simCallId for the conference name.
+  // persona_id is persisted so the B2b conference-start webhook can
+  // recover the persona/difficulty pair after a process restart (the
+  // in-memory activeConferences entry is lost on restart).
   const promptVersion = getPromptVersion(difficulty);
   let simCallId;
   try {
     const { rows: [row] } = await pool.query(
-      `INSERT INTO sim_call_scores (caller_identity, difficulty, prompt_version, status)
-       VALUES ($1, $2, $3, 'in-progress')
+      `INSERT INTO sim_call_scores (caller_identity, difficulty, prompt_version, status, persona_id)
+       VALUES ($1, $2, $3, 'in-progress', $4)
        RETURNING id`,
-      [identity, difficulty, promptVersion]
+      [identity, difficulty, promptVersion, personaId]
     );
     simCallId = row.id;
   } catch (err) {
