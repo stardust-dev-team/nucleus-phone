@@ -1,4 +1,5 @@
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
+jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 jest.mock('../../config/team.json', () => ({
   members: [
     { identity: 'tom', name: 'Tom', email: 'tom@joruva.com', role: 'admin' },
@@ -35,8 +36,24 @@ jest.mock('../../lib/conversation-pipeline', () => ({
 const request = require('supertest');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
+const { __testSetUser } = require('../../middleware/auth');
 
 const API_KEY = 'test-personas-api-key';
+
+let nextUserId = 7000;
+function mockBearerUser(identity, role = 'external_caller') {
+  const id = nextUserId++;
+  __testSetUser({
+    id,
+    email: `${identity}@joruva.com`,
+    identity,
+    role,
+    displayName: identity,
+  });
+  jwt.verify.mockReturnValue({ userId: id });
+  return id;
+}
 
 let app;
 beforeAll(() => {
@@ -51,6 +68,13 @@ beforeAll(() => {
 afterAll(() => {
   delete process.env.NUCLEUS_PHONE_API_KEY;
   delete process.env.JWT_SECRET;
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  // Defense-in-depth: bearer-token tests stub jwt.verify explicitly; this
+  // keeps API-key tests from coasting on a stale stub if a cookie leaks in.
+  jwt.verify.mockImplementation(() => { throw new Error('no session'); });
 });
 
 describe('GET /api/sim/personas', () => {
@@ -72,6 +96,21 @@ describe('GET /api/sim/personas', () => {
       role: 'CNC shop owner, Mesa AZ',
       difficulties: ['easy', 'medium', 'hard'],
     });
+  });
+
+  // Linus review #6 — the endpoint exists to serve iOS bearer-token callers.
+  // bearerOrApiKeyOrSession short-circuits on Authorization: Bearer before
+  // touching the API-key branch, so this test pins the bearer code path that
+  // motivated the whole bead.
+  test('returns persona array when authed via bearer token (iOS path)', async () => {
+    mockBearerUser('tom');
+    const res = await request(app)
+      .get('/api/sim/personas')
+      .set('Authorization', 'Bearer fake-jwt')
+      .expect(200);
+
+    expect(res.body.personas).toHaveLength(1);
+    expect(res.body.personas[0].id).toBe('mike-garza');
   });
 
   test('public shape never leaks assistantEnvVars', async () => {
