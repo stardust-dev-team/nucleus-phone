@@ -25,6 +25,7 @@ const { rbac } = require('./middleware/rbac');
 const { startSweep } = require('./lib/stale-sweep');
 const { attachWebSocket } = require('./lib/live-analysis');
 const { startScheduler: startCurator } = require('./lib/equipment-curator');
+const { validatePersonaConfig } = require('./lib/personas');
 const { createHmac, timingSafeEqual } = require('crypto');
 const hubCatalog = require('./lib/hub-catalog-store');
 const { flush: flushDebugLog } = require('./lib/debug-log');
@@ -131,6 +132,7 @@ let httpServer;
 
 async function start() {
   await initSchema();
+  validatePersonaConfig();
   startSweep();
   startCurator();
   hubCatalog.startRefreshLoop();
