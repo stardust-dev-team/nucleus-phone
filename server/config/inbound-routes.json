@@ -4,7 +4,7 @@
     "+16026000188": { "forward": "+14803630494", "slack": "U0ANRJR25QB", "name": "Ryann" },
     "+16029050230": { "forward": "+16027417970", "slack": "U0AREAF8NBC", "name": "Paul" },
     "+16234717436": { "forward": "+19515286164", "slack": "U0ANMAHMMQW", "name": "Alex" },
-    "+16234620197": { "forward": "+16304416374", "slack": "U09QE6KDHNK", "name": "Tom" },
+    "+16234620197": { "iosIdentity": "tom", "slack": "U09QE6KDHNK", "name": "Tom" },
     "+16236247544": { "forward": "+12243451344", "slack": "", "name": "Kate" },
     "+16233434126": { "forward": "+17852076096", "slack": "", "name": "Lily" },
     "+16233437547": { "forward": "+19097098746", "slack": "", "name": "Blake" }
