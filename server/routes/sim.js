@@ -217,7 +217,7 @@ router.post('/call', sessionAuth, async (req, res) => {
     [identity]
   );
   if (activeSim.length > 0) {
-    return res.status(429).json({ error: 'Practice call already in progress' });
+    return res.status(409).json({ error: 'Practice call already in progress' });
   }
 
   // Resolve assistant ID
@@ -747,10 +747,24 @@ async function webhookHandler(req, res) {
 // Implemented as named functions so the route registrations above can reference
 // them by name (clearer than inline async lambdas for two non-trivial handlers).
 
+// Parses SIM_DAILY_LIMIT_PER_REP. Returns the int when set to a non-negative
+// finite number, else falls back to 15. 0 is accepted on purpose as a kill-
+// switch (sets every call to 429, disables practice site-wide without a deploy).
+// Bad input (non-numeric, negative, +/-Infinity) warns instead of silently
+// hiding the misconfig — ops debugging a "why is the cap 15 when I set 50?"
+// shouldn't require reading source.
+let parseDailyLimitWarned = false;
 function parseDailyLimit() {
   const raw = process.env.SIM_DAILY_LIMIT_PER_REP;
+  if (raw === undefined || raw === '') return 15;
   const n = parseInt(raw, 10);
   if (Number.isFinite(n) && n >= 0) return n;
+  if (!parseDailyLimitWarned) {
+    console.warn(
+      `SIM_DAILY_LIMIT_PER_REP=${JSON.stringify(raw)} is not a non-negative integer — falling back to 15.`
+    );
+    parseDailyLimitWarned = true;
+  }
   return 15;
 }
 
