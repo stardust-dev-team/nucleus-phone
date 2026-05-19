@@ -88,10 +88,16 @@ describe('inbound-routes.json drift sentinels', () => {
     expect(route.slack).toBe('U0ANRJR25QB');
   });
 
-  test('+16234620197 routes to Tom (paired sentinel)', () => {
+  test('+16234620197 routes to Tom via iOS CallKit (paired sentinel, locked 2026-05-19)', () => {
+    // Tom's direct DID. After the 2026-05-19 drift cleanup, this number was
+    // deliberately flipped from forward:+16304416374 (mobile) to iosIdentity
+    // so the iOS Joruva Dialer is the primary inbound surface (matching the
+    // M2 milestone intent). If this assertion fails because someone reverts
+    // to forward, that's a decision change — update the test AND the runbook.
     const route = routes['+16234620197'];
     expect(route).toBeDefined();
     expect(route.name).toBe('Tom');
-    expect(route.forward).toBe('+16304416374');
+    expect(route.iosIdentity).toBe('tom');
+    expect(route.forward).toBeUndefined();
   });
 });
