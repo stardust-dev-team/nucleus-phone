@@ -1,3 +1,18 @@
+// Hide the canonical inbound-routes.json so incoming.js falls through to the
+// legacy INBOUND_ROUTES env-var path. These tests exercise the env-var path
+// because they need custom per-test fixture mappings (iOS-only, hybrid,
+// malformed). The real file is exercised by incoming.conformance.test.js.
+jest.mock('fs', () => {
+  const realFs = jest.requireActual('fs');
+  return {
+    ...realFs,
+    existsSync: jest.fn((p) => {
+      if (typeof p === 'string' && p.endsWith('inbound-routes.json')) return false;
+      return realFs.existsSync(p);
+    }),
+  };
+});
+
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('../../lib/conference', () => ({
   createConference: jest.fn(),
@@ -168,7 +183,7 @@ describe('INBOUND_ROUTES validator — boot-time', () => {
       }).toThrow('process.exit called');
 
       expect(errSpy).toHaveBeenCalledWith(
-        'FATAL: INBOUND_ROUTES is invalid:',
+        'FATAL: inbound routes config invalid:',
         expect.stringContaining('every route must have'),
       );
     } finally {

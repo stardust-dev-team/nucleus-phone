@@ -1,0 +1,12 @@
+{
+  "_note": "Canonical inbound routing config. Edit this file (NOT the INBOUND_ROUTES env var on Render) to change which Twilio number rings which rep. server/routes/incoming.js loads this at startup. The INBOUND_ROUTES env var is legacy and ignored when this file is present. Tests in incoming.conformance.test.js validate the schema + the +16026000188 → Ryann mapping; if you change that, update the test. See runbooks/twilio-voice.md for the rep ↔ number table.",
+  "routes": {
+    "+16026000188": { "forward": "+14803630494", "slack": "U0ANRJR25QB", "name": "Ryann" },
+    "+16029050230": { "forward": "+16027417970", "slack": "U0AREAF8NBC", "name": "Paul" },
+    "+16234717436": { "forward": "+19515286164", "slack": "U0ANMAHMMQW", "name": "Alex" },
+    "+16234620197": { "forward": "+16304416374", "slack": "U09QE6KDHNK", "name": "Tom" },
+    "+16236247544": { "forward": "+12243451344", "slack": "", "name": "Kate" },
+    "+16233434126": { "forward": "+17852076096", "slack": "", "name": "Lily" },
+    "+16233437547": { "forward": "+19097098746", "slack": "", "name": "Blake" }
+  }
+}

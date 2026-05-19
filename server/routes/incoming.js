@@ -7,16 +7,28 @@
  *
  * Supports multiple inbound numbers, each routed to a different rep. A route
  * may sink to either a PSTN forward number OR an iOS Twilio Client identity
- * (registered via /api/voice-push/register). Routing config in INBOUND_ROUTES:
- *   { "+16026000188": { "forward": "+14803630494", "slack": "D0...", "name": "Ryann" },
- *     "+16029050230": { "iosIdentity": "paul", "slack": "D0...", "name": "Paul" } }
+ * (registered via /api/voice-push/register).
+ *
+ * Canonical routing config: server/config/inbound-routes.json (committed).
+ * Format:
+ *   { "routes": { "+16026000188": { "forward": "+14803630494",
+ *                                   "slack": "U0ANRJR25QB",
+ *                                   "name": "Ryann" }, ... } }
  *
  * When both `forward` and `iosIdentity` are set on one route, iosIdentity wins
  * (Twilio Client dial preferred over PSTN). Every route must have at least one.
  *
- * Falls back to INBOUND_FORWARD_NUMBER for backwards compatibility.
+ * Legacy INBOUND_ROUTES env var is honored only if the file is absent (dev /
+ * staging). Production uses the file — env var is ignored and should be
+ * removed. See incoming.conformance.test.js for the schema validator and the
+ * Ryann-on-+16026000188 conformance assertion that catches drift.
+ *
+ * Falls back to INBOUND_FORWARD_NUMBER for backwards compatibility with the
+ * single-number legacy mode.
  */
 
+const path = require('path');
+const fs = require('fs');
 const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { VoiceResponse, client } = require('../lib/twilio');
@@ -29,23 +41,42 @@ const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 
-// Parse per-number routing config. Each entry maps a Twilio number (E.164)
-// to { forward?: E.164, iosIdentity?: string, slack: channel/DM ID, name: rep
-// display name }. Validator uses `.every` (not `.some`) so a single
-// misconfigured entry fails the whole boot — a partial route would otherwise
-// 500 only when its number was actually dialed.
-let inboundRoutes = {};
-if (process.env.INBOUND_ROUTES) {
-  try {
-    inboundRoutes = JSON.parse(process.env.INBOUND_ROUTES);
-    const routes = Object.entries(inboundRoutes);
-    if (routes.length === 0 || !routes.every(([, v]) => v.forward || v.iosIdentity)) {
-      throw new Error('INBOUND_ROUTES: every route must have a "forward" or "iosIdentity" field');
-    }
-  } catch (err) {
-    console.error('FATAL: INBOUND_ROUTES is invalid:', err.message);
-    process.exit(1);
+// Load routes from the canonical JSON file first; fall back to the legacy
+// INBOUND_ROUTES env var only if the file is absent. The file path is
+// resolvable both from a normal Node startup (server/routes/incoming.js →
+// ../config/inbound-routes.json) and from Jest's isolateModules in tests.
+const ROUTES_FILE = path.join(__dirname, '..', 'config', 'inbound-routes.json');
+
+function loadRoutes() {
+  if (fs.existsSync(ROUTES_FILE)) {
+    const parsed = JSON.parse(fs.readFileSync(ROUTES_FILE, 'utf8'));
+    return { source: 'file', routes: parsed.routes || {} };
   }
+  if (process.env.INBOUND_ROUTES) {
+    return { source: 'env', routes: JSON.parse(process.env.INBOUND_ROUTES) };
+  }
+  return { source: 'none', routes: {} };
+}
+
+let inboundRoutes = {};
+let routesSource = 'none';
+try {
+  const loaded = loadRoutes();
+  inboundRoutes = loaded.routes;
+  routesSource = loaded.source;
+  const entries = Object.entries(inboundRoutes);
+  if (entries.length === 0 && routesSource !== 'none') {
+    throw new Error(`inbound routes (source=${routesSource}) is empty`);
+  }
+  if (!entries.every(([, v]) => v.forward || v.iosIdentity)) {
+    throw new Error(`inbound routes (source=${routesSource}): every route must have a "forward" or "iosIdentity" field`);
+  }
+  if (routesSource !== 'none') {
+    console.log(`incoming: loaded ${entries.length} routes from ${routesSource}`);
+  }
+} catch (err) {
+  console.error('FATAL: inbound routes config invalid:', err.message);
+  process.exit(1);
 }
 
 /**

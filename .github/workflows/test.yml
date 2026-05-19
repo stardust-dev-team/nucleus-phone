@@ -1,0 +1,23 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  jest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run Jest suite (incl. inbound-routes conformance + drift sentinel)
+        # Drift sentinel in server/routes/__tests__/incoming.conformance.test.js
+        # pins +16026000188 -> Ryann. Any future re-point will fail CI loudly
+        # rather than silently diverging from runbooks like it did in May 2026.
+        run: npm test
