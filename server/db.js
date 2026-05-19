@@ -135,6 +135,9 @@ async function initSchema() {
     await client.query(`
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_listen_url TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS monitor_control_url TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS conference_name TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS conference_sid TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS twilio_vapi_leg_sid TEXT;
     `);
 
     // Stale sweep is handled by lib/stale-sweep.js (runs on interval + startup)

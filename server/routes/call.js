@@ -228,15 +228,34 @@ router.get('/active', ...callerGuard, async (req, res) => {
     })
   );
 
-  // Admins see in-progress practice calls too
+  // Practice-call visibility:
+  //   • Admin (Tom, Paul): all in-progress + scoring sims (used by ops dashboards).
+  //   • Non-admin reps: own in-progress sims only. This is what makes the
+  //     iOS dialer's `shouldRejectDial` precondition work — a rep with an
+  //     in-flight PWA sim must not be able to start another sim from iOS.
+  //     "scoring" is intentionally excluded for non-admins; once a sim has
+  //     ended on the rep's side, they should be free to start the next one.
+  let simQuery = null;
+  let simParams = [];
   if (req.user?.role === 'admin') {
+    simQuery = `
+      SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
+      FROM sim_call_scores
+      WHERE status IN ('in-progress', 'scoring')
+      ORDER BY created_at DESC
+    `;
+  } else if (req.user?.identity) {
+    simQuery = `
+      SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
+      FROM sim_call_scores
+      WHERE status = 'in-progress' AND caller_identity = $1
+      ORDER BY created_at DESC
+    `;
+    simParams = [req.user.identity];
+  }
+  if (simQuery) {
     try {
-      const { rows } = await pool.query(`
-        SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
-        FROM sim_call_scores
-        WHERE status IN ('in-progress', 'scoring')
-        ORDER BY created_at DESC
-      `);
+      const { rows } = await pool.query(simQuery, simParams);
       for (const row of rows) {
         enriched.push({
           type: 'sim',
