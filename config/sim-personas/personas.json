@@ -1,0 +1,14 @@
+[
+  {
+    "id": "mike-garza",
+    "displayName": "Mike Garza",
+    "role": "CNC shop owner, Mesa AZ",
+    "summary": "42yo owner of Garza Precision Machine. 5 CNC machines, AS9100 aerospace work. Air system is a 7-year-old 5HP piston compressor with moisture problems.",
+    "difficulties": ["easy", "medium", "hard"],
+    "assistantEnvVars": {
+      "easy": "VAPI_SIM_MIKE_GARZA_EASY_ID",
+      "medium": "VAPI_SIM_MIKE_GARZA_MEDIUM_ID",
+      "hard": "VAPI_SIM_MIKE_GARZA_HARD_ID"
+    }
+  }
+]

@@ -7,10 +7,11 @@ const { Router } = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { sessionAuth } = require('../middleware/auth');
+const { sessionAuth, bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { createOutboundCall, stopCall, stopCallAndLog, getCall } = require('../lib/vapi');
+const { listPersonas } = require('../lib/personas');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
@@ -27,6 +28,15 @@ const router = Router();
 // cookie. Auth is handled via x-vapi-secret header inside the handler.
 // This MUST be above router.use(sessionAuth) or it gets 401'd.
 router.post('/webhook', webhookHandler);
+
+// ─── GET /personas — registered BEFORE the global sessionAuth mount ──────────
+// iOS hits this with a bearer token; the PWA hits it with the cookie. Using
+// bearerOrApiKeyOrSession here (instead of the global sessionAuth-only) is the
+// minimum surface needed to unblock iOS Phase C without migrating every
+// existing sim route.
+router.get('/personas', bearerOrApiKeyOrSession, rbac('external_caller'), (req, res) => {
+  res.json({ personas: listPersonas() });
+});
 
 // Practice mode is open to every logged-in caller (including external).
 // The in-route sessionAuth calls are preserved for fidelity to the old
