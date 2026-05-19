@@ -1,5 +1,5 @@
 {
-  "_note": "phone numbers are in team-phones.json (gitignored). This file is safe to commit.",
+  "_note": "Roster for UI / scoreboard / Fireflies stitching. Does NOT gate auth (auth is DB-backed via nucleus_phone_users). See runbooks/nucleus-phone.md 'Onboarding a New User'. Phone numbers live in team-phones.json (gitignored). Safe to commit.",
   "members": [
     { "name": "Tom", "email": "tom@joruva.com", "identity": "tom", "role": "admin", "pronouns": "he/him" },
     { "name": "Paul", "email": "paul@joruva.com", "identity": "paul", "role": "admin", "pronouns": "he/him" },
