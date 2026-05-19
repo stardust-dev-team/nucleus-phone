@@ -11,7 +11,9 @@ const { sessionAuth, bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { createOutboundCall, stopCall, stopCallAndLog, getCall } = require('../lib/vapi');
-const { listPersonas } = require('../lib/personas');
+const { listPersonas, resolveAssistantId } = require('../lib/personas');
+const { createConference, updateConference, removeConference } = require('../lib/conference');
+const { generateAccessToken } = require('../lib/twilio');
 const { scoreTranscript } = require('../lib/sim-scorer');
 const { sendSlackAlert, sendAdminReport, sendSystemAlert, formatSimScorecard, formatAdminReport } = require('../lib/slack');
 const { broadcast } = require('../lib/live-analysis');
@@ -37,6 +39,19 @@ router.post('/webhook', webhookHandler);
 router.get('/personas', bearerOrApiKeyOrSession, rbac('external_caller'), (req, res) => {
   res.json({ personas: listPersonas() });
 });
+
+// ─── POST /call/ios — iOS-initiated practice call bridge reservation ─────────
+// Architecture B: server reserves a Twilio Conference + mints an access token
+// for the rep's iOS Twilio Voice SDK. Vapi is NOT dialed here — B2b's
+// conference-start webhook does that once iOS actually connects. Bead
+// reference: joruva-dialer-mac-0mk.3.
+router.post('/call/ios', bearerOrApiKeyOrSession, rbac('external_caller'), simCallIos);
+
+// ─── GET /call/:id/score — iOS scoring read-side ─────────────────────────────
+// Returns the camelCase nested struct iOS decodes WITHOUT
+// keyDecodingStrategy.convertFromSnakeCase. Cross-rep access returns 404 (not
+// 403) to avoid leaking call existence.
+router.get('/call/:id/score', bearerOrApiKeyOrSession, rbac('external_caller'), simCallScore);
 
 // Practice mode is open to every logged-in caller (including external).
 // The in-route sessionAuth calls are preserved for fidelity to the old
@@ -725,6 +740,222 @@ async function webhookHandler(req, res) {
     console.error(`sim scoring pipeline error for ${vapiCallId}:`, err.message);
     pool.query("UPDATE sim_call_scores SET status = 'score-failed' WHERE id = $1", [row.id])
       .catch(dbErr => console.error(`sim: failed to mark score-failed for ${row.id}:`, dbErr.message));
+  });
+}
+
+// ─── iOS bridge handlers ─────────────────────────────────────────────────────
+// Implemented as named functions so the route registrations above can reference
+// them by name (clearer than inline async lambdas for two non-trivial handlers).
+
+function parseDailyLimit() {
+  const raw = process.env.SIM_DAILY_LIMIT_PER_REP;
+  const n = parseInt(raw, 10);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return 15;
+}
+
+async function simCallIos(req, res) {
+  const { personaId, difficulty } = req.body || {};
+  const identity = req.user?.identity;
+
+  if (!identity) {
+    return res.status(401).json({ error: 'Identity required' });
+  }
+  if (!personaId || typeof personaId !== 'string') {
+    return res.status(400).json({ error: 'personaId required' });
+  }
+  if (!difficulty || typeof difficulty !== 'string') {
+    return res.status(400).json({ error: 'difficulty required' });
+  }
+
+  const persona = listPersonas().find((p) => p.id === personaId);
+  if (!persona) {
+    return res.status(404).json({ error: 'Persona not found' });
+  }
+  if (!persona.difficulties.includes(difficulty)) {
+    return res.status(404).json({ error: 'Difficulty not available for this persona' });
+  }
+
+  const assistantId = resolveAssistantId({ personaId, difficulty });
+  if (!assistantId) {
+    return res.status(500).json({ error: `Missing Vapi assistant env var for ${personaId}/${difficulty}` });
+  }
+
+  // "Live call in progress" guard — same shape as POST /call.
+  let liveCalls;
+  try {
+    ({ rows: liveCalls } = await pool.query(
+      `SELECT id FROM nucleus_phone_calls
+       WHERE caller_identity = $1 AND status IN ('connecting', 'in-progress')
+       LIMIT 1`,
+      [identity]
+    ));
+  } catch (err) {
+    console.error('sim/call/ios: live-call lookup failed:', err.message);
+    return res.status(500).json({ error: 'Failed to check live calls' });
+  }
+  if (liveCalls.length > 0) {
+    return res.status(409).json({ error: "You're on a live call — finish it before starting practice" });
+  }
+
+  // "Duplicate sim" guard — same shape as POST /call.
+  let activeSim;
+  try {
+    ({ rows: activeSim } = await pool.query(
+      `SELECT id FROM sim_call_scores
+       WHERE caller_identity = $1 AND status = 'in-progress'
+         AND created_at > NOW() - INTERVAL '10 minutes'
+       LIMIT 1`,
+      [identity]
+    ));
+  } catch (err) {
+    console.error('sim/call/ios: duplicate-sim lookup failed:', err.message);
+    return res.status(500).json({ error: 'Failed to check active sims' });
+  }
+  if (activeSim.length > 0) {
+    return res.status(409).json({ error: 'Practice call already in progress' });
+  }
+
+  // Daily-limit guard — HARD RULE per CLAUDE.md production guardrails.
+  // Phoenix-local calendar day boundary; matches the daily-budget convention
+  // used elsewhere (Joruva HQ tz).
+  const limit = parseDailyLimit();
+  let countRow;
+  try {
+    ({ rows: [countRow] } = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM sim_call_scores
+       WHERE caller_identity = $1
+         AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'America/Phoenix') AT TIME ZONE 'America/Phoenix'`,
+      [identity]
+    ));
+  } catch (err) {
+    console.error('sim/call/ios: daily-count lookup failed:', err.message);
+    return res.status(500).json({ error: 'Failed to check daily limit' });
+  }
+  if (countRow.count >= limit) {
+    logEvent('rate_limit', 'sim.daily', `${identity} hit daily sim cap (${countRow.count}/${limit})`, {
+      caller: identity,
+      detail: { count: countRow.count, limit },
+    });
+    return res.status(429).json({ error: 'Daily practice limit reached. Reset at midnight Phoenix time.' });
+  }
+
+  // INSERT the row → we have the simCallId for the conference name.
+  const promptVersion = getPromptVersion(difficulty);
+  let simCallId;
+  try {
+    const { rows: [row] } = await pool.query(
+      `INSERT INTO sim_call_scores (caller_identity, difficulty, prompt_version, status)
+       VALUES ($1, $2, $3, 'in-progress')
+       RETURNING id`,
+      [identity, difficulty, promptVersion]
+    );
+    simCallId = row.id;
+  } catch (err) {
+    console.error('sim/call/ios: INSERT failed:', err.message);
+    return res.status(500).json({ error: 'Failed to record practice call' });
+  }
+
+  const conferenceName = `sim-${simCallId}`;
+
+  // Persist conference_name on the DB row so B2b's conference-start webhook
+  // can map a Twilio FriendlyName back to a sim_call_scores row even if the
+  // in-memory activeConferences entry has been swept (process restart, etc).
+  try {
+    await pool.query(
+      `UPDATE sim_call_scores SET conference_name = $1 WHERE id = $2`,
+      [conferenceName, simCallId]
+    );
+  } catch (err) {
+    console.error(`sim/call/ios: conference_name persist failed for ${simCallId}:`, err.message);
+    // Soft-failure — the in-memory entry is the primary lookup path and
+    // already created below. The DB column is the durability fallback.
+  }
+
+  // Reserve activeConferences entry. tag type:'sim' so B2b's conference-start
+  // callback can branch (vapi.calls.create vs Twilio participants.create).
+  createConference(conferenceName, {
+    callerIdentity: identity,
+    to: null,
+    contactName: 'Mike Garza',
+    companyName: `Practice — ${difficulty}`,
+    contactId: null,
+    dbRowId: simCallId,
+  });
+  updateConference(conferenceName, { type: 'sim', personaId, difficulty, assistantId });
+
+  // Mint Twilio access token. incomingAllow:true is fine — iOS routes through
+  // the same PushKit/CallKit path for sim as for real calls.
+  let accessToken;
+  try {
+    accessToken = generateAccessToken(identity, { incomingAllow: true });
+  } catch (err) {
+    console.error(`sim/call/ios: token mint failed for ${identity}:`, err.message);
+    removeConference(conferenceName);
+    await pool.query("UPDATE sim_call_scores SET status = 'cancelled' WHERE id = $1", [simCallId])
+      .catch((dbErr) => console.error(`sim/call/ios: rollback cancel failed for ${simCallId}:`, dbErr.message));
+    return res.status(500).json({ error: 'Failed to mint access token' });
+  }
+
+  res.json({ simCallId, conferenceName, accessToken, personaId, difficulty });
+}
+
+async function simCallScore(req, res) {
+  if (!validateId(req, res)) return;
+
+  let row;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, caller_identity, status, call_grade, score_overall,
+              score_rapport, score_discovery, score_objection, score_product, score_close,
+              note_rapport, note_discovery, note_objection, note_product, note_close,
+              top_strength, top_improvement, caller_debrief, scored_at
+       FROM sim_call_scores WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    row = rows[0];
+  } catch (err) {
+    console.error(`sim/call/${req.params.id}/score: DB error:`, err.message);
+    return res.status(500).json({ error: 'Failed to read score' });
+  }
+
+  // RBAC: 404 (not 403) on cross-rep access to avoid leaking whose call it is.
+  const isOwner = row.caller_identity === req.user?.identity;
+  const isAdmin = req.user?.role === 'admin';
+  if (!isOwner && !isAdmin) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const status = row.status === 'scored' ? 'scored'
+              : row.status === 'in-progress' ? 'scoring'
+              : 'failed';
+
+  // Numeric coercion: NUMERIC(3,1) columns come back as strings from pg.
+  const numOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+
+  res.json({
+    status,
+    grade: row.call_grade || null,
+    overall: numOrNull(row.score_overall),
+    dimensions: row.status === 'scored' ? {
+      rapport: Number(row.score_rapport),
+      discovery: Number(row.score_discovery),
+      objection: Number(row.score_objection),
+      product: Number(row.score_product),
+      close: Number(row.score_close),
+    } : null,
+    notes: row.status === 'scored' ? {
+      rapport: row.note_rapport,
+      discovery: row.note_discovery,
+      objection: row.note_objection,
+      product: row.note_product,
+      close: row.note_close,
+    } : null,
+    topStrength: row.top_strength || null,
+    topImprovement: row.top_improvement || null,
+    callerDebrief: row.caller_debrief || null,
+    scoredAt: row.scored_at ? new Date(row.scored_at).toISOString() : null,
   });
 }
 
