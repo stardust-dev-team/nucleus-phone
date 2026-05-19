@@ -25,37 +25,35 @@ const team = require('../config/team.json');
 
 const router = Router();
 
-// ─── Vapi webhook — registered BEFORE auth middleware ────────────────────────
-// Vapi sends server events (transcript, end-of-call-report) with no session
-// cookie. Auth is handled via x-vapi-secret header inside the handler.
-// This MUST be above router.use(sessionAuth) or it gets 401'd.
+// ─── Vendor-signature auth (Vapi webhook, no app-level RBAC) ─────────────────
+// Vapi sends server events with no session cookie. Auth is via x-vapi-secret
+// header inside the handler. MUST be registered before any router-level auth
+// middleware below or it gets 401'd.
 router.post('/webhook', webhookHandler);
 
-// ─── GET /personas — registered BEFORE the global sessionAuth mount ──────────
-// iOS hits this with a bearer token; the PWA hits it with the cookie. Using
-// bearerOrApiKeyOrSession here (instead of the global sessionAuth-only) is the
-// minimum surface needed to unblock iOS Phase C without migrating every
-// existing sim route.
-router.get('/personas', bearerOrApiKeyOrSession, rbac('external_caller'), (req, res) => {
+// ─── iOS-compatible sub-router (bearer/api-key/cookie + external_caller) ────
+// All routes here are reachable from the iOS dialer (bearer JWT), the PWA
+// (session cookie), and automation (x-api-key). Adding a new sim route that
+// iOS needs to call: ADD IT TO THIS SUB-ROUTER, NOT below the sessionAuth
+// mount. The sub-router exists so the "iOS-bearer-compatible" surface is a
+// structural compartment, not a comment-only convention.
+//
+// Why per-route middleware instead of iosRouter.use(...): keeping middleware
+// on each .get/.post call (a) makes the auth surface explicit at the call
+// site for future readers and (b) sidesteps any Express subtlety about
+// sub-router .use() middleware leaking onto non-matching requests.
+const iosRouter = Router();
+iosRouter.get('/personas', bearerOrApiKeyOrSession, rbac('external_caller'), (req, res) => {
   res.json({ personas: listPersonas() });
 });
+iosRouter.post('/call/ios', bearerOrApiKeyOrSession, rbac('external_caller'), simCallIos);
+iosRouter.get('/call/:id/score', bearerOrApiKeyOrSession, rbac('external_caller'), simCallScore);
+router.use(iosRouter);
 
-// ─── POST /call/ios — iOS-initiated practice call bridge reservation ─────────
-// Architecture B: server reserves a Twilio Conference + mints an access token
-// for the rep's iOS Twilio Voice SDK. Vapi is NOT dialed here — B2b's
-// conference-start webhook does that once iOS actually connects. Bead
-// reference: joruva-dialer-mac-0mk.3.
-router.post('/call/ios', bearerOrApiKeyOrSession, rbac('external_caller'), simCallIos);
-
-// ─── GET /call/:id/score — iOS scoring read-side ─────────────────────────────
-// Returns the camelCase nested struct iOS decodes WITHOUT
-// keyDecodingStrategy.convertFromSnakeCase. Cross-rep access returns 404 (not
-// 403) to avoid leaking call existence.
-router.get('/call/:id/score', bearerOrApiKeyOrSession, rbac('external_caller'), simCallScore);
-
-// Practice mode is open to every logged-in caller (including external).
-// The in-route sessionAuth calls are preserved for fidelity to the old
-// per-route policy but this mount-level guard is the real gate.
+// ─── PWA-only surface below (session cookie + external_caller) ──────────────
+// Every route mounted after this line inherits sessionAuth. iOS bearer tokens
+// will be rejected here. If a future route needs to accept iOS bearer auth,
+// register it on iosRouter above, NOT below this line.
 router.use(sessionAuth, rbac('external_caller'));
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
