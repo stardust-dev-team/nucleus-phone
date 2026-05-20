@@ -9,26 +9,19 @@
  * may sink to either a PSTN forward number OR an iOS Twilio Client identity
  * (registered via /api/voice-push/register).
  *
- * Canonical routing config: server/config/inbound-routes.json (committed).
- * Format:
- *   { "routes": { "+16026000188": { "forward": "+14803630494",
- *                                   "slack": "U0ANRJR25QB",
- *                                   "name": "Ryann" }, ... } }
+ * Canonical config: server/config/team.json (committed, non-PII metadata)
+ * merged with server/config/team-phones.json (gitignored, mobile numbers)
+ * via server/lib/team-registry.js. Edit team.json to add/change a rep's
+ * inbound DID or route type; the registry validates schema at boot.
  *
- * When both `forward` and `iosIdentity` are set on one route, iosIdentity wins
- * (Twilio Client dial preferred over PSTN). Every route must have at least one.
+ * Inbound routing entry on each rep: { did, type: 'forward'|'iosIdentity',
+ * iosIdentity?: string }. Drift sentinels in
+ * __tests__/team-registry.conformance.test.js pin the Ryann + Tom mappings.
  *
- * Legacy INBOUND_ROUTES env var is honored only if the file is absent (dev /
- * staging). Production uses the file — env var is ignored and should be
- * removed. See incoming.conformance.test.js for the schema validator and the
- * Ryann-on-+16026000188 conformance assertion that catches drift.
- *
- * Falls back to INBOUND_FORWARD_NUMBER for backwards compatibility with the
- * single-number legacy mode.
+ * Falls back to INBOUND_FORWARD_NUMBER env var for the legacy
+ * single-number-mode backstop only (no team.json equivalent).
  */
 
-const path = require('path');
-const fs = require('fs');
 const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { VoiceResponse, client } = require('../lib/twilio');
@@ -36,46 +29,22 @@ const { makeTwilioWebhook } = require('../lib/twilio-webhook');
 const { pool } = require('../db');
 const { createConference, getConference } = require('../lib/conference');
 const { sendSlackAlert, sendSlackDM } = require('../lib/slack');
+const { loadRegistry } = require('../lib/team-registry');
 
 const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 
-// Load routes from the canonical JSON file first; fall back to the legacy
-// INBOUND_ROUTES env var only if the file is absent. The file path is
-// resolvable both from a normal Node startup (server/routes/incoming.js →
-// ../config/inbound-routes.json) and from Jest's isolateModules in tests.
-const ROUTES_FILE = path.join(__dirname, '..', 'config', 'inbound-routes.json');
-
-function loadRoutes() {
-  if (fs.existsSync(ROUTES_FILE)) {
-    const parsed = JSON.parse(fs.readFileSync(ROUTES_FILE, 'utf8'));
-    return { source: 'file', routes: parsed.routes || {} };
-  }
-  if (process.env.INBOUND_ROUTES) {
-    return { source: 'env', routes: JSON.parse(process.env.INBOUND_ROUTES) };
-  }
-  return { source: 'none', routes: {} };
-}
-
+// Load routes from the canonical team-registry at module init. The registry
+// merges team.json + team-phones.json and throws on schema violations, so
+// any invalid config fails boot rather than 500'ing on first inbound call.
 let inboundRoutes = {};
-let routesSource = 'none';
 try {
-  const loaded = loadRoutes();
-  inboundRoutes = loaded.routes;
-  routesSource = loaded.source;
-  const entries = Object.entries(inboundRoutes);
-  if (entries.length === 0 && routesSource !== 'none') {
-    throw new Error(`inbound routes (source=${routesSource}) is empty`);
-  }
-  if (!entries.every(([, v]) => v.forward || v.iosIdentity)) {
-    throw new Error(`inbound routes (source=${routesSource}): every route must have a "forward" or "iosIdentity" field`);
-  }
-  if (routesSource !== 'none') {
-    console.log(`incoming: loaded ${entries.length} routes from ${routesSource}`);
-  }
+  const registry = loadRegistry();
+  inboundRoutes = registry.getAllInboundRoutes();
+  console.log(`incoming: loaded ${Object.keys(inboundRoutes).length} routes from team-registry`);
 } catch (err) {
-  console.error('FATAL: inbound routes config invalid:', err.message);
+  console.error('FATAL: team-registry load failed:', err.message);
   process.exit(1);
 }
 

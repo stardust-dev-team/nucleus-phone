@@ -1,13 +1,85 @@
 {
-  "_note": "Roster for UI / scoreboard / Fireflies stitching. Does NOT gate auth (auth is DB-backed via nucleus_phone_users). See runbooks/nucleus-phone.md 'Onboarding a New User'. Phone numbers live in team-phones.json (gitignored). Safe to commit.",
+  "_note": "Canonical rep registry. Single source of truth for: identity, role, Slack ID, mobile, inbound DID, route type. Loaded via server/lib/team-registry.js by escalation.js, sim.js, incoming.js, sim-scorer.js, fireflies-sync.js, scoreboard.js. team-phones.json (gitignored) is an OPTIONAL local-dev override for the mobile field — if present, its entries take precedence (useful for sim-calling a test number). Does NOT gate auth (auth is DB-backed via nucleus_phone_users). Schema changes require updating server/lib/__tests__/team-registry.conformance.test.js drift sentinels in the same commit. Mobile numbers committed here on 2026-05-19 because the previous structure (inbound-routes.json with literal forwards, also committed) already broke the gitignore boundary; consolidating into one source is strictly cleaner than three.",
   "members": [
-    { "name": "Tom", "email": "tom@joruva.com", "identity": "tom", "role": "admin", "pronouns": "he/him" },
-    { "name": "Paul", "email": "paul@joruva.com", "identity": "paul", "role": "admin", "pronouns": "he/him" },
-    { "name": "Kate", "email": "kate@joruva.com", "identity": "kate", "role": "caller", "pronouns": "she/her" },
-    { "name": "Britt", "email": "britt@joruva.com", "identity": "britt", "role": "caller", "pronouns": "she/her" },
-    { "name": "Ryann", "email": "ryann@joruva.com", "identity": "ryann", "role": "caller", "pronouns": "she/her" },
-    { "name": "Alex", "email": "alex@joruva.com", "identity": "alex", "role": "caller", "pronouns": "he/him" },
-    { "name": "Lily", "email": "lily@joruva.com", "identity": "lily", "role": "caller", "pronouns": "she/her" },
-    { "name": "Blake", "email": "blake@joruva.com", "identity": "blake", "role": "caller", "pronouns": "he/him" }
+    {
+      "name": "Tom",
+      "email": "tom@joruva.com",
+      "identity": "tom",
+      "role": "admin",
+      "pronouns": "he/him",
+      "slackUserId": "U09QE6KDHNK",
+      "mobile": "+16304416374",
+      "inbound": { "did": "+16234620197", "type": "iosIdentity", "iosIdentity": "tom" }
+    },
+    {
+      "name": "Paul",
+      "email": "paul@joruva.com",
+      "identity": "paul",
+      "role": "admin",
+      "pronouns": "he/him",
+      "slackUserId": "U0AREAF8NBC",
+      "mobile": "+16027417970",
+      "inbound": { "did": "+16029050230", "type": "forward" }
+    },
+    {
+      "name": "Kate",
+      "email": "kate@joruva.com",
+      "identity": "kate",
+      "role": "caller",
+      "pronouns": "she/her",
+      "slackUserId": null,
+      "mobile": "+12243451344",
+      "inbound": { "did": "+16236247544", "type": "forward" }
+    },
+    {
+      "name": "Britt",
+      "email": "britt@joruva.com",
+      "identity": "britt",
+      "role": "caller",
+      "pronouns": "she/her",
+      "slackUserId": null,
+      "mobile": "+14803359935",
+      "inbound": null
+    },
+    {
+      "name": "Ryann",
+      "email": "ryann@joruva.com",
+      "identity": "ryann",
+      "role": "caller",
+      "pronouns": "she/her",
+      "slackUserId": "U0ANRJR25QB",
+      "mobile": "+14803630494",
+      "inbound": { "did": "+16026000188", "type": "forward" }
+    },
+    {
+      "name": "Alex",
+      "email": "alex@joruva.com",
+      "identity": "alex",
+      "role": "caller",
+      "pronouns": "he/him",
+      "slackUserId": "U0ANMAHMMQW",
+      "mobile": "+19515286164",
+      "inbound": { "did": "+16234717436", "type": "forward" }
+    },
+    {
+      "name": "Lily",
+      "email": "lily@joruva.com",
+      "identity": "lily",
+      "role": "caller",
+      "pronouns": "she/her",
+      "slackUserId": null,
+      "mobile": "+17852076096",
+      "inbound": { "did": "+16233434126", "type": "forward" }
+    },
+    {
+      "name": "Blake",
+      "email": "blake@joruva.com",
+      "identity": "blake",
+      "role": "caller",
+      "pronouns": "he/him",
+      "slackUserId": null,
+      "mobile": "+19097098746",
+      "inbound": { "did": "+16233437547", "type": "forward" }
+    }
   ]
 }
