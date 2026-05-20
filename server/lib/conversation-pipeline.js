@@ -17,11 +17,31 @@ const { OBJECTION_PAIRS } = require('./objection-pairs');
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5-20251001';
 const FETCH_TIMEOUT = 5000;
-const BUFFER_INTERVAL_MS = 8000;   // 8s batch cycle
-const MIN_BUFFER_CHUNKS = 3;       // OR 3 chunks, whichever comes first
-const HISTORY_WINDOW_MS = 60000;   // rolling ~60s transcript window
-const MAX_SENTIMENT_HISTORY = 20;  // cap at 20 entries (~2.7 min at 8s cycle)
-const DEGRADED_THRESHOLD = 3;      // consecutive failures before degraded mode
+// Tuning constants (nucleus-phone-mm4). Defaults match the plan baseline
+// (declarative-crunching-wadler.md Phase 4) — adjust here, not at call sites.
+// Validation requires 3+ practice calls and is deferred to a human-driven
+// session; ranges are documented so a future tuner doesn't have to re-derive
+// them from the plan doc.
+const BUFFER_INTERVAL_MS = 8000;   // 8s batch cycle. Range: 6000 (cheaper, less context) — 10000 (more context, higher latency).
+const MIN_BUFFER_CHUNKS = 3;       // OR 3 chunks, whichever comes first.
+const HISTORY_WINDOW_MS = 60000;   // rolling ~60s transcript window.
+const MAX_SENTIMENT_HISTORY = 20;  // cap at 20 entries (~2.7 min at 8s cycle).
+const DEGRADED_THRESHOLD = 3;      // consecutive failures before degraded mode.
+
+// Cost-monitoring constants (nucleus-phone-mm4 item 5). Per-token rates
+// for claude-haiku-4-5 (see anthropic pricing docs as of 2026-05). Stored
+// as $/M tokens for readable arithmetic; per-call cost computed at cleanup.
+//
+// Anomaly threshold: $0.15/call from the Phase 4 plan. Practice-calls
+// typically land around $0.02-0.05; sustained traffic above the threshold
+// likely means the BUFFER_INTERVAL_MS dropped too far or transcripts are
+// pathologically long.
+const COST_PER_M = {
+  input: 0.25,         // uncached input
+  cachedInput: 0.03,   // cache hits
+  output: 1.25,
+};
+const COST_ANOMALY_THRESHOLD_USD = 0.15;
 
 // Tier 2 question detection. Two branches only:
 //   1. literal "?" anywhere (reliable when ASR emits punctuation)
@@ -167,6 +187,11 @@ function initState() {
     analysisInFlight: false,
     consecutiveFailures: 0,
     eventLog: [],            // timestamped events for post-call debrief
+    // Cost accumulator (nucleus-phone-mm4). usage from each Haiku response is
+    // added in; final tally is logged on cleanup. Anthropic returns
+    // input_tokens / cache_read_input_tokens / output_tokens separately so
+    // cached-input savings show up in the per-call total.
+    usage: { input: 0, cachedInput: 0, output: 0, cycles: 0 },
   };
 }
 
@@ -241,12 +266,37 @@ async function callHaiku(callId, transcriptWindow) {
       if (start !== -1 && end !== -1) cleaned = cleaned.substring(start, end + 1);
     }
 
-    return JSON.parse(cleaned);
+    // Surface usage to the caller alongside the parsed payload so the per-call
+    // accumulator can aggregate (nucleus-phone-mm4). Anthropic's `usage`
+    // returns input_tokens (uncached), cache_read_input_tokens (cache hits),
+    // and output_tokens. Older SDK versions may also return
+    // cache_creation_input_tokens — fold those into `input` for cost
+    // accounting since they're billed at the input rate.
+    const parsed = JSON.parse(cleaned);
+    const usage = data.usage || {};
+    return {
+      parsed,
+      usage: {
+        input: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0),
+        cachedInput: usage.cache_read_input_tokens || 0,
+        output: usage.output_tokens || 0,
+      },
+    };
   } catch (err) {
     clearTimeout(timer);
     logEvent('error', 'conversation-pipeline', `Haiku call failed: ${err.name === 'AbortError' ? 'timeout' : err.message}`, { detail: { callId } });
     return null;
   }
+}
+
+/** Pure cost computation, exported for tests. Input is the per-call usage
+ *  accumulator shape. Returns USD with 4-decimal precision. */
+function computeCallCost(usage) {
+  const cost =
+    (usage.input || 0)        * (COST_PER_M.input        / 1_000_000) +
+    (usage.cachedInput || 0)  * (COST_PER_M.cachedInput  / 1_000_000) +
+    (usage.output || 0)       * (COST_PER_M.output       / 1_000_000);
+  return Math.round(cost * 10_000) / 10_000;
 }
 
 // ── Core pipeline ───────────────────────────────────────────────────────
@@ -409,7 +459,7 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
   state.lastAnalysis = Date.now();
 
   const startedAt = Date.now();
-  const parsed = await callHaiku(callId, window);
+  const result = await callHaiku(callId, window);
   const latency = Date.now() - startedAt;
   state.analysisInFlight = false;
 
@@ -417,13 +467,23 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
   // and don't mutate failure counters on state that was freed.
   if (state.aborted) return;
 
-  if (!parsed) {
+  if (!result) {
     state.consecutiveFailures++;
     if (state.consecutiveFailures >= DEGRADED_THRESHOLD) {
       broadcast(callId, { type: 'navigator_status', data: { status: 'degraded' } });
     }
     return;
   }
+
+  // Cost accumulator: only update on success. Failed cycles (timeout, non-200)
+  // are still billed by Anthropic in some cases, but we can't tell from the
+  // response, and double-counting on retry is worse than under-counting by a
+  // few rare error paths.
+  const { parsed, usage } = result;
+  state.usage.input        += usage.input || 0;
+  state.usage.cachedInput  += usage.cachedInput || 0;
+  state.usage.output       += usage.output || 0;
+  state.usage.cycles       += 1;
 
   // Only clear chunks that existed when this cycle started. Chunks that
   // arrived during the in-flight analysis stay in the buffer so the next
@@ -496,7 +556,22 @@ async function processConversationChunk(callId, text) {
 
 function cleanupConversation(callId) {
   const state = callState.get(callId);
-  if (state) state.aborted = true;   // gate any in-flight post-await broadcasts
+  if (state) {
+    state.aborted = true;   // gate any in-flight post-await broadcasts
+    // Cost summary (nucleus-phone-mm4 item 5). One line per call so logs are
+    // greppable; cost is rounded to $0.0001 precision. Anomaly line is a
+    // distinct log level so it stands out in Render's stream without
+    // breaking the canonical summary parse.
+    if (state.usage.cycles > 0) {
+      const cost = computeCallCost(state.usage);
+      logEvent('info', 'conversation-pipeline',
+        `call complete | callId=${callId} cycles=${state.usage.cycles} inputTok=${state.usage.input} cachedTok=${state.usage.cachedInput} outputTok=${state.usage.output} cost=$${cost.toFixed(4)}`);
+      if (cost > COST_ANOMALY_THRESHOLD_USD) {
+        logEvent('warn', 'conversation-pipeline',
+          `cost anomaly | callId=${callId} cost=$${cost.toFixed(4)} threshold=$${COST_ANOMALY_THRESHOLD_USD.toFixed(2)}`);
+      }
+    }
+  }
   callState.delete(callId);
   // Only record the first abort timestamp — repeated cleanup calls must NOT
   // extend the zombie-guard window past its original expiry.
@@ -523,6 +598,18 @@ const sweepInterval = setInterval(() => {
     // the 50-char floor is still alive.
     if (now - state.lastActivity > STALE_THRESHOLD) {
       state.aborted = true;
+      // Cost summary on stale-sweep too (nucleus-phone-mm4) — without
+      // this, abandoned calls (rep crashes, network drops) escape the
+      // billing log entirely.
+      if (state.usage.cycles > 0) {
+        const cost = computeCallCost(state.usage);
+        logEvent('info', 'conversation-pipeline',
+          `call complete (stale) | callId=${callId} cycles=${state.usage.cycles} inputTok=${state.usage.input} cachedTok=${state.usage.cachedInput} outputTok=${state.usage.output} cost=$${cost.toFixed(4)}`);
+        if (cost > COST_ANOMALY_THRESHOLD_USD) {
+          logEvent('warn', 'conversation-pipeline',
+            `cost anomaly (stale) | callId=${callId} cost=$${cost.toFixed(4)} threshold=$${COST_ANOMALY_THRESHOLD_USD.toFixed(2)}`);
+        }
+      }
       callState.delete(callId);
       recentlyAborted.set(callId, now);
       // Mirror cleanupConversation — without this, a call that goes idle
@@ -552,4 +639,7 @@ module.exports = {
   _handleAnalysisResult: handleAnalysisResult,
   _buildTranscriptWindow: buildTranscriptWindow,
   _QUESTION_REGEX: QUESTION_REGEX,
+  _computeCallCost: computeCallCost,
+  _COST_PER_M: COST_PER_M,
+  _COST_ANOMALY_THRESHOLD_USD: COST_ANOMALY_THRESHOLD_USD,
 };

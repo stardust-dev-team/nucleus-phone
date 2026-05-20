@@ -35,6 +35,8 @@ const {
   _handleAnalysisResult: handleAnalysisResult,
   _buildTranscriptWindow: buildTranscriptWindow,
   _QUESTION_REGEX: QUESTION_REGEX,
+  _computeCallCost: computeCallCost,
+  _COST_ANOMALY_THRESHOLD_USD: COST_ANOMALY_THRESHOLD_USD,
 } = require('../conversation-pipeline');
 
 // Build a fake Haiku fetch response. Accepts partial overrides.
@@ -933,5 +935,127 @@ describe('lastActivity vs lastAnalysis', () => {
       if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = originalKey;
     }
+  });
+});
+
+// Cost-monitoring (nucleus-phone-mm4 item 5). Pure unit tests on the
+// helper + integration on the accumulator path through cleanup.
+describe('cost monitoring', () => {
+  it('computeCallCost is zero when nothing was used', () => {
+    expect(computeCallCost({ input: 0, cachedInput: 0, output: 0 })).toBe(0);
+  });
+
+  it('computeCallCost uses input + cached-input + output rates', () => {
+    // 1M input + 1M cached + 1M output = $0.25 + $0.03 + $1.25 = $1.53
+    expect(computeCallCost({ input: 1_000_000, cachedInput: 1_000_000, output: 1_000_000 }))
+      .toBeCloseTo(1.53, 4);
+  });
+
+  it('computeCallCost rounds to 4-decimal precision (1¢/100 grain)', () => {
+    // 1500 input tokens × $0.25/M = $0.000375 → rounds to $0.0004
+    const cost = computeCallCost({ input: 1500, cachedInput: 0, output: 0 });
+    expect(cost).toBe(0.0004);
+  });
+
+  it('threshold is the documented $0.15/call from the Phase 4 plan', () => {
+    expect(COST_ANOMALY_THRESHOLD_USD).toBe(0.15);
+  });
+
+  it('cleanup emits a cost summary log when cycles > 0', async () => {
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    const originalFetch = global.fetch;
+
+    // Mock a Haiku response that includes usage so the accumulator catches it.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        content: [{ text: JSON.stringify({
+          phase: 'discovery',
+          sentiment: { customer: 'neutral', momentum: 'steady' },
+          suggestion: null,
+          objection: null,
+          predicted_next: null,
+        }) }],
+        usage: { input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 30 },
+      }),
+      text: async () => '',
+    });
+
+    try {
+      // Drive at least one analysis cycle.
+      const longText = 'a'.repeat(80);
+      await processConversationChunk('cost-test', longText);
+      await processConversationChunk('cost-test', longText);
+      await processConversationChunk('cost-test', longText);
+      // Allow the in-flight analysis to settle.
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+
+      const state = callState.get('cost-test');
+      expect(state).toBeTruthy();
+      expect(state.usage.cycles).toBeGreaterThanOrEqual(1);
+
+      // Find the cleanup log line by reading mockLogEvent calls.
+      const beforeCleanup = mockLogEvent.mock.calls.length;
+      cleanupConversation('cost-test');
+      const newCalls = mockLogEvent.mock.calls.slice(beforeCleanup);
+      const summaryCall = newCalls.find(c =>
+        c[0] === 'info' &&
+        c[1] === 'conversation-pipeline' &&
+        typeof c[2] === 'string' &&
+        c[2].includes('call complete') &&
+        c[2].includes('cost-test')
+      );
+      expect(summaryCall).toBeTruthy();
+      expect(summaryCall[2]).toMatch(/cost=\$0\.\d{4}/);
+    } finally {
+      global.fetch = originalFetch;
+      if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = originalKey;
+    }
+  });
+
+  it('cleanup does NOT emit cost summary when no cycles ran', () => {
+    // Cold call, no analysis ever ran.
+    const state = initState();
+    callState.set('cold', state);
+
+    const before = mockLogEvent.mock.calls.length;
+    cleanupConversation('cold');
+    const newCalls = mockLogEvent.mock.calls.slice(before);
+    const summaryCall = newCalls.find(c =>
+      typeof c[2] === 'string' && c[2].includes('call complete')
+    );
+    expect(summaryCall).toBeUndefined();
+  });
+
+  it('cost > threshold also emits a warn-level anomaly log', async () => {
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+
+    // Skip the network — just set state.usage directly to exceed the threshold.
+    const state = initState();
+    state.usage = { input: 1_000_000, cachedInput: 0, output: 0, cycles: 5 };
+    // 1M input × $0.25/M = $0.25 > $0.15 threshold
+    callState.set('expensive', state);
+
+    const before = mockLogEvent.mock.calls.length;
+    cleanupConversation('expensive');
+    const newCalls = mockLogEvent.mock.calls.slice(before);
+
+    const warnCall = newCalls.find(c =>
+      c[0] === 'warn' &&
+      c[1] === 'conversation-pipeline' &&
+      typeof c[2] === 'string' &&
+      c[2].includes('cost anomaly')
+    );
+    expect(warnCall).toBeTruthy();
+    expect(warnCall[2]).toMatch(/cost=\$0\.25\d{2}/);
+    expect(warnCall[2]).toMatch(/threshold=\$0\.15/);
+
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
   });
 });
