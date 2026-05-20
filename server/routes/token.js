@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { generateAccessToken } = require('../lib/twilio');
 const { isValidIdentity } = require('./auth');
 const { pool } = require('../db');
+const pushCredentialCache = require('../lib/push-credential-cache');
 
 const router = Router();
 
@@ -62,27 +63,35 @@ router.get('/', async (req, res) => {
   // success path 100%.
   let pushCredentialSid = null;
   if (incomingAllow && req.user && req.user.id && req.user.id !== 0) {
-    let row;
-    try {
-      const result = await pool.query(
-        'SELECT credential_sid FROM nucleus_phone_voip_tokens WHERE user_id = $1',
-        [req.user.id]
-      );
-      row = result.rows[0];
-    } catch (err) {
-      console.error('token: voip_tokens lookup failed:', err.message);
-      return res.status(503).json({
-        error: 'Push credential lookup failed',
-        detail: 'Cannot issue mobile token without verifying push credential binding. Retry shortly.',
-      });
+    // 30s in-process cache (nucleus-phone-84ax). Positive hits skip DB;
+    // misses or expired entries fall through to the SELECT and re-cache.
+    // Negative results are NOT cached so a re-register recovers instantly.
+    pushCredentialSid = pushCredentialCache.get(req.user.id) || null;
+
+    if (!pushCredentialSid) {
+      let row;
+      try {
+        const result = await pool.query(
+          'SELECT credential_sid FROM nucleus_phone_voip_tokens WHERE user_id = $1',
+          [req.user.id]
+        );
+        row = result.rows[0];
+      } catch (err) {
+        console.error('token: voip_tokens lookup failed:', err.message);
+        return res.status(503).json({
+          error: 'Push credential lookup failed',
+          detail: 'Cannot issue mobile token without verifying push credential binding. Retry shortly.',
+        });
+      }
+      if (!row || !row.credential_sid) {
+        return res.status(503).json({
+          error: 'No push credential registered',
+          detail: 'POST /api/voice-push/register before requesting a mobile token.',
+        });
+      }
+      pushCredentialSid = row.credential_sid;
+      pushCredentialCache.set(req.user.id, pushCredentialSid);
     }
-    if (!row || !row.credential_sid) {
-      return res.status(503).json({
-        error: 'No push credential registered',
-        detail: 'POST /api/voice-push/register before requesting a mobile token.',
-      });
-    }
-    pushCredentialSid = row.credential_sid;
   }
 
   try {

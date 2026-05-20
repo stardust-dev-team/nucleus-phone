@@ -17,6 +17,7 @@ const { generateAccessToken } = require('../../lib/twilio');
 const { pool } = require('../../db');
 const { apiKeyAuth } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
+const pushCredentialCache = require('../../lib/push-credential-cache');
 
 const API_KEY = 'test-api-key';
 
@@ -51,6 +52,10 @@ beforeEach(() => {
   generateAccessToken.mockClear();
   pool.query.mockReset();
   pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+  // Reset the in-process cache so prior test state doesn't leak. The cache
+  // is module-level (intentionally — one cache per process). Tests must
+  // isolate themselves.
+  pushCredentialCache._reset();
 });
 
 describe('GET /api/token', () => {
@@ -151,5 +156,87 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
     } finally {
       errSpy.mockRestore();
     }
+  });
+});
+
+// 84ax: in-process cache eliminates the per-fetch DB round-trip when iOS
+// re-requests tokens (foreground events, retries). Positive entries cached
+// for 30s; misses are NOT cached so re-registration recovers instantly.
+describe('GET /api/token — push-credential cache (84ax)', () => {
+  test('second mobile request within TTL hits cache, no DB call', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{ credential_sid: 'CRsandbox123' }],
+      rowCount: 1,
+    });
+
+    // First fetch: cold cache → DB query.
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+
+    // Second fetch: warm cache → no DB query.
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    expect(pool.query).toHaveBeenCalledTimes(1); // unchanged
+
+    // Both responses forwarded the same credential.
+    expect(generateAccessToken).toHaveBeenNthCalledWith(1, 'tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRsandbox123',
+    });
+    expect(generateAccessToken).toHaveBeenNthCalledWith(2, 'tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRsandbox123',
+    });
+  });
+
+  test('missing voip_tokens row does NOT cache — retry after register recovers', async () => {
+    // First fetch: no row → 503, nothing cached.
+    pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await request(appWithSession).get('/api/token?mode=mobile').expect(503);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+
+    // Second fetch (simulating iOS retry after register completes): DB now
+    // has a row. Cache didn't poison the lookup, so it surfaces immediately.
+    pool.query.mockResolvedValueOnce({
+      rows: [{ credential_sid: 'CRsandbox123' }],
+      rowCount: 1,
+    });
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    expect(pool.query).toHaveBeenCalledTimes(2);
+    expect(generateAccessToken).toHaveBeenCalledWith('tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRsandbox123',
+    });
+  });
+
+  test('invalidate clears the cached entry (voice-push/register integration shape)', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{ credential_sid: 'CRold' }],
+      rowCount: 1,
+    });
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+
+    // /api/voice-push/register invalidates after upsert. Simulate that here.
+    pushCredentialCache.invalidate(1);
+
+    pool.query.mockResolvedValueOnce({
+      rows: [{ credential_sid: 'CRnew' }],
+      rowCount: 1,
+    });
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+
+    expect(generateAccessToken).toHaveBeenLastCalledWith('tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRnew',
+    });
+    // Cache invalidation forced a second DB lookup.
+    expect(pool.query).toHaveBeenCalledTimes(2);
+  });
+
+  test('non-mobile mode never touches the cache', async () => {
+    pushCredentialCache.set(1, 'CRshouldnotreach');
+    await request(appWithSession).get('/api/token').expect(200);
+
+    expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
+    expect(pool.query).not.toHaveBeenCalled();
   });
 });
