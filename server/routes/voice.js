@@ -1,6 +1,5 @@
 const { Router } = require('express');
-const { VoiceResponse } = require('../lib/twilio');
-const { getConference } = require('../lib/conference');
+const { VoiceResponse, client } = require('../lib/twilio');
 const { pool } = require('../db');
 const { logEvent } = require('../lib/debug-log');
 const { touch } = require('../lib/health-tracker');
@@ -122,6 +121,29 @@ router.post('/', twilioWebhook, async (req, res) => {
   }
 });
 
+/** Build the conference TwiML for a matched sim row. Vapi's leg is the
+ *  second participant joining `sim-{id}`; endConferenceOnExit:true on this
+ *  leg means Vapi hanging up tears down the conference, dropping the rep's
+ *  leg cleanly into the scoring sheet. */
+function buildSimConferenceTwiml(simRowId) {
+  const twiml = new VoiceResponse();
+  twiml.dial().conference({
+    endConferenceOnExit: true,
+    startConferenceOnEnter: true,
+    beep: false,
+  }, `sim-${simRowId}`);
+  return twiml.toString();
+}
+
+/** Failure TwiML for the bridge endpoint. No <Say> — Vapi's the listener
+ *  here, not a human, so TTS would just delay the hangup by 3-5s of robot
+ *  apology and waste Vapi minutes. */
+function buildSimBridgeFailureTwiml() {
+  const twiml = new VoiceResponse();
+  twiml.hangup();
+  return twiml.toString();
+}
+
 /**
  * POST /api/voice/sim-bridge — Twilio inbound webhook on
  * NUCLEUS_SIM_CONFERENCE_NUMBER. Vapi places an outbound call to this number
@@ -140,10 +162,23 @@ router.post('/', twilioWebhook, async (req, res) => {
  * for two unbridged-and-unclaimed rows to coexist is bounded by Vapi's
  * dial latency (typically <5s), so collisions remain near-zero.
  *
- * Failure mode: no matching row → TwiML hangs up with a brief apology and
- * fires a Slack alert. The associated sim row already lives in
- * 'score-failed' (the conference-start handler would have flipped it)
- * or will be swept by lib/stale-sweep.
+ * Retry idempotency: Twilio retries a 5xx/slow webhook with the SAME
+ * CallSid. Without the idempotency check, retry #2 sees row A already
+ * claimed (its twilio_vapi_leg_sid is set) and grabs an unrelated row B —
+ * which then has Vapi bridging into the wrong rep's conference. The
+ * SELECT-by-CallSid at the top closes that hole for sequential retries
+ * (the common case). Concurrent retries are essentially impossible given
+ * Twilio's 15s timeout vs. our sub-second response, so we don't try to
+ * close that window separately.
+ *
+ * Failure mode: no matching row → ALSO end the rep's stuck conference.
+ * The rep's iOS leg is sitting in `sim-{id}` waiting for a second
+ * participant; nothing exits to trigger endConferenceOnExit, so without
+ * an active kill the rep would sit in silence until stale-sweep runs.
+ * We look up the most recent unbridged conference_sid (read-only, no
+ * claim) and complete it. The diagnostic Slack alert distinguishes
+ * "candidate row outside window" from "no candidates at all" so the
+ * operator knows whether to bump the window or look upstream.
  */
 router.post('/sim-bridge', simBridgeWebhook, async (req, res) => {
   touch('twilio.sim-bridge');
@@ -156,6 +191,24 @@ router.post('/sim-bridge', simBridgeWebhook, async (req, res) => {
     dbClient = await pool.connect();
     await dbClient.query('BEGIN');
 
+    // Retry idempotency: if this CallSid already claimed a row, return TwiML
+    // for that same row. Twilio sends the identical CallSid on retries; the
+    // first response may have raced past Twilio's timeout. Without this,
+    // the retry steals a neighboring sim's row.
+    if (callSid) {
+      const { rows: existing } = await dbClient.query(
+        `SELECT id FROM sim_call_scores WHERE twilio_vapi_leg_sid = $1 LIMIT 1`,
+        [callSid]
+      );
+      if (existing.length) {
+        await dbClient.query('COMMIT');
+        const simRowId = existing[0].id;
+        logEvent('webhook', 'twilio.sim-bridge', `retry-idempotent CallSid=${callSid} → sim-${simRowId}`);
+        console.log(`sim-bridge: retry CallSid=${callSid} → sim-${simRowId} (idempotent)`);
+        return res.type('text/xml').send(buildSimConferenceTwiml(simRowId));
+      }
+    }
+
     const { rows } = await dbClient.query(
       `SELECT id
          FROM sim_call_scores
@@ -163,49 +216,72 @@ router.post('/sim-bridge', simBridgeWebhook, async (req, res) => {
           AND conference_sid IS NOT NULL
           AND twilio_vapi_leg_sid IS NULL
           AND status = 'in-progress'
-          AND conference_sid_set_at > NOW() - ($1 || ' seconds')::INTERVAL
+          AND conference_sid_set_at > NOW() - make_interval(secs => $1)
         ORDER BY conference_sid_set_at DESC
         LIMIT 1
         FOR UPDATE SKIP LOCKED`,
-      [String(SIM_BRIDGE_CORRELATION_WINDOW_SECONDS)]
+      [SIM_BRIDGE_CORRELATION_WINDOW_SECONDS]
     );
 
     if (!rows.length) {
+      // Diagnostic: count unbridged candidates ignoring the time window.
+      // Distinguishes "conference-start handler never fired" (count=0,
+      // look upstream) from "window too tight" (count>0, bump it).
+      const { rows: diagRows } = await dbClient.query(
+        `SELECT id, conference_sid, conference_sid_set_at
+           FROM sim_call_scores
+          WHERE vapi_call_id IS NOT NULL
+            AND conference_sid IS NOT NULL
+            AND twilio_vapi_leg_sid IS NULL
+            AND status = 'in-progress'
+          ORDER BY conference_sid_set_at DESC
+          LIMIT 5`
+      );
       await dbClient.query('COMMIT');
-      console.warn(`sim-bridge: no correlatable sim row for CallSid=${callSid} (window=${SIM_BRIDGE_CORRELATION_WINDOW_SECONDS}s)`);
+
+      // Actively end the rep's stuck conference if we can find one. No
+      // claim — purely a cleanup of the orphaned conference. Without this
+      // the rep sits in silence until stale-sweep fires (30-60s).
+      const stuckRow = diagRows[0];
+      if (stuckRow && stuckRow.conference_sid) {
+        client.conferences(stuckRow.conference_sid).update({ status: 'completed' })
+          .then(() => console.log(`sim-bridge: ended stuck conference ${stuckRow.conference_sid} for sim ${stuckRow.id}`))
+          .catch((endErr) => console.error(`sim-bridge: failed to end stuck conference ${stuckRow.conference_sid}:`, endErr.message));
+      }
+
+      const candidateCount = diagRows.length;
+      console.warn(`sim-bridge: no correlatable sim row for CallSid=${callSid} (window=${SIM_BRIDGE_CORRELATION_WINDOW_SECONDS}s, unbridged_candidates=${candidateCount})`);
+      const diagText = candidateCount === 0
+        ? `*Diagnosis:* no unbridged candidates at all — conference-start handler likely never fired. Look upstream in \`call.js:handleSimConferenceStart\`.`
+        : `*Diagnosis:* ${candidateCount} unbridged candidate row(s) exist outside the ${SIM_BRIDGE_CORRELATION_WINDOW_SECONDS}s window — Vapi dial latency exceeded the window. Most recent: sim id=${stuckRow.id}, conference_sid_set_at=${stuckRow.conference_sid_set_at}.`;
       sendSystemAlert(
         `🔴 Sim Bridge — no correlatable row`,
         [{
           type: 'section',
-          text: { type: 'mrkdwn', text: `Vapi inbound CallSid \`${callSid}\` from \`${from}\` could not be matched to a pending sim row within the ${SIM_BRIDGE_CORRELATION_WINDOW_SECONDS}s window.\n\n*Likely cause:* conference-start handler failed before Vapi dialed in, OR Vapi dialed in after the row was already swept.` },
+          text: { type: 'mrkdwn', text: `Vapi inbound CallSid \`${callSid}\` from \`${from}\` could not be matched.\n\n${diagText}` },
         }]
-      ).catch(() => {});
-      const failTwiml = new VoiceResponse();
-      failTwiml.say('Practice session unavailable. Please try again.');
-      failTwiml.hangup();
-      return res.type('text/xml').send(failTwiml.toString());
+      ).catch((alertErr) => console.error('sim-bridge: Slack alert failed:', alertErr.message));
+      return res.type('text/xml').send(buildSimBridgeFailureTwiml());
     }
 
     const simRowId = rows[0].id;
-    await dbClient.query(
+    const updateResult = await dbClient.query(
       `UPDATE sim_call_scores SET twilio_vapi_leg_sid = $1 WHERE id = $2`,
       [callSid, simRowId]
     );
+    if (updateResult.rowCount !== 1) {
+      // SELECT FOR UPDATE held the lock; no other writer could have touched
+      // this row inside our transaction. rowCount !== 1 means the row
+      // vanished between SELECT and UPDATE, which is impossible under
+      // current semantics. Throw to ROLLBACK rather than ship inconsistent
+      // TwiML — caller's catch handles the rollback + alert.
+      throw new Error(`claim UPDATE affected ${updateResult.rowCount} rows for sim ${simRowId} (expected 1)`);
+    }
     await dbClient.query('COMMIT');
 
-    const conferenceName = `sim-${simRowId}`;
-    logEvent('webhook', 'twilio.sim-bridge', `matched simCallId=${simRowId} → conference=${conferenceName}`);
-    console.log(`sim-bridge: CallSid=${callSid} → ${conferenceName}`);
-
-    const twiml = new VoiceResponse();
-    const dial = twiml.dial();
-    dial.conference({
-      endConferenceOnExit: true,
-      startConferenceOnEnter: true,
-      beep: false,
-    }, conferenceName);
-
-    res.type('text/xml').send(twiml.toString());
+    logEvent('webhook', 'twilio.sim-bridge', `matched simCallId=${simRowId} → conference=sim-${simRowId}`);
+    console.log(`sim-bridge: CallSid=${callSid} → sim-${simRowId}`);
+    res.type('text/xml').send(buildSimConferenceTwiml(simRowId));
   } catch (err) {
     console.error('sim-bridge: error:', err.message);
     if (dbClient) {
@@ -217,11 +293,8 @@ router.post('/sim-bridge', simBridgeWebhook, async (req, res) => {
         type: 'section',
         text: { type: 'mrkdwn', text: `\`/api/voice/sim-bridge\` threw for CallSid \`${callSid}\`: ${err.message}` },
       }]
-    ).catch(() => {});
-    const errTwiml = new VoiceResponse();
-    errTwiml.say('Practice session unavailable. Please try again.');
-    errTwiml.hangup();
-    res.type('text/xml').send(errTwiml.toString());
+    ).catch((alertErr) => console.error('sim-bridge: Slack alert failed:', alertErr.message));
+    res.type('text/xml').send(buildSimBridgeFailureTwiml());
   } finally {
     if (dbClient) dbClient.release();
   }
