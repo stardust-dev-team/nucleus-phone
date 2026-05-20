@@ -142,6 +142,13 @@ async function initSchema() {
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS conference_sid TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS twilio_vapi_leg_sid TEXT;
       ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS persona_id TEXT;
+      ALTER TABLE sim_call_scores ADD COLUMN IF NOT EXISTS conference_sid_set_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_sim_bridge_lookup
+        ON sim_call_scores (conference_sid_set_at DESC)
+        WHERE vapi_call_id IS NOT NULL
+          AND conference_sid IS NOT NULL
+          AND twilio_vapi_leg_sid IS NULL
+          AND status = 'in-progress';
     `);
 
     // Stale sweep is handled by lib/stale-sweep.js (runs on interval + startup)
