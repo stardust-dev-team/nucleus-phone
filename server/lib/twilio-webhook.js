@@ -14,7 +14,17 @@ const DEFAULT_BASE_URL = 'https://nucleus-phone.onrender.com';
 //
 // Per-request construction is fine here: webhook routes are low-volume
 // (a few req/sec at peak) and twilio.webhook() just builds a closure.
-function makeTwilioWebhook(path) {
+//
+// LOAD-BEARING ASSUMPTION (Linus #2): the validation URL is
+// `${baseUrl}${req.originalUrl}`. This is correct IFF:
+//   (a) APP_URL env var matches the host Twilio is configured to call.
+//   (b) Nothing between Twilio and Express rewrites the path or query
+//       string. Render terminates TLS and forwards unchanged today. If
+//       we ever move behind Cloudflare with URL-rewrite rules, or change
+//       render.yaml to add a path-rewrite, signatures will mismatch
+//       silently and every webhook 403's. Verify both assumptions before
+//       any edge-proxy migration.
+function makeTwilioWebhook() {
   return function hook(req, res, next) {
     const baseUrl = process.env.APP_URL || DEFAULT_BASE_URL;
     const validate = process.env.NODE_ENV === 'production';
@@ -32,7 +42,6 @@ function makeTwilioWebhook(path) {
     // req.originalUrl includes both pathname AND query string as received
     // from the proxy (Render terminates TLS and forwards unchanged), so
     // `${baseUrl}${req.originalUrl}` is the exact URL Twilio signed.
-    // The `path` argument is preserved as call-site documentation.
     return twilio.webhook({ validate, url: `${baseUrl}${req.originalUrl}` })(req, res, next);
   };
 }

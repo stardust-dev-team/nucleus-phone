@@ -49,22 +49,40 @@ router.get('/', async (req, res) => {
   // before /api/token?mode=mobile (VoIPPushRegistrar.register(hex:) at
   // dialer-mac/NucleusPhone/PushKit/VoIPPushRegistrar.swift:86-144), so by
   // the time we read the table, the row exists with the device's current
-  // environment baked into credential_sid. If the row is missing for some
-  // reason (race, fresh user, env mismatch), we fall through with null —
-  // Twilio's default picker takes over and the call may not deliver, but
-  // the grant generation itself succeeds.
+  // environment baked into credential_sid.
+  //
+  // Failure modes are FATAL (503) not silent — per Linus's 2026-05-19 review:
+  // the pre-fix code silently fell through with null pushCredentialSid,
+  // which is exactly the bug shape that produced APNs 52143 historically.
+  // If we can't verify the user's push credential binding, we refuse to
+  // issue a mobile token rather than degrade back into the broken
+  // auto-pick behavior. iOS clients handle 503 in their existing 401/
+  // transient-error retry path; the registration ordering at
+  // VoIPPushRegistrar.swift:89 (register before token fetch) keeps the
+  // success path 100%.
   let pushCredentialSid = null;
   if (incomingAllow && req.user && req.user.id && req.user.id !== 0) {
+    let row;
     try {
-      const { rows } = await pool.query(
+      const result = await pool.query(
         'SELECT credential_sid FROM nucleus_phone_voip_tokens WHERE user_id = $1',
         [req.user.id]
       );
-      pushCredentialSid = rows[0]?.credential_sid || null;
+      row = result.rows[0];
     } catch (err) {
       console.error('token: voip_tokens lookup failed:', err.message);
-      // Non-fatal — fall through with null pushCredentialSid.
+      return res.status(503).json({
+        error: 'Push credential lookup failed',
+        detail: 'Cannot issue mobile token without verifying push credential binding. Retry shortly.',
+      });
     }
+    if (!row || !row.credential_sid) {
+      return res.status(503).json({
+        error: 'No push credential registered',
+        detail: 'POST /api/voice-push/register before requesting a mobile token.',
+      });
+    }
+    pushCredentialSid = row.credential_sid;
   }
 
   try {

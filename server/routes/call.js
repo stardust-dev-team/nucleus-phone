@@ -34,7 +34,7 @@ function enforceOwnIdentity(req, res, bodyIdentity) {
 }
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 const { makeTwilioWebhook } = require('../lib/twilio-webhook');
-const twilioWebhook = makeTwilioWebhook('/api/call/status');
+const twilioWebhook = makeTwilioWebhook();
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 
@@ -613,7 +613,8 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
        SET vapi_call_id = $1,
            monitor_listen_url = $2,
            monitor_control_url = $3,
-           conference_sid = $4
+           conference_sid = $4,
+           conference_sid_set_at = NOW()
        WHERE id = $5`,
       [
         vapiCall.id,

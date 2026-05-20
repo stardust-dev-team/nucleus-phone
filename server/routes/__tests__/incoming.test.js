@@ -2,12 +2,21 @@
 // legacy INBOUND_ROUTES env-var path. These tests exercise the env-var path
 // because they need custom per-test fixture mappings (iOS-only, hybrid,
 // malformed). The real file is exercised by incoming.conformance.test.js.
+//
+// Linus #5: full-path equality (not endsWith) — string-suffix matching would
+// silently break any future test that legitimately needs to check for a
+// different file ending in 'inbound-routes.json' (e.g., a staging mirror
+// at config/staging-inbound-routes.json). Pinning to the exact resolved
+// path keeps the mock surgical. Path is computed INSIDE the factory because
+// jest.mock factories can't reference out-of-scope variables (hoisting rule).
 jest.mock('fs', () => {
   const realFs = jest.requireActual('fs');
+  const realPath = jest.requireActual('path');
+  const routesFileToHide = realPath.join(__dirname, '..', '..', 'config', 'inbound-routes.json');
   return {
     ...realFs,
     existsSync: jest.fn((p) => {
-      if (typeof p === 'string' && p.endsWith('inbound-routes.json')) return false;
+      if (p === routesFileToHide) return false;
       return realFs.existsSync(p);
     }),
   };
