@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel duplicate runs on force-push (PR head) or rapid pushes to main.
+# Each refname gets its own concurrency group so a main push doesn't
+# cancel an in-flight PR check and vice versa. nucleus-phone-3n33.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   jest:
     runs-on: ubuntu-latest
@@ -20,4 +27,8 @@ jobs:
         # Drift sentinel in server/routes/__tests__/incoming.conformance.test.js
         # pins +16026000188 -> Ryann. Any future re-point will fail CI loudly
         # rather than silently diverging from runbooks like it did in May 2026.
-        run: npm test
+        #
+        # --ci hardens behavior vs. local: treats unhandled promise rejections
+        # as failures, disables interactive watch/snapshot prompts, and emits
+        # JUnit-compatible output. nucleus-phone-3n33.
+        run: npm test -- --ci
