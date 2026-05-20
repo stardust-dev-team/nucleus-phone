@@ -7,13 +7,14 @@ const RETRY_BASE_MS = 3000;
 /**
  * Normalize a string for Tier 0 prediction matching.
  *
- * - Lowercase.
- * - Collapse all whitespace runs (incl. tabs, line breaks, double-spaces from
- *   ASR) into single spaces.
- * - Strip leading/trailing whitespace.
- * - Replace common word-boundary punctuation (`-`, `.`, `,`, `'`, `"`, `?`,
- *   `!`, `;`, `:`, `()`, `[]`) with spaces, then re-collapse spaces. This
- *   lets `how-much` match `how much`, `it's` match `its`, etc.
+ * Two-stage pass so `it's` actually matches a pattern of `its`:
+ * - Stage 1: lowercase, then DROP apostrophes and quotes entirely (no
+ *   substitution). `"it's"` → `its`, `"can't"` → `cant`.
+ * - Stage 2: REPLACE word-boundary punctuation (`-`, `.`, `,`, `?`, `!`,
+ *   `;`, `:`, `()`, `[]`) with spaces — `how-much` → `how much` so a
+ *   pattern of `how much` matches.
+ * - Stage 3: collapse whitespace runs (incl. tabs / line breaks / ASR
+ *   double-spaces) and trim.
  *
  * Exported for unit testing — see __tests__/useLiveAnalysis.test.js (ioy).
  */
@@ -21,7 +22,8 @@ export function normalizeForPredictionMatch(s) {
   if (typeof s !== 'string') return '';
   return s
     .toLowerCase()
-    .replace(/[-.,'"?!;:()[\]]/g, ' ')
+    .replace(/['"]/g, '')            // drop, don't substitute
+    .replace(/[-.,?!;:()[\]]/g, ' ') // substitute with space
     .replace(/\s+/g, ' ')
     .trim();
 }
