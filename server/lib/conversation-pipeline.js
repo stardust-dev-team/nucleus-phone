@@ -22,9 +22,12 @@ const FETCH_TIMEOUT = 5000;
 // Validation requires 3+ practice calls and is deferred to a human-driven
 // session; ranges are documented so a future tuner doesn't have to re-derive
 // them from the plan doc.
-const BUFFER_INTERVAL_MS = 8000;   // 8s batch cycle. Range: 6000 (cheaper, less context) — 10000 (more context, higher latency).
-const MIN_BUFFER_CHUNKS = 3;       // OR 3 chunks, whichever comes first.
-const HISTORY_WINDOW_MS = 60000;   // rolling ~60s transcript window.
+//
+// IMPORTANT: shorter interval = MORE Haiku calls per call = MORE expensive.
+// Longer interval = fewer calls = cheaper, but coach suggestions land later.
+const BUFFER_INTERVAL_MS = 8000;   // 8s batch cycle. Range: 6000 (more frequent, more expensive, faster coach) — 10000 (less frequent, cheaper, slower coach).
+const MIN_BUFFER_CHUNKS = 3;       // OR N chunks, whichever comes first. Range: 2 (more reactive, more cost) — 5 (more batched, may delay first cycle on a fast greeter).
+const HISTORY_WINDOW_MS = 60000;   // rolling ~60s transcript window. Range: 45000 (less context per cycle, cheaper input tokens) — 90000 (more context, more cost, better long-range phase detection).
 const MAX_SENTIMENT_HISTORY = 20;  // cap at 20 entries (~2.7 min at 8s cycle).
 const DEGRADED_THRESHOLD = 3;      // consecutive failures before degraded mode.
 
@@ -463,6 +466,34 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
   const latency = Date.now() - startedAt;
   state.analysisInFlight = false;
 
+  // Credit usage BEFORE the aborted gate (nucleus-phone-mm4 Linus #4).
+  // Anthropic billed us regardless of whether the caller hung up; under-
+  // counting the cost log on a mid-call cleanup race produces audit gaps.
+  // The `state` reference here is still valid even if cleanupConversation
+  // deleted it from `callState` — JavaScript holds the object alive
+  // through this closure. So writing to state.usage is safe.
+  if (result) {
+    const { usage } = result;
+    state.usage.input        += usage.input || 0;
+    state.usage.cachedInput  += usage.cachedInput || 0;
+    state.usage.output       += usage.output || 0;
+    state.usage.cycles       += 1;
+
+    // If cleanup already ran (state.aborted=true), its cost summary log
+    // was emitted with the PRE-this-cycle accumulator. Emit a corrective
+    // "late cycle" line so the auditor can reconcile aggregate spend as
+    // (call complete cost + sum of late-cycle costs).
+    if (state.aborted) {
+      const lateCost = computeCallCost({
+        input: usage.input || 0,
+        cachedInput: usage.cachedInput || 0,
+        output: usage.output || 0,
+      });
+      logEvent('info', 'conversation-pipeline',
+        `late cycle (post-cleanup) | callId=${callId} inputTok=${usage.input || 0} cachedTok=${usage.cachedInput || 0} outputTok=${usage.output || 0} cost=$${lateCost.toFixed(4)}`);
+    }
+  }
+
   // The call may have ended mid-await — don't broadcast to a cleaned-up call
   // and don't mutate failure counters on state that was freed.
   if (state.aborted) return;
@@ -475,15 +506,9 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
     return;
   }
 
-  // Cost accumulator: only update on success. Failed cycles (timeout, non-200)
-  // are still billed by Anthropic in some cases, but we can't tell from the
-  // response, and double-counting on retry is worse than under-counting by a
-  // few rare error paths.
-  const { parsed, usage } = result;
-  state.usage.input        += usage.input || 0;
-  state.usage.cachedInput  += usage.cachedInput || 0;
-  state.usage.output       += usage.output || 0;
-  state.usage.cycles       += 1;
+  // Pull parsed out for the rest of the broadcast pipeline. Usage was
+  // already credited above.
+  const { parsed } = result;
 
   // Only clear chunks that existed when this cycle started. Chunks that
   // arrived during the in-flight analysis stay in the buffer so the next
