@@ -7,7 +7,13 @@
 
 const { client: twilioClient } = require('./twilio');
 const { sendSlackDM } = require('./slack');
-const { loadRegistry } = require('./team-registry');
+const { loadRegistryOrExit } = require('./team-registry');
+
+// Load registry at module-init via the shared fail-loud wrapper. Catches
+// team.json corruption at boot rather than at first escalation request
+// (which would 500 the rep's ask-flow). Identical behavior across
+// incoming.js / escalation.js / sim.js (Linus pass-3 #4).
+const registry = loadRegistryOrExit('escalation');
 
 const RATE_LIMIT_MS = 5 * 60 * 1000;
 const rateMap = new Map();
@@ -28,11 +34,10 @@ async function escalateToTom({ repName, question, context, company, contact }) {
   rateMap.set(repName, Date.now());
 
   // Escalations always go to Tom (CEO triage). Pulled from the canonical
-  // team-registry rather than per-rep PHONE_TOM/TOM_SLACK_USER_ID env vars
-  // — same drift-prevention reasoning as inbound routing (Linus #6).
-  // If team.json or team-phones.json drift, the registry would have
-  // thrown at boot; reaching here means Tom's row is valid.
-  const tom = loadRegistry().getRepByIdentity('tom');
+  // team-registry (loaded + validated at module init above). Drops the
+  // earlier PHONE_TOM/TOM_SLACK_USER_ID env vars — Linus #6 reduction
+  // of drift surface.
+  const tom = registry.getRepByIdentity('tom');
   const phoneTo = tom && tom.mobile;
   const phoneFrom = process.env.TWILIO_PHONE_NUMBER;
   const slackUserId = tom && tom.slackUserId;

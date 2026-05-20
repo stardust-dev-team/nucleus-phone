@@ -23,10 +23,11 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Run Jest suite (incl. inbound-routes conformance + drift sentinel)
-        # Drift sentinel in server/routes/__tests__/incoming.conformance.test.js
-        # pins +16026000188 -> Ryann. Any future re-point will fail CI loudly
-        # rather than silently diverging from runbooks like it did in May 2026.
+      - name: Run Jest suite (incl. team-registry conformance + drift sentinels)
+        # Drift sentinels in server/lib/__tests__/team-registry.conformance.test.js
+        # pin +16026000188 -> Ryann and +16234620197 -> Tom (iosIdentity).
+        # Any future re-point in team.json without updating the sentinel
+        # fails CI loudly rather than silently diverging from runbooks.
         #
         # --ci hardens behavior vs. local: treats unhandled promise rejections
         # as failures, disables interactive watch/snapshot prompts, and emits

@@ -143,9 +143,32 @@ function loadRegistry() {
   return cached;
 }
 
+/**
+ * Module-init wrapper: load the registry, log success, or process.exit(1)
+ * with a FATAL log on validation failure. All three call sites (incoming.js,
+ * escalation.js, sim.js) should use THIS function at their module-init
+ * rather than inlining try/catch — the Linus pass-3 review pointed out
+ * that three independent try/catch blocks meant three inconsistent
+ * failure modes (one process.exit, one runtime throw, one silent
+ * env-var fallback). One place to fail loudly.
+ *
+ * Returns the registry on success. Never returns on failure (process.exit).
+ */
+function loadRegistryOrExit(consumerLabel) {
+  try {
+    const registry = loadRegistry();
+    const routeCount = Object.keys(registry.getAllInboundRoutes()).length;
+    console.log(`${consumerLabel}: team-registry loaded (${registry.reps.length} reps, ${routeCount} inbound routes)`);
+    return registry;
+  } catch (err) {
+    console.error(`FATAL: team-registry load failed (consumer=${consumerLabel}):`, err.message);
+    process.exit(1);
+  }
+}
+
 /** Test-only: forget the cached registry so the next loadRegistry() re-reads files. */
 function _resetForTesting() {
   cached = null;
 }
 
-module.exports = { loadRegistry, _resetForTesting };
+module.exports = { loadRegistry, loadRegistryOrExit, _resetForTesting };

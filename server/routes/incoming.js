@@ -29,24 +29,17 @@ const { makeTwilioWebhook } = require('../lib/twilio-webhook');
 const { pool } = require('../db');
 const { createConference, getConference } = require('../lib/conference');
 const { sendSlackAlert, sendSlackDM } = require('../lib/slack');
-const { loadRegistry } = require('../lib/team-registry');
+const { loadRegistryOrExit } = require('../lib/team-registry');
 
 const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 
-// Load routes from the canonical team-registry at module init. The registry
-// merges team.json + team-phones.json and throws on schema violations, so
-// any invalid config fails boot rather than 500'ing on first inbound call.
-let inboundRoutes = {};
-try {
-  const registry = loadRegistry();
-  inboundRoutes = registry.getAllInboundRoutes();
-  console.log(`incoming: loaded ${Object.keys(inboundRoutes).length} routes from team-registry`);
-} catch (err) {
-  console.error('FATAL: team-registry load failed:', err.message);
-  process.exit(1);
-}
+// Load routes from the canonical team-registry at module init via the
+// shared fail-loud wrapper — same behavior at all three consumers
+// (incoming.js, escalation.js, sim.js) so a corrupt team.json crashes
+// boot consistently rather than producing a half-healthy deploy.
+const inboundRoutes = loadRegistryOrExit('incoming').getAllInboundRoutes();
 
 /**
  * Resolve which rep to route to based on the called number.

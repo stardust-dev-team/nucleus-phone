@@ -13,16 +13,24 @@
 // (Babel hoisting), so the fixture must be defined inside the factory.
 // The constants below are also redeclared at the top of the file for
 // readability in the test bodies — they're identical to the factory's.
-jest.mock('../../lib/team-registry', () => ({
-  loadRegistry: jest.fn(() => ({
+jest.mock('../../lib/team-registry', () => {
+  const fakeRegistry = {
+    reps: [],
+    getRepByIdentity: () => null,
+    getRepByDID: () => null,
     getAllInboundRoutes: () => ({
       '+16026000188': { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
       '+16029050230': { iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
       '+16025550101': { forward: '+19995551111', iosIdentity: 'kate', slack: '', name: 'Kate' },
     }),
-  })),
-  _resetForTesting: jest.fn(),
-}));
+    getInboundRoute: () => null,
+  };
+  return {
+    loadRegistry: jest.fn(() => fakeRegistry),
+    loadRegistryOrExit: jest.fn(() => fakeRegistry),
+    _resetForTesting: jest.fn(),
+  };
+});
 
 const PSTN_NUMBER = '+16026000188';
 const IOS_NUMBER = '+16029050230';
@@ -165,28 +173,38 @@ describe('POST /api/voice/incoming — hybrid route', () => {
 /* ─── (d) team-registry load fails — server fails to start ─── */
 
 describe('incoming.js boot — registry load failure', () => {
-  test('process.exit(1) when team-registry throws on load', () => {
-    // Reset the module cache + re-mock team-registry to THROW this time.
-    // The file-level jest.mock returns a working fixture; we override here
-    // for the validator-fail path. jest.resetModules() forces incoming.js
-    // to re-evaluate its module-init block with the throwing mock active.
+  test('process.exit(1) when loadRegistryOrExit throws on load', () => {
+    // Reset the module cache + re-mock team-registry so loadRegistryOrExit
+    // calls process.exit(1) this time. The file-level jest.mock returns a
+    // working fixture; we override here for the validator-fail path.
+    // jest.resetModules() forces incoming.js to re-evaluate its module-init
+    // block with the throwing mock active.
     jest.resetModules();
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called');
+    });
     jest.doMock('../../lib/team-registry', () => ({
       loadRegistry: jest.fn(() => {
         throw new Error('team-registry: every rep must have a valid inbound entry');
       }),
+      loadRegistryOrExit: jest.fn(() => {
+        // Mirror the real loadRegistryOrExit: log FATAL then process.exit.
+        // (Direct require of '../team-registry' inside the mock would
+        // recursively hit jest.doMock — easier to inline the contract here.)
+        console.error(
+          'FATAL: team-registry load failed (consumer=incoming):',
+          'team-registry: every rep must have a valid inbound entry',
+        );
+        process.exit(1);
+      }),
       _resetForTesting: jest.fn(),
     }));
-
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called');
-    });
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
       expect(() => require('../incoming')).toThrow('process.exit called');
       expect(errSpy).toHaveBeenCalledWith(
-        'FATAL: team-registry load failed:',
+        expect.stringContaining('FATAL: team-registry load failed'),
         expect.stringContaining('every rep must have'),
       );
     } finally {
