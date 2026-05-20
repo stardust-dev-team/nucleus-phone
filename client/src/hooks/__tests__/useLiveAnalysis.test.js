@@ -101,17 +101,22 @@ describe('normalizeForPredictionMatch', () => {
     expect(normalizeForPredictionMatch('how-much')).toBe('how much');
   });
 
-  test('apostrophes drop so "it\'s" matches "its"', () => {
-    expect(normalizeForPredictionMatch("it's")).toBe('it s');
-    // Note: 'its' as a pattern won't match 'it s' as substring because
-    // the apostrophe becomes a space, not stripped. That's deliberate —
-    // 'cant' as a pattern matches both "can't" and "cant" via word boundary
-    // (but only the latter exactly). See substring-match test below for
-    // the realistic behavior.
+  test('apostrophes drop entirely so "it\'s" → "its" (not "it s")', () => {
+    // Linus pass #2: substituting apostrophe with space leaves "it s",
+    // which doesn't match a pattern of "its". Drop the apostrophe instead.
+    expect(normalizeForPredictionMatch("it's")).toBe('its');
+    expect(normalizeForPredictionMatch("can't")).toBe('cant');
+    expect(normalizeForPredictionMatch("don't")).toBe('dont');
+    // Pattern 'cant' must match both "can't" and "cant" via substring.
+    const pattern = normalizeForPredictionMatch('cant');
+    expect(normalizeForPredictionMatch("can't do this").includes(pattern)).toBe(true);
+    expect(normalizeForPredictionMatch('I cant do this').includes(pattern)).toBe(true);
   });
 
   test('punctuation (commas, periods, quotes, parens) normalize to spaces', () => {
     expect(normalizeForPredictionMatch('How much, exactly?')).toBe('how much exactly');
+    // Quotes drop entirely (Linus #2 — same reasoning as apostrophes);
+    // commas/question marks substitute with space then collapse.
     expect(normalizeForPredictionMatch('"is it cheap?"')).toBe('is it cheap');
     expect(normalizeForPredictionMatch('(cost) [tax]')).toBe('cost tax');
   });
