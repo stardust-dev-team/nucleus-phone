@@ -123,8 +123,18 @@ const US_STATES = new Set([
 function cleanCompanyName(name) {
   if (!name) return '';
   let n = name.trim()
+    // Strip parenthetical content first (nucleus-phone-0rz). LinkedIn
+    // typeahead 400s on queries containing parens, which accounted for
+    // ~2% of the 2026-04-20 live-resolution run failures (~50 of 2669
+    // companies — e.g. 'Boeing Company - Defense, Space and Security (BDS)',
+    // 'Meggitt (Erlanger), LLC', 'Proponent, Inc. dba (Proponent)'). Use a
+    // non-greedy match so nested-paren shapes don't swallow the rest of
+    // the string. \s* on both sides collapses the surrounding whitespace
+    // the parens leave behind.
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
     .replace(/\s*,?\s*(Inc|LLC|Corp|Corporation|Ltd|Limited|Co|Company|Group|LP|Holdings|PLC|GmbH|SA|AG)\.?\s*$/i, '')
     .replace(/\s+dba\s+/i, ' ').replace(/\s+d\/b\/a\s+/i, ' ')
+    .replace(/\s{2,}/g, ' ')
     .replace(/[,.\s]+$/, '');
   const words = n.split(/\s+/);
   if (words.length >= 2) {
@@ -547,4 +557,9 @@ async function main() {
   await pool.end();
 }
 
-main().catch(err => { console.error('FATAL:', err.message, err.stack); process.exit(1); });
+// Run main() only when invoked as a CLI (not when required for tests).
+if (require.main === module) {
+  main().catch(err => { console.error('FATAL:', err.message, err.stack); process.exit(1); });
+}
+
+module.exports = { cleanCompanyName };
