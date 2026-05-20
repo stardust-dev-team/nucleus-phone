@@ -19,7 +19,7 @@
     "react-router-dom": "^6.28.0",
     "recharts": "^3.8.1"
   },
-  "//react": "react and react-dom intentionally hoisted to the repo root (nucleus-phone-8la). Vite walks up to the parent node_modules to resolve them. Jest used to need moduleNameMapper pins to defeat the closer-copy resolver — those pins are now redundant but harmless.",
+  "//react": "react and react-dom dropped from explicit deps because Vite resolves them through the parent node_modules (nucleus-phone-8la). Note: client/node_modules/react STILL gets installed as a transitive peer of @radix-ui/*, recharts, and framer-motion — so the jest.client.config.js moduleNameMapper pins remain LOAD-BEARING. Do not remove those pins. A proper structural dedupe requires npm workspaces.",
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
