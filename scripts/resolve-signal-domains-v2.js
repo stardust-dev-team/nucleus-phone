@@ -122,16 +122,24 @@ const US_STATES = new Set([
 
 function cleanCompanyName(name) {
   if (!name) return '';
-  let n = name.trim()
-    // Strip parenthetical content first (nucleus-phone-0rz). LinkedIn
-    // typeahead 400s on queries containing parens, which accounted for
-    // ~2% of the 2026-04-20 live-resolution run failures (~50 of 2669
-    // companies — e.g. 'Boeing Company - Defense, Space and Security (BDS)',
-    // 'Meggitt (Erlanger), LLC', 'Proponent, Inc. dba (Proponent)'). Use a
-    // non-greedy match so nested-paren shapes don't swallow the rest of
-    // the string. \s* on both sides collapses the surrounding whitespace
-    // the parens leave behind.
-    .replace(/\s*\([^)]*\)\s*/g, ' ')
+  // Strip parenthetical content first (nucleus-phone-0rz). LinkedIn
+  // typeahead 400s on queries containing parens, which accounted for ~2%
+  // of the 2026-04-20 live-resolution run failures (~50 of 2669
+  // companies — e.g. 'Boeing Company - Defense, Space and Security (BDS)',
+  // 'Meggitt (Erlanger), LLC', 'Proponent, Inc. dba (Proponent)').
+  //
+  // Nested parens (`Foo (Bar (Baz))`) need a loop: the inner-class
+  // `[^()]` forbids BOTH parens, so a single pass strips only the
+  // innermost groups. Each pass collapses one level of nesting; we loop
+  // until idempotent. Worst case is O(depth) passes — depth is 1 in
+  // practice; the loop is cheap insurance against pathological inputs.
+  let n = name.trim();
+  let prev;
+  do {
+    prev = n;
+    n = n.replace(/\s*\([^()]*\)\s*/g, ' ');
+  } while (n !== prev);
+  n = n
     .replace(/\s*,?\s*(Inc|LLC|Corp|Corporation|Ltd|Limited|Co|Company|Group|LP|Holdings|PLC|GmbH|SA|AG)\.?\s*$/i, '')
     .replace(/\s+dba\s+/i, ' ').replace(/\s+d\/b\/a\s+/i, ' ')
     .replace(/\s{2,}/g, ' ')
