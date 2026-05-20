@@ -69,6 +69,13 @@ router.get('/', async (req, res) => {
     pushCredentialSid = pushCredentialCache.get(req.user.id) || null;
 
     if (!pushCredentialSid) {
+      // Snapshot the invalidation generation BEFORE the SELECT — Linus #2
+      // race: a concurrent voice-push/register invalidate() that fires
+      // between our pool.query() and our cache.set() would otherwise let
+      // us write the OLD credential_sid into the cache for a full TTL.
+      // setIfFresh skips the write when generation drifts.
+      const gen = pushCredentialCache.getInvalidationCount(req.user.id);
+
       let row;
       try {
         const result = await pool.query(
@@ -90,7 +97,10 @@ router.get('/', async (req, res) => {
         });
       }
       pushCredentialSid = row.credential_sid;
-      pushCredentialCache.set(req.user.id, pushCredentialSid);
+      // setIfFresh is a no-op if invalidate() ran during our SELECT —
+      // in that case the next token fetch pays the DB round-trip and
+      // re-caches correctly. Better than serving stale credentials.
+      pushCredentialCache.setIfFresh(req.user.id, pushCredentialSid, gen);
     }
   }
 

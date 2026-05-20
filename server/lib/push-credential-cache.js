@@ -22,11 +22,26 @@
  *  - Cache size is bounded by active rep count (fleet is small). No LRU
  *    eviction — the dataset is naturally small and re-registration writes
  *    in place rather than growing the keyspace.
+ *
+ * Invalidation-set race (Linus pass #2):
+ *  Callers MUST use the getInvalidationCount + setIfFresh dance, not the
+ *  raw set(). Without it, this race is open:
+ *    1. Token-fetch starts, cache.get → miss
+ *    2. Token-fetch awaits pool.query
+ *    3. voice-push/register completes UPSERT + invalidate(userId)
+ *    4. Token-fetch's pool.query resumes with the OLD credential_sid
+ *    5. Token-fetch's set() writes the OLD value, sticking around for
+ *       up to TTL_MS until the next register or expiry.
+ *  The generation counter is per-user, incremented on invalidate. The
+ *  caller snapshots it at SELECT start; setIfFresh writes only if the
+ *  generation is unchanged. Raced sets silently skip — next token fetch
+ *  pays the DB round-trip and re-caches correctly.
  */
 
 const DEFAULT_TTL_MS = 30 * 1000;
 
 const cache = new Map();
+const invalidations = new Map();  // userId -> monotonic counter
 let ttlMs = DEFAULT_TTL_MS;
 
 function get(userId) {
@@ -40,6 +55,33 @@ function get(userId) {
   return entry.credentialSid;
 }
 
+/**
+ * Snapshot the invalidation generation for a user. Pair with setIfFresh
+ * after a DB load so a concurrent invalidate during the load is detected
+ * and the stale-value write is skipped.
+ */
+function getInvalidationCount(userId) {
+  if (!userId) return 0;
+  return invalidations.get(userId) || 0;
+}
+
+/**
+ * Race-safe set. Writes only if the per-user generation matches the
+ * snapshot taken before the SELECT — otherwise an invalidate raced us
+ * and our DB result is presumed stale.
+ */
+function setIfFresh(userId, credentialSid, expectedGeneration) {
+  if (!userId || !credentialSid) return false;
+  const current = invalidations.get(userId) || 0;
+  if (current !== expectedGeneration) return false;  // raced
+  cache.set(userId, { credentialSid, expiresAt: Date.now() + ttlMs });
+  return true;
+}
+
+/**
+ * Raw set — no race guard. Kept for tests that want to seed cache state
+ * directly. Production callers should use setIfFresh.
+ */
 function set(userId, credentialSid) {
   if (!userId || !credentialSid) return;
   cache.set(userId, { credentialSid, expiresAt: Date.now() + ttlMs });
@@ -47,11 +89,13 @@ function set(userId, credentialSid) {
 
 function invalidate(userId) {
   if (!userId) return;
+  invalidations.set(userId, (invalidations.get(userId) || 0) + 1);
   cache.delete(userId);
 }
 
 function _reset(newTtlMs = DEFAULT_TTL_MS) {
   cache.clear();
+  invalidations.clear();
   ttlMs = newTtlMs;
 }
 
@@ -59,4 +103,13 @@ function _size() {
   return cache.size;
 }
 
-module.exports = { get, set, invalidate, _reset, _size, DEFAULT_TTL_MS };
+module.exports = {
+  get,
+  set,
+  setIfFresh,
+  invalidate,
+  getInvalidationCount,
+  _reset,
+  _size,
+  DEFAULT_TTL_MS,
+};

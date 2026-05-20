@@ -83,3 +83,60 @@ describe('push-credential-cache', () => {
     });
   });
 });
+
+// Linus pass #2 (invalidation-set race). getInvalidationCount + setIfFresh
+// guard against the order:
+//   T1: tokenFetch.gen = getInvalidationCount(uid)
+//   T2: tokenFetch.SELECT old_sid (suspends on await)
+//   T3: register: UPSERT new_sid; invalidate(uid) → gen++
+//   T4: tokenFetch resumes; setIfFresh(uid, OLD_sid, T1_gen) → skipped
+// The cache stays empty (not poisoned with OLD_sid); next fetch goes to
+// DB and re-caches the new_sid.
+describe('setIfFresh / getInvalidationCount race guard', () => {
+  test('setIfFresh writes when generation matches snapshot', () => {
+    const gen = cache.getInvalidationCount(1);
+    expect(gen).toBe(0);
+    const wrote = cache.setIfFresh(1, 'CRfresh', gen);
+    expect(wrote).toBe(true);
+    expect(cache.get(1)).toBe('CRfresh');
+  });
+
+  test('setIfFresh skips when invalidate ran between snapshot and write', () => {
+    const gen = cache.getInvalidationCount(1);
+    cache.invalidate(1);  // simulates concurrent register
+    const wrote = cache.setIfFresh(1, 'CRstale', gen);
+    expect(wrote).toBe(false);
+    expect(cache.get(1)).toBeUndefined();  // not poisoned
+  });
+
+  test('getInvalidationCount increments per invalidate', () => {
+    expect(cache.getInvalidationCount(1)).toBe(0);
+    cache.invalidate(1);
+    expect(cache.getInvalidationCount(1)).toBe(1);
+    cache.invalidate(1);
+    expect(cache.getInvalidationCount(1)).toBe(2);
+  });
+
+  test('generation counter is per-user (unrelated invalidations do not block)', () => {
+    const gen1 = cache.getInvalidationCount(1);
+    cache.invalidate(2);  // bumps user 2 only
+    const wrote = cache.setIfFresh(1, 'CRok', gen1);
+    expect(wrote).toBe(true);
+    expect(cache.get(1)).toBe('CRok');
+  });
+
+  test('falsy user_id or empty sid is a no-op (no crash)', () => {
+    expect(cache.setIfFresh(null, 'CR', 0)).toBe(false);
+    expect(cache.setIfFresh(0, 'CR', 0)).toBe(false);
+    expect(cache.setIfFresh(1, '', 0)).toBe(false);
+    expect(cache.setIfFresh(1, null, 0)).toBe(false);
+  });
+
+  test('_reset clears invalidation counters too', () => {
+    cache.invalidate(1);
+    cache.invalidate(1);
+    expect(cache.getInvalidationCount(1)).toBe(2);
+    cache._reset();
+    expect(cache.getInvalidationCount(1)).toBe(0);
+  });
+});
