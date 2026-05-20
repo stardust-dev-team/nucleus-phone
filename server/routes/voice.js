@@ -135,6 +135,68 @@ function buildSimConferenceTwiml(simRowId) {
   return twiml.toString();
 }
 
+// Allowed characters in a conference name passed via query param. Matches the
+// regex sim-smoke-leg.js uses client-side; the server validates independently
+// because URL-bound input is an untrusted boundary.
+const SIM_BRIDGE_CONF_RE = /^[A-Za-z0-9_-]+$/;
+
+/** Build conference TwiML for the REP leg of a sim bridge smoke. Mirrors what
+ *  sim-smoke-leg.js used to emit inline, but rendered server-side so that
+ *  Twilio honors the <Conference statusCallback> attributes (nucleus-phone-ufne
+ *  hypothesis 1: inline TwiML via Calls.create({twiml}) drops the conference
+ *  statusCallback; url= delivery does not). */
+function buildSimRepConferenceTwiml(conferenceName, statusCallback) {
+  const twiml = new VoiceResponse();
+  twiml.dial().conference({
+    endConferenceOnExit: true,
+    startConferenceOnEnter: true,
+    beep: false,
+    statusCallback,
+    statusCallbackEvent: 'start end',
+    statusCallbackMethod: 'POST',
+  }, conferenceName);
+  return twiml.toString();
+}
+
+/**
+ * GET /api/voice/sim-bridge-twiml — TwiML endpoint used by the smoke-test
+ * dialer (scripts/sim-smoke-leg.js) for the rep leg of a sim conference. The
+ * dialer calls Calls.create({ url: `${BASE_URL}/api/voice/sim-bridge-twiml?conf=...` })
+ * instead of `{ twiml: '...' }` so that Twilio honors the inline
+ * <Conference statusCallback> attribute (server-returned TwiML is the working
+ * path; inline TwiML via REST appears to drop the conference-level callback).
+ *
+ * Query params (Twilio fetches via POST by default, so params land on the
+ * URL string — the smoke dialer constructs the URL with conf+sc embedded):
+ *   conf — required. Conference name. Must match SIM_BRIDGE_CONF_RE.
+ *   sc   — optional. Conference statusCallback URL. Defaults to the prod
+ *          /api/call/status endpoint. Must be https://.
+ *
+ * Accepted via both GET and POST: Twilio's default is POST, but local curl
+ * smoke / manual inspection is more ergonomic via GET. No signature
+ * validation: this endpoint emits TwiML that's safe regardless of caller
+ * (the conf name is sanitized; the sc URL is constrained to https://).
+ */
+function handleSimBridgeTwiml(req, res) {
+  touch('twilio.sim-bridge-twiml');
+  const conf = String(req.query.conf || '');
+  if (!conf || !SIM_BRIDGE_CONF_RE.test(conf)) {
+    const twiml = new VoiceResponse();
+    twiml.say('Invalid conference name.');
+    twiml.hangup();
+    return res.status(400).type('text/xml').send(twiml.toString());
+  }
+
+  const sc = typeof req.query.sc === 'string' && req.query.sc.startsWith('https://')
+    ? req.query.sc
+    : `${baseUrl}/api/call/status`;
+
+  res.type('text/xml').send(buildSimRepConferenceTwiml(conf, sc));
+}
+
+router.get('/sim-bridge-twiml', handleSimBridgeTwiml);
+router.post('/sim-bridge-twiml', handleSimBridgeTwiml);
+
 /** Failure TwiML for the bridge endpoint. No <Say> — Vapi's the listener
  *  here, not a human, so TTS would just delay the hangup by 3-5s of robot
  *  apology and waste Vapi minutes. */

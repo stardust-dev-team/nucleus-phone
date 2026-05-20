@@ -9,9 +9,10 @@
  * Usage:
  *   node scripts/sim-smoke-leg.js <simCallId> <rep-phone-E164>
  *   node scripts/sim-smoke-leg.js --conference <name> <rep-phone-E164>
+ *   node scripts/sim-smoke-leg.js [--inline-twiml] ...   # legacy inline path
  *
  * Examples:
- *   # Typical: dial rep into sim-103
+ *   # Typical: dial rep into sim-103 (server-returned TwiML, default)
  *   node scripts/sim-smoke-leg.js 103 +16025551234
  *
  *   # Dry-run: dial rep into an arbitrary non-sim conference (does NOT trigger
@@ -19,14 +20,25 @@
  *   # outbound-dial + TwiML path without consuming a sim row).
  *   node scripts/sim-smoke-leg.js --conference dryrun-$(date +%s) +16025551234
  *
+ * TwiML delivery (nucleus-phone-ufne):
+ *   Default — Twilio fetches TwiML from
+ *     GET ${APP_URL}/api/voice/sim-bridge-twiml?conf=<name>&sc=<callback>
+ *   Inline (legacy) — pass --inline-twiml. Calls.create({ twiml: '...' }) drops
+ *   the <Conference statusCallback> attribute in practice, so the bridge fires
+ *   no conference-start event. Kept behind a flag for A/B comparison.
+ *
  * Required env (loaded from .env or ~/.joruva/secrets.env via lib/load-env):
  *   TWILIO_ACCOUNT_SID
  *   TWILIO_AUTH_TOKEN
  *   NUCLEUS_PHONE_NUMBER   - Twilio number to place the outbound from
  *
  * Optional env:
- *   NUCLEUS_SIM_STATUS_CALLBACK_URL - override the default conference
- *                                     statusCallback URL.
+ *   APP_URL                         - base URL hosting /api/voice/sim-bridge-twiml.
+ *                                     Defaults to the Render production URL.
+ *   NUCLEUS_SIM_STATUS_CALLBACK_URL - override the conference statusCallback URL
+ *                                     (passed through to the TwiML endpoint via
+ *                                     the `sc` query param, and used inline on
+ *                                     --inline-twiml).
  *
  * Design note: the rep phone is a REQUIRED positional arg with no env-var
  * default by intent. Defaulting risks Paul or Britt running this and dialing
@@ -44,19 +56,26 @@ require('./lib/load-env')();
 const twilio = require('twilio');
 
 const DEFAULT_STATUS_CALLBACK = 'https://nucleus-phone.onrender.com/api/call/status';
+const DEFAULT_APP_URL = 'https://nucleus-phone.onrender.com';
 const CONFERENCE_NAME_RE = /^[A-Za-z0-9_-]+$/;
 const E164_RE = /^\+\d{6,15}$/;
 
 function usage(msg) {
   if (msg) console.error(`Error: ${msg}\n`);
   console.error('Usage:');
-  console.error('  node scripts/sim-smoke-leg.js <simCallId> <rep-phone-E164>');
-  console.error('  node scripts/sim-smoke-leg.js --conference <name> <rep-phone-E164>');
+  console.error('  node scripts/sim-smoke-leg.js [--inline-twiml] <simCallId> <rep-phone-E164>');
+  console.error('  node scripts/sim-smoke-leg.js [--inline-twiml] --conference <name> <rep-phone-E164>');
   process.exit(1);
 }
 
 function parseArgs(argv) {
   const args = argv.slice(2);
+  let inlineTwiml = false;
+  if (args[0] === '--inline-twiml') {
+    inlineTwiml = true;
+    args.shift();
+  }
+
   let conferenceName;
   let to;
 
@@ -81,7 +100,7 @@ function parseArgs(argv) {
     usage(`rep phone must be E.164 (e.g. +16025551234), got ${JSON.stringify(to)}`);
   }
 
-  return { conferenceName, to };
+  return { conferenceName, to, inlineTwiml };
 }
 
 function buildTwiml({ conferenceName, statusCallback }) {
@@ -105,8 +124,15 @@ function buildTwiml({ conferenceName, statusCallback }) {
   return response.toString();
 }
 
+function buildTwimlUrl({ appUrl, conferenceName, statusCallback }) {
+  const u = new URL('/api/voice/sim-bridge-twiml', appUrl);
+  u.searchParams.set('conf', conferenceName);
+  u.searchParams.set('sc', statusCallback);
+  return u.toString();
+}
+
 async function main() {
-  const { conferenceName, to } = parseArgs(process.argv);
+  const { conferenceName, to, inlineTwiml } = parseArgs(process.argv);
 
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
@@ -117,10 +143,27 @@ async function main() {
   }
 
   const statusCallback = process.env.NUCLEUS_SIM_STATUS_CALLBACK_URL || DEFAULT_STATUS_CALLBACK;
-  const twiml = buildTwiml({ conferenceName, statusCallback });
+  const appUrl = process.env.APP_URL || DEFAULT_APP_URL;
 
   const client = twilio(sid, token);
-  const call = await client.calls.create({ to, from, twiml });
+
+  // Default path (nucleus-phone-ufne): server-returned TwiML via url=. Twilio
+  // honors <Conference statusCallback> attributes only when TwiML is fetched
+  // from a URL — inline twiml= delivery silently drops conference-level
+  // callbacks, so the bridge handler never sees conference-start events.
+  // Inline path kept behind --inline-twiml for A/B comparison.
+  const createParams = { to, from };
+  let deliveryMode;
+  if (inlineTwiml) {
+    createParams.twiml = buildTwiml({ conferenceName, statusCallback });
+    deliveryMode = 'inline';
+  } else {
+    createParams.url = buildTwimlUrl({ appUrl, conferenceName, statusCallback });
+    createParams.method = 'POST';
+    deliveryMode = 'url';
+  }
+
+  const call = await client.calls.create(createParams);
 
   console.log(JSON.stringify({
     ok: true,
@@ -129,6 +172,8 @@ async function main() {
     to,
     from,
     status: call.status,
+    delivery: deliveryMode,
+    twimlUrl: createParams.url || null,
     note: 'call is queued; pickup is not verified by this script',
   }));
 }
