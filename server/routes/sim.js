@@ -66,31 +66,22 @@ const DIFFICULTY_TO_ASSISTANT = {
   hard: 'VAPI_SIM_HARD_ID',
 };
 
-// Phone lookup via team-registry — merges team.json (committed) with
-// team-phones.json (gitignored). Env var fallback (PHONE_*) preserved as
-// the last resort for staging environments where team-phones.json may be
-// absent but Render env vars are configured. See Linus #6 consolidation.
-const { loadRegistry } = require('../lib/team-registry');
-let _simRegistry = null;
-function getSimRegistry() {
-  if (_simRegistry) return _simRegistry;
-  try {
-    _simRegistry = loadRegistry();
-  } catch (err) {
-    console.warn(`SIM: team-registry load failed (${err.message}) — falling back to PHONE_* env vars`);
-    _simRegistry = null;
-  }
-  return _simRegistry;
-}
+// Phone lookup via team-registry — single source of truth (team.json
+// committed, with optional team-phones.json local-dev override). Loaded
+// + validated at module init via the shared fail-loud wrapper, identical
+// to incoming.js and escalation.js (Linus pass-3 #4).
+//
+// PHONE_* env-var fallback REMOVED per Linus pass-3 #6 — the fallback
+// was a silent drift surface that re-introduced exactly the env-var-
+// config drift pattern Linus #6 was meant to close. If team.json's
+// mobile field is missing for an identity, that's a real bug worth
+// surfacing (returns null → caller handles).
+const { loadRegistryOrExit } = require('../lib/team-registry');
+const simRegistry = loadRegistryOrExit('sim');
 
 function lookupPhone(identity) {
-  // 1. team-registry (canonical: team.json + team-phones.json)
-  const reg = getSimRegistry();
-  const rep = reg && reg.getRepByIdentity(identity);
-  if (rep && rep.mobile) return rep.mobile;
-  // 2. Env var fallback (e.g. PHONE_TOM) — for staging without team-phones.json
-  const envKey = `PHONE_${identity.toUpperCase()}`;
-  return process.env[envKey] || null;
+  const rep = simRegistry.getRepByIdentity(identity);
+  return (rep && rep.mobile) || null;
 }
 
 function validateId(req, res) {

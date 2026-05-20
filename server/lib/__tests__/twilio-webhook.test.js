@@ -24,7 +24,7 @@ function makeApp() {
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
-  app.post('/hook', makeTwilioWebhook('/hook'), (_req, res) => res.sendStatus(204));
+  app.post('/hook', makeTwilioWebhook(), (_req, res) => res.sendStatus(204));
   return app;
 }
 

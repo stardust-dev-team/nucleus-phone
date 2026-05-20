@@ -30,6 +30,24 @@ Keep entries terse but self-contained — a fresh session should be able to act 
 
 ## Open Follow-ups
 
+### 2026-05-19 — Corrupt team.json recovery procedure (no env-var escape hatch)
+
+**Context:** Before the Linus pass-2 consolidation, inbound routing had a layered fallback: `inbound-routes.json` → `INBOUND_ROUTES` env var → `INBOUND_FORWARD_NUMBER` single-number mode. After the consolidation, `team.json` is the only source — there is no env-var fallback for the rep registry. If `team.json` is corrupted in a force-push or accidentally truncated, all three consumers (incoming.js, escalation.js, sim.js) `process.exit(1)` at boot via `loadRegistryOrExit()`, and Render's auto-restart loop keeps cycling on the bad config until git is reverted.
+
+**Recovery procedure** (when team.json is broken in production):
+1. Identify the bad commit via `git log --oneline server/config/team.json`.
+2. Revert just the file: `git checkout <good-sha> -- server/config/team.json && git commit -m "revert team.json to <sha>"`.
+3. Push to main; Render auto-deploys.
+4. Verify boot succeeds via `mcp__joruva-infra__render_get_logs` looking for `incoming: team-registry loaded (N reps, M inbound routes)`.
+
+There is NO Render env-var that can be flipped to restore service without a code push. That's a deliberate trade for the Linus #6 consolidation (one source of truth) — accepting harder recovery in exchange for impossible-to-drift configuration.
+
+If recovery via revert is ever blocked (e.g., bad commit is itself the revert target), the manual escape is to push a hand-edited `team.json` with the known-good 8 rep entries — they're documented in `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table with placeholder mobile env vars, and the literal mobile + Slack IDs are recoverable from `nucleus_phone_users` DB rows + Slack `users.list`.
+
+**Owner:** Tom (no action needed unless team.json gets corrupted).
+
+---
+
 ### 2026-05-19 — Britt inbound DID provisioning (deferred from drift-cleanup session)
 
 **Trigger:** Britt expands beyond Sales Discovery into closing / inbound coverage, OR she explicitly asks to receive inbound calls on her iOS dialer.
