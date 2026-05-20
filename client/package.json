@@ -16,11 +16,10 @@
     "@twilio/voice-sdk": "^2.12.1",
     "@vapi-ai/web": "^2.5.2",
     "framer-motion": "^12.38.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "recharts": "^3.8.1"
   },
+  "//react": "react and react-dom intentionally hoisted to the repo root (nucleus-phone-8la). Vite walks up to the parent node_modules to resolve them. Jest used to need moduleNameMapper pins to defeat the closer-copy resolver — those pins are now redundant but harmless.",
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
