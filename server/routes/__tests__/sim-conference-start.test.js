@@ -196,7 +196,7 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
     }));
   });
 
-  test('Vapi dial failure: rolls back, marks row score-failed, ends conference, alerts', async () => {
+  test('Vapi dial failure: flips status on locked row + COMMITs (closes retry-race), ends conference, alerts', async () => {
     const { queryMock } = mockTransaction({
       selectRows: [{ id: 42, persona_id: 'mike-garza', difficulty: 'easy', vapi_call_id: null, status: 'in-progress' }],
     });
@@ -209,15 +209,24 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
 
     await send({ FriendlyName: 'sim-42' }).expect(204);
 
-    // Transaction rolled back
+    // CRITICAL: the failure UPDATE runs on the SAME transactional dbClient
+    // that holds the SELECT FOR UPDATE lock, and we COMMIT (not ROLLBACK).
+    // A blocked Twilio retry unblocks on COMMIT, sees status='score-failed',
+    // and short-circuits via the existing in-progress guard. ROLLBACK would
+    // release the lock with the row still 'in-progress' and the retry would
+    // re-dial Vapi.
     const calls = queryMock.mock.calls.map(c => c[0]);
-    expect(calls).toContain('ROLLBACK');
+    expect(calls).not.toContain('ROLLBACK');
+    expect(calls[calls.length - 1]).toBe('COMMIT');
+    expect(calls.some(c => /UPDATE sim_call_scores[\s\S]*status = 'score-failed'/.test(c))).toBe(true);
 
-    // markSimFailed called against the pool (separate connection)
-    expect(pool.query).toHaveBeenCalledWith(
-      expect.stringContaining(`status = 'score-failed'`),
-      expect.arrayContaining(['sim-42']),
-    );
+    // The locked-row UPDATE uses row.id, not conference_name (markSimFailed's
+    // separate-connection path). Pinned via the second argument.
+    const failedUpdate = queryMock.mock.calls.find(c => /status = 'score-failed'/.test(c[0]));
+    expect(failedUpdate[1]).toEqual([
+      expect.stringContaining('Vapi dial failed: Vapi 500'),
+      42,
+    ]);
 
     // Conference ended so iOS leg drops cleanly
     expect(client.conferences).toHaveBeenCalledWith('CF100');
@@ -227,8 +236,8 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
     expect(sendSystemAlert).toHaveBeenCalled();
   });
 
-  test('assistantId unresolvable: marks failed without dialing Vapi', async () => {
-    mockTransaction({
+  test('assistantId unresolvable: flips status on locked row + COMMIT (no separate-connection race)', async () => {
+    const { queryMock } = mockTransaction({
       selectRows: [{ id: 42, persona_id: 'unknown', difficulty: 'easy', vapi_call_id: null, status: 'in-progress' }],
     });
     resolveAssistantId.mockReturnValue(undefined);
@@ -236,10 +245,13 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
     await send({ FriendlyName: 'sim-42' }).expect(204);
 
     expect(createOutboundCall).not.toHaveBeenCalled();
-    expect(pool.query).toHaveBeenCalledWith(
-      expect.stringContaining(`status = 'score-failed'`),
-      expect.arrayContaining(['sim-42']),
-    );
+
+    // Status flip happens on the locked row inside the transaction, NOT via
+    // a separate-connection markSimFailed call against the pool.
+    const calls = queryMock.mock.calls.map(c => c[0]);
+    expect(calls.some(c => /UPDATE sim_call_scores[\s\S]*status = 'score-failed'/.test(c))).toBe(true);
+    expect(calls[calls.length - 1]).toBe('COMMIT');
+    expect(calls).not.toContain('ROLLBACK');
   });
 
   test('NUCLEUS_SIM_CONFERENCE_NUMBER unset: marks failed and alerts', async () => {

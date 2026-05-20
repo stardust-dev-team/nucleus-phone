@@ -28,22 +28,38 @@ function makeUpdateResponse(rows) {
 }
 
 describe('sweepStaleSims — predicate shape', () => {
-  test('UPDATE includes all three OR branches (tier 1, tier 2, scoring)', async () => {
+  test('UPDATE includes all three OR branches with parameterized intervals', async () => {
     pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
     await runSweep();
 
     const simSweepCall = pool.query.mock.calls.find(c => /UPDATE sim_call_scores/.test(c[0]));
     expect(simSweepCall).toBeDefined();
-    const sql = simSweepCall[0];
+    const [sql, params] = simSweepCall;
 
-    // Tier 1: vapi_call_id IS NULL + 10 min
-    expect(sql).toMatch(/vapi_call_id IS NULL\s*\n?\s*AND created_at < NOW\(\) - INTERVAL '10 minutes'/);
-    // Tier 2: vapi_call_id IS NOT NULL + 20 min
-    expect(sql).toMatch(/vapi_call_id IS NOT NULL\s*\n?\s*AND created_at < NOW\(\) - INTERVAL '20 minutes'/);
-    // Scoring: 10 min
-    expect(sql).toMatch(/status = 'scoring'\s*\n?\s*AND created_at < NOW\(\) - INTERVAL '10 minutes'/);
+    // Tier 1: vapi_call_id IS NULL + make_interval($1)
+    expect(sql).toMatch(/vapi_call_id IS NULL\s*\n?\s*AND created_at < NOW\(\) - make_interval\(mins => \$1\)/);
+    // Tier 2: vapi_call_id IS NOT NULL + make_interval($2)
+    expect(sql).toMatch(/vapi_call_id IS NOT NULL\s*\n?\s*AND created_at < NOW\(\) - make_interval\(mins => \$2\)/);
+    // Scoring: make_interval($3)
+    expect(sql).toMatch(/status = 'scoring'\s*\n?\s*AND created_at < NOW\(\) - make_interval\(mins => \$3\)/);
     // All three OR'd together
     expect(sql.match(/\sOR\s/g)).toHaveLength(2);
+    // Params pin the thresholds: 10, 20, 10
+    expect(params).toEqual([10, 20, 10]);
+    // No template-literal interval strings (issue 6 — Linus review)
+    expect(sql).not.toMatch(/INTERVAL '\$/);
+    expect(sql).not.toMatch(/INTERVAL '\d/);
+  });
+
+  test('sweepStaleCalls is also parameterized (issue 6)', async () => {
+    pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    await runSweep();
+
+    const callsSweep = pool.query.mock.calls.find(c => /UPDATE nucleus_phone_calls/.test(c[0]));
+    expect(callsSweep).toBeDefined();
+    expect(callsSweep[0]).toMatch(/make_interval\(mins => \$1\)/);
+    expect(callsSweep[1]).toEqual([15]);
+    expect(callsSweep[0]).not.toMatch(/INTERVAL '\d/);
   });
 
   test('targets sim_call_scores with status = score-failed', async () => {
@@ -64,6 +80,20 @@ describe('sweepStaleSims — predicate shape', () => {
     expect(sql).toMatch(/end-of-call webhook never arrived/);
     expect(sql).toMatch(/scoring pipeline wedged/);
     expect(sql).toMatch(/COALESCE\(caller_debrief/);
+  });
+
+  test('CASE expression has no ELSE branch (issue 5 — unreachable code)', async () => {
+    pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    await runSweep();
+
+    const simSweepCall = pool.query.mock.calls.find(c => /UPDATE sim_call_scores/.test(c[0]));
+    const sql = simSweepCall[0];
+    // ELSE would mask a future predicate addition that forgets to add a
+    // matching CASE branch. Without ELSE, the row gets NULL → COALESCE
+    // preserves any existing caller_debrief, and ops can grep for swept
+    // rows with no debrief tag.
+    expect(sql).not.toMatch(/\bELSE\b/);
+    expect(sql).not.toMatch(/stale row/);
   });
 });
 
