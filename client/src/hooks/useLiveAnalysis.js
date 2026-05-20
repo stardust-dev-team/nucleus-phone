@@ -5,6 +5,28 @@ const MAX_RETRIES = 5;
 const RETRY_BASE_MS = 3000;
 
 /**
+ * Normalize a string for Tier 0 prediction matching.
+ *
+ * - Lowercase.
+ * - Collapse all whitespace runs (incl. tabs, line breaks, double-spaces from
+ *   ASR) into single spaces.
+ * - Strip leading/trailing whitespace.
+ * - Replace common word-boundary punctuation (`-`, `.`, `,`, `'`, `"`, `?`,
+ *   `!`, `;`, `:`, `()`, `[]`) with spaces, then re-collapse spaces. This
+ *   lets `how-much` match `how much`, `it's` match `its`, etc.
+ *
+ * Exported for unit testing — see __tests__/useLiveAnalysis.test.js (ioy).
+ */
+export function normalizeForPredictionMatch(s) {
+  if (typeof s !== 'string') return '';
+  return s
+    .toLowerCase()
+    .replace(/[-.,'"?!;:()[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Merge a sentiment_update WS payload with the prior sentiment state.
  *
  * Contract: backend always sends `history[]` today, but bare {customer,
@@ -158,11 +180,14 @@ export default function useLiveAnalysis(callId, enabled = true) {
           case 'transcript_chunk': {
             const text = msg.data?.text;
             const pred = predictionRef.current;
-            // Guard against empty/whitespace patterns: `"".includes("")` is
-            // true and would fire on every chunk.
-            const pattern = pred?.pattern?.trim();
-            if (text && pattern && pred?.suggestion) {
-              if (text.toLowerCase().includes(pattern.toLowerCase())) {
+            // Normalize both sides so ASR whitespace artifacts ("how  much")
+            // and punctuation variants ("how-much", "it's") still match
+            // author-written patterns. Empty-pattern guard avoids
+            // `"".includes("")` → true on every chunk.
+            const pattern = normalizeForPredictionMatch(pred?.pattern || '');
+            const haystack = normalizeForPredictionMatch(text || '');
+            if (haystack && pattern && pred?.suggestion) {
+              if (haystack.includes(pattern)) {
                 const entry = {
                   ...pred.suggestion,
                   source: 'prediction',

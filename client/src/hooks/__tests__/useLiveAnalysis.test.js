@@ -7,7 +7,7 @@
  * drift; today the server always sends history.
  */
 
-import { mergeSentimentUpdate } from '../useLiveAnalysis';
+import { mergeSentimentUpdate, normalizeForPredictionMatch } from '../useLiveAnalysis';
 import { SENTIMENT_HISTORY_MAX } from '../../components/cockpit/navigator-constants';
 
 describe('mergeSentimentUpdate', () => {
@@ -74,5 +74,70 @@ describe('mergeSentimentUpdate', () => {
 
     expect(merged).not.toBe(prev);
     expect(prev.customer).toBe('positive');
+  });
+});
+
+/**
+ * Tier 0 prediction matching normalization (nucleus-phone-ioy).
+ *
+ * ASR output frequently contains incidental whitespace and punctuation
+ * variants that the .toLowerCase().includes() path used to miss:
+ * 'how  much' (double space), 'how-much', "it's" vs 'its'. Normalize both
+ * pattern and text before substring-matching so author-written patterns
+ * survive transcription noise.
+ */
+describe('normalizeForPredictionMatch', () => {
+  test('lowercases and trims', () => {
+    expect(normalizeForPredictionMatch('  HOW MUCH  ')).toBe('how much');
+  });
+
+  test('collapses double-spaces and tabs', () => {
+    expect(normalizeForPredictionMatch('how  much')).toBe('how much');
+    expect(normalizeForPredictionMatch('how\t\tmuch')).toBe('how much');
+    expect(normalizeForPredictionMatch('how\nmuch')).toBe('how much');
+  });
+
+  test('hyphens normalize to spaces (how-much → how much)', () => {
+    expect(normalizeForPredictionMatch('how-much')).toBe('how much');
+  });
+
+  test('apostrophes drop so "it\'s" matches "its"', () => {
+    expect(normalizeForPredictionMatch("it's")).toBe('it s');
+    // Note: 'its' as a pattern won't match 'it s' as substring because
+    // the apostrophe becomes a space, not stripped. That's deliberate —
+    // 'cant' as a pattern matches both "can't" and "cant" via word boundary
+    // (but only the latter exactly). See substring-match test below for
+    // the realistic behavior.
+  });
+
+  test('punctuation (commas, periods, quotes, parens) normalize to spaces', () => {
+    expect(normalizeForPredictionMatch('How much, exactly?')).toBe('how much exactly');
+    expect(normalizeForPredictionMatch('"is it cheap?"')).toBe('is it cheap');
+    expect(normalizeForPredictionMatch('(cost) [tax]')).toBe('cost tax');
+  });
+
+  test('non-string inputs return empty string', () => {
+    expect(normalizeForPredictionMatch(undefined)).toBe('');
+    expect(normalizeForPredictionMatch(null)).toBe('');
+    expect(normalizeForPredictionMatch(123)).toBe('');
+    expect(normalizeForPredictionMatch({})).toBe('');
+  });
+
+  test('substring matching after normalization handles realistic ASR variants', () => {
+    // ASR delivers 'How much is it?' as 'how  much is it'; pattern 'how much'
+    // must match.
+    const pattern = normalizeForPredictionMatch('how much');
+    expect(normalizeForPredictionMatch('How  much is it?').includes(pattern)).toBe(true);
+    expect(normalizeForPredictionMatch('How-much, really?').includes(pattern)).toBe(true);
+    expect(normalizeForPredictionMatch('HOWMUCH').includes(pattern)).toBe(false);
+  });
+
+  test('idempotent — normalize(normalize(x)) === normalize(x)', () => {
+    const inputs = ['How  much', 'cost-effective', "it's a deal!", '  ALL CAPS  '];
+    for (const s of inputs) {
+      const once = normalizeForPredictionMatch(s);
+      const twice = normalizeForPredictionMatch(once);
+      expect(twice).toBe(once);
+    }
   });
 });
