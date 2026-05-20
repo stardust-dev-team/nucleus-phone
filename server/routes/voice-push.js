@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const { isInteractiveCaller } = require('../middleware/auth');
 const { logEvent } = require('../lib/debug-log');
 const { resolveCredentialSid, CredentialUnavailableError } = require('../lib/twilio-push-binding');
+const pushCredentialCache = require('../lib/push-credential-cache');
 
 const router = Router();
 
@@ -58,6 +59,12 @@ router.post('/register', async (req, res, next) => {
          environment = EXCLUDED.environment`,
       [req.user.id, normalizedToken, credentialSid, environment]
     );
+
+    // Invalidate the /api/token cache for this user (nucleus-phone-84ax) so
+    // an environment switch (production ↔ sandbox) is reflected on the next
+    // token fetch on THIS process. Other Render instances are still bounded
+    // by the cache TTL.
+    pushCredentialCache.invalidate(req.user.id);
 
     // Audit trail for credential-rotation traceability. Fire-and-forget,
     // gated on DEBUG=1. Token suffix is enough to correlate without
