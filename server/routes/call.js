@@ -436,7 +436,14 @@ router.post('/status', twilioWebhook, async (req, res) => {
   // prevents double-cleanup. If a future refactor removes that
   // cleanup from /api/call/end, this arm must regain the SQL guard
   // (`AND status != 'completed'`) and/or absorb the cleanup work.
-  if (StatusCallbackEvent === 'conference-end' && conf) {
+  //
+  // Sim conferences have their own end-of-call lifecycle (sim.js's Vapi
+  // webhook handler ends the Twilio conference and clears the map). They
+  // don't have rows in nucleus_phone_calls — the UPDATE below would be a
+  // harmless no-op for them today, but matching on FriendlyName across the
+  // wrong table is a landmine. Explicitly skip sim conferences here.
+  if (StatusCallbackEvent === 'conference-end' && conf
+      && !(typeof FriendlyName === 'string' && FriendlyName.startsWith('sim-'))) {
     const duration = Math.floor((Date.now() - conf.startedAt.getTime()) / 1000);
 
     try {
@@ -496,14 +503,20 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
     return;
   }
 
-  const dbClient = await pool.connect();
+  // pool.connect() is inside the try so a pool-exhausted / DB-down exception
+  // is caught by the same handler that flips the row to score-failed via the
+  // no-transaction markSimFailed fallback (the connection never opened, so
+  // no lock to release here — markSimFailed gets its own connection).
+  let dbClient = null;
   let simRow = null;
   try {
+    dbClient = await pool.connect();
     await dbClient.query('BEGIN');
 
     // Look up sim row by conference_name (B2a's column). FOR UPDATE locks
     // the row so a concurrent Twilio retry blocks here until COMMIT, then
-    // sees vapi_call_id populated and short-circuits.
+    // sees vapi_call_id populated (or status='score-failed' on the failure
+    // paths) and short-circuits.
     const { rows } = await dbClient.query(
       `SELECT id, persona_id, difficulty, vapi_call_id, status
        FROM sim_call_scores WHERE conference_name = $1 FOR UPDATE`,
@@ -524,9 +537,9 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
       return;
     }
 
-    // If the user cancelled or sweep marked the row in the narrow window
-    // between sim-call-ios POST and Twilio's conference-start arriving,
-    // don't dial Vapi.
+    // If the user cancelled, sweep marked the row, or a prior bridge attempt
+    // committed score-failed in the narrow window between sim-call-ios POST
+    // and Twilio's conference-start arriving, don't dial Vapi.
     if (simRow.status !== 'in-progress') {
       console.warn(`sim-bridge: ${FriendlyName} status is ${simRow.status}, refusing to dial Vapi`);
       await dbClient.query('COMMIT');
@@ -543,8 +556,12 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
 
     if (!assistantId) {
       console.error(`sim-bridge: cannot resolve assistantId for ${FriendlyName} (persona=${personaId}, difficulty=${difficulty})`);
+      // Flip status on the locked row, then COMMIT — a blocked Twilio retry
+      // unblocks, sees status='score-failed', and short-circuits via the
+      // in-progress guard above. ROLLBACK would release the lock with the
+      // row still 'in-progress' and the retry would re-dial Vapi (issue 1).
+      await failOnLockedRow(dbClient, simRow.id, 'assistantId unresolved');
       await dbClient.query('COMMIT');
-      await markSimFailed(FriendlyName, 'assistantId unresolved').catch(() => {});
       return;
     }
 
@@ -560,8 +577,23 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
       });
     } catch (err) {
       console.error(`sim-bridge: Vapi createOutboundCall failed for ${FriendlyName}:`, err.message);
-      await dbClient.query('ROLLBACK');
-      await markSimFailed(FriendlyName, `Vapi dial failed: ${err.message}`).catch(() => {});
+      // Same race-closure pattern as the assistantId path: flip status under
+      // the lock + COMMIT, so the blocked retry can't double-dial Vapi.
+      // The SELECT we did earlier doesn't need to be rolled back — it
+      // didn't write anything; the UPDATE here is the only write and it's
+      // the state we want persisted.
+      try {
+        await failOnLockedRow(dbClient, simRow.id, `Vapi dial failed: ${err.message}`);
+        await dbClient.query('COMMIT');
+      } catch (commitErr) {
+        // If the COMMIT itself failed, the lock is already gone via implicit
+        // rollback and we can't atomically guard the retry. Fall back to a
+        // separate-connection markSimFailed — race window opens here, but
+        // we've already failed once on Vapi so a double-dial is the lesser
+        // evil than a stuck in-progress row.
+        console.error(`sim-bridge: COMMIT after Vapi failure also failed for ${FriendlyName}:`, commitErr.message);
+        await markSimFailed(FriendlyName, `Vapi dial failed: ${err.message}`).catch(() => {});
+      }
       // End the conference so the rep's leg drops cleanly into the scoring
       // sheet's failure-path instead of hanging in silence.
       client.conferences(ConferenceSid).update({ status: 'completed' })
@@ -601,11 +633,32 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
     console.log(`sim-bridge: ${FriendlyName} → vapi=${vapiCall.id} (conf=${ConferenceSid})`);
   } catch (err) {
     console.error(`sim-bridge: transaction failed for ${FriendlyName}:`, err.message);
-    try { await dbClient.query('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    if (dbClient) {
+      try { await dbClient.query('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    }
+    // No dbClient → pool.connect() itself failed (DB unreachable / pool
+    // exhausted). markSimFailed uses pool.query which will also fail in that
+    // case, but we still try — the catch keeps the route from blowing up.
     await markSimFailed(FriendlyName, `bridge error: ${err.message}`).catch(() => {});
   } finally {
-    dbClient.release();
+    if (dbClient) dbClient.release();
   }
+}
+
+/** Flip a locked sim row to score-failed on the same dbClient that holds the
+ *  SELECT FOR UPDATE lock. Caller is responsible for COMMIT/ROLLBACK. Used by
+ *  the bridge's in-transaction failure paths (issue 1: closes the race where
+ *  a blocked Twilio retry would re-dial Vapi after a separate-connection
+ *  markSimFailed).
+ */
+async function failOnLockedRow(dbClient, simRowId, errorMessage) {
+  await dbClient.query(
+    `UPDATE sim_call_scores
+     SET status = 'score-failed',
+         caller_debrief = COALESCE(caller_debrief, $1)
+     WHERE id = $2`,
+    [`Practice call could not start: ${errorMessage}`, simRowId]
+  );
 }
 
 /** Mark a sim row 'score-failed' with an error message. Used by the bridge
@@ -621,4 +674,4 @@ async function markSimFailed(conferenceName, errorMessage) {
   );
 }
 
-module.exports = Object.assign(router, { __testing: { handleSimConferenceStart, markSimFailed } });
+module.exports = Object.assign(router, { __testing: { handleSimConferenceStart, markSimFailed, failOnLockedRow } });

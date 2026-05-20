@@ -28,12 +28,17 @@ const SIM_SCORING_STALE_MINUTES = 10;
 
 async function sweepStaleCalls() {
   try {
+    // Interval values are parameterized (not template-interpolated) so
+    // env-driven thresholds in the future can't smuggle injection through
+    // here. Postgres's `make_interval(mins => $N)` is the canonical
+    // recipe for parameterized intervals.
     const { rows, rowCount } = await pool.query(
       `UPDATE nucleus_phone_calls
        SET status = 'failed'
        WHERE status IN ('connecting', 'in-progress')
-         AND created_at < NOW() - INTERVAL '${CALL_STALE_MINUTES} minutes'
-       RETURNING id, caller_identity, status, created_at`
+         AND created_at < NOW() - make_interval(mins => $1)
+       RETURNING id, caller_identity, status, created_at`,
+      [CALL_STALE_MINUTES]
     );
 
     if (rowCount > 0) {
@@ -69,28 +74,33 @@ async function sweepStaleSims() {
   try {
     // Single UPDATE with three OR'd predicates so the sweep is atomic
     // (no read-then-write races) and produces one RETURNING set we can
-    // partition for the alert. The COALESCE column tags each swept row
-    // with the tier that matched, so the Slack alert can describe what
-    // went wrong without re-querying.
+    // partition for the alert. The CASE expression tags each swept row
+    // with the tier that matched (COALESCE preserves existing
+    // caller_debrief from explicit failure paths like the sim-bridge).
+    // The WHERE clause is exhaustive across these three branches, so the
+    // CASE has no ELSE — a future predicate addition without a CASE
+    // branch will land NULL into COALESCE and inherit caller_debrief,
+    // which is visible in operations and shows up as a clear "we forgot
+    // to tag this tier" signal.
     const { rows, rowCount } = await pool.query(
       `UPDATE sim_call_scores
        SET status = 'score-failed',
            caller_debrief = COALESCE(caller_debrief, CASE
              WHEN vapi_call_id IS NULL  AND status = 'in-progress'
-                  THEN 'timeout — iOS never connected or Vapi bridge failed'
+                  THEN 'timeout: iOS never connected or Vapi bridge failed'
              WHEN vapi_call_id IS NOT NULL AND status = 'in-progress'
-                  THEN 'timeout — Vapi end-of-call webhook never arrived'
+                  THEN 'timeout: Vapi end-of-call webhook never arrived'
              WHEN status = 'scoring'
-                  THEN 'timeout — scoring pipeline wedged'
-             ELSE 'timeout — stale row'
+                  THEN 'timeout: scoring pipeline wedged'
            END)
        WHERE (status = 'in-progress' AND vapi_call_id IS NULL
-              AND created_at < NOW() - INTERVAL '${SIM_TIER1_MINUTES} minutes')
+              AND created_at < NOW() - make_interval(mins => $1))
           OR (status = 'in-progress' AND vapi_call_id IS NOT NULL
-              AND created_at < NOW() - INTERVAL '${SIM_TIER2_MINUTES} minutes')
+              AND created_at < NOW() - make_interval(mins => $2))
           OR (status = 'scoring'
-              AND created_at < NOW() - INTERVAL '${SIM_SCORING_STALE_MINUTES} minutes')
-       RETURNING id, caller_identity, vapi_call_id, created_at`
+              AND created_at < NOW() - make_interval(mins => $3))
+       RETURNING id, caller_identity, vapi_call_id, created_at`,
+      [SIM_TIER1_MINUTES, SIM_TIER2_MINUTES, SIM_SCORING_STALE_MINUTES]
     );
 
     if (rowCount > 0) {
