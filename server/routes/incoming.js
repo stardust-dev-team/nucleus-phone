@@ -125,7 +125,7 @@ function appendVoicemailTwiml(twiml, callerPhone, conferenceName) {
 
 // ─── POST / — Initial inbound call handler ──────────────────────────
 
-router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
+router.post('/', makeTwilioWebhook(), async (req, res) => {
   const calledNumber = req.body.To || req.body.Called;
   const route = resolveRoute(calledNumber);
   const twiml = new VoiceResponse();
@@ -295,7 +295,7 @@ router.post('/', makeTwilioWebhook('/api/voice/incoming'), async (req, res) => {
 
 // ─── POST /dial-complete — <Dial> action URL (safety net) ───────────
 
-router.post('/dial-complete', makeTwilioWebhook('/api/voice/incoming/dial-complete'), (req, res) => {
+router.post('/dial-complete', makeTwilioWebhook(), (req, res) => {
   const { DialCallStatus } = req.body;
   const conferenceName = req.query.conf;
   const callerPhone = req.query.from || 'unknown';
@@ -316,7 +316,7 @@ router.post('/dial-complete', makeTwilioWebhook('/api/voice/incoming/dial-comple
 
 // ─── POST /rep-status — Rep's participant leg status changes ────────
 
-router.post('/rep-status', makeTwilioWebhook('/api/voice/incoming/rep-status'), async (req, res) => {
+router.post('/rep-status', makeTwilioWebhook(), async (req, res) => {
   res.sendStatus(204);
 
   const { CallStatus, CallSid, ConferenceSid } = req.body;
@@ -369,7 +369,7 @@ router.post('/rep-status', makeTwilioWebhook('/api/voice/incoming/rep-status'), 
 
 // ─── POST /voicemail — Voicemail TwiML (redirect target) ────────────
 
-router.post('/voicemail', makeTwilioWebhook('/api/voice/incoming/voicemail'), (req, res) => {
+router.post('/voicemail', makeTwilioWebhook(), (req, res) => {
   const callerPhone = req.query.from || 'unknown';
   const conferenceName = req.query.conf;
   if (conferenceName && !getConference(conferenceName)) console.warn(`incoming: voicemail: conference ${conferenceName} already swept`);
@@ -380,7 +380,7 @@ router.post('/voicemail', makeTwilioWebhook('/api/voice/incoming/voicemail'), (r
 
 // ─── POST /voicemail-complete — Save recording URL to DB ────────────
 
-router.post('/voicemail-complete', makeTwilioWebhook('/api/voice/incoming/voicemail-complete'), async (req, res) => {
+router.post('/voicemail-complete', makeTwilioWebhook(), async (req, res) => {
   res.sendStatus(204);
 
   const { RecordingUrl, RecordingDuration, CallSid } = req.body;
@@ -417,7 +417,7 @@ router.post('/voicemail-complete', makeTwilioWebhook('/api/voice/incoming/voicem
 
 // ─── POST /fallback — Twilio voice URL fallback ─────────────────────
 
-router.post('/fallback', makeTwilioWebhook('/api/voice/incoming/fallback'), (req, res) => {
+router.post('/fallback', makeTwilioWebhook(), (req, res) => {
   const twiml = new VoiceResponse();
   twiml.say({
     voice: 'Polly.Joanna',

@@ -80,12 +80,16 @@ describe('inbound-routes.json drift sentinels', () => {
   // test fails because the route was deliberately changed, update the
   // expectation here AND update memory/runbooks/twilio-voice.md AND the
   // hub mirror — that's how we keep all three sources in sync.
+  //
+  // Linus #4: we pin name + forward (routing-load-bearing fields). We DO
+  // NOT pin slack — it's notification metadata, not routing. A legitimate
+  // Slack workspace migration (or someone fixing the user ID) shouldn't
+  // trip this sentinel for no operational reason.
   test('+16026000188 routes to Ryann (drift sentinel, 2026-05-19)', () => {
     const route = routes['+16026000188'];
     expect(route).toBeDefined();
     expect(route.name).toBe('Ryann');
     expect(route.forward).toBe('+14803630494');
-    expect(route.slack).toBe('U0ANRJR25QB');
   });
 
   test('+16234620197 routes to Tom via iOS CallKit (paired sentinel, locked 2026-05-19)', () => {

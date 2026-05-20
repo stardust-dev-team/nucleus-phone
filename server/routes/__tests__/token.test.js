@@ -109,15 +109,22 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
     });
   });
 
-  test('mobile + session user + NO voip_tokens row → omits pushCredentialSid (graceful)', async () => {
+  test('mobile + session user + NO voip_tokens row → 503 (fail loud, Linus #1)', async () => {
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    const res = await request(appWithSession).get('/api/token?mode=mobile').expect(503);
 
-    // The call signature must remain byte-identical to the legacy shape
-    // when there's no cred to forward — otherwise existing API-key callers
-    // that pin the call args via toHaveBeenCalledWith would silently break.
-    expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: true });
+    // Body must point the iOS app at the fix path. The error keeps
+    // VoIPPushRegistrar.swift:95's 503-handler from confusing this with
+    // the "deploy lacks sandbox credential" 503 (different cause, same
+    // status code). Keep both messages searchable.
+    expect(res.body.error).toBe('No push credential registered');
+    expect(res.body.detail).toMatch(/voice-push\/register/);
+    // Crucially: no degraded token issued. Pre-fix code silently fell
+    // through with null pushCredentialSid — exactly the bug shape that
+    // produced APNs 52143. Asserting generateAccessToken was NEVER
+    // called is the regression sentinel.
+    expect(generateAccessToken).not.toHaveBeenCalled();
   });
 
   test('NO mode (default) → no lookup runs, no pushCredentialSid forwarded', async () => {
@@ -127,13 +134,16 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
     expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
   });
 
-  test('mobile + DB query throws → graceful fallthrough (token still issued)', async () => {
+  test('mobile + DB query throws → 503 (fail loud, Linus #1)', async () => {
     pool.query.mockRejectedValueOnce(new Error('connection refused'));
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      await request(appWithSession).get('/api/token?mode=mobile').expect(200);
-      expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: true });
+      const res = await request(appWithSession).get('/api/token?mode=mobile').expect(503);
+      expect(res.body.error).toBe('Push credential lookup failed');
+      expect(generateAccessToken).not.toHaveBeenCalled();
+      // We DO log to console for ops visibility — but the response itself
+      // is the load-bearing signal, not the log line.
       expect(errSpy).toHaveBeenCalledWith(
         'token: voip_tokens lookup failed:',
         'connection refused',

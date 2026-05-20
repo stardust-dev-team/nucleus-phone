@@ -29,7 +29,7 @@ const router = Router();
 
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 const { makeTwilioWebhook } = require('../lib/twilio-webhook');
-const twilioWebhook = makeTwilioWebhook('/api/transcription');
+const twilioWebhook = makeTwilioWebhook();
 
 // Map Twilio RT Transcription's `Track` webhook field to the typed
 // `speaker` value clients expect. Twilio sends `inbound_track` /
