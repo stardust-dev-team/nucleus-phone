@@ -239,4 +239,41 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
     expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
     expect(pool.query).not.toHaveBeenCalled();
   });
+
+  test('invalidation-set race: concurrent invalidate during SELECT skips the cache write (Linus #2)', async () => {
+    // Reproduce the race: a token fetch is suspended at await pool.query;
+    // a register completes during that await and invalidates the cache;
+    // the suspended fetch resumes and tries to cache its (now-stale)
+    // SELECT result. The generation guard must skip that write.
+    pool.query.mockImplementationOnce(async () => {
+      // Simulate /api/voice-push/register firing during the SELECT.
+      pushCredentialCache.invalidate(1);
+      return { rows: [{ credential_sid: 'CRstale' }], rowCount: 1 };
+    });
+
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+
+    // The response forwards what the SELECT returned (no choice; we
+    // already have it in hand). The CACHE, however, must be empty so
+    // the next fetch re-reads from DB and picks up the post-register
+    // value.
+    expect(generateAccessToken).toHaveBeenCalledWith('tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRstale',
+    });
+    expect(pushCredentialCache.get(1)).toBeUndefined();
+
+    // Confirm the next fetch goes to DB (cache is cold, not poisoned).
+    pool.query.mockResolvedValueOnce({
+      rows: [{ credential_sid: 'CRnew' }],
+      rowCount: 1,
+    });
+    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    expect(pool.query).toHaveBeenCalledTimes(2);
+    expect(generateAccessToken).toHaveBeenLastCalledWith('tom', {
+      incomingAllow: true,
+      pushCredentialSid: 'CRnew',
+    });
+    expect(pushCredentialCache.get(1)).toBe('CRnew');
+  });
 });
