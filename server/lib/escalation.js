@@ -7,6 +7,7 @@
 
 const { client: twilioClient } = require('./twilio');
 const { sendSlackDM } = require('./slack');
+const { loadRegistry } = require('./team-registry');
 
 const RATE_LIMIT_MS = 5 * 60 * 1000;
 const rateMap = new Map();
@@ -26,9 +27,15 @@ async function escalateToTom({ repName, question, context, company, contact }) {
 
   rateMap.set(repName, Date.now());
 
-  const phoneTo = process.env.PHONE_TOM;
+  // Escalations always go to Tom (CEO triage). Pulled from the canonical
+  // team-registry rather than per-rep PHONE_TOM/TOM_SLACK_USER_ID env vars
+  // — same drift-prevention reasoning as inbound routing (Linus #6).
+  // If team.json or team-phones.json drift, the registry would have
+  // thrown at boot; reaching here means Tom's row is valid.
+  const tom = loadRegistry().getRepByIdentity('tom');
+  const phoneTo = tom && tom.mobile;
   const phoneFrom = process.env.TWILIO_PHONE_NUMBER;
-  const slackUserId = process.env.TOM_SLACK_USER_ID;
+  const slackUserId = tom && tom.slackUserId;
 
   const companyStr = company ? ` re: ${company}` : '';
   const smsBody = `${repName}${companyStr}: ${question}`.substring(0, 160);
@@ -63,7 +70,7 @@ async function escalateToTom({ repName, question, context, company, contact }) {
         .catch(err => console.error('Escalation SMS failed:', err.message))
     );
   } else {
-    console.warn('PHONE_TOM or TWILIO_PHONE_NUMBER not set — skipping SMS');
+    console.warn('escalation: Tom mobile (team-phones.json) or TWILIO_PHONE_NUMBER not set — skipping SMS');
   }
 
   if (slackUserId) {
@@ -73,7 +80,7 @@ async function escalateToTom({ repName, question, context, company, contact }) {
         .catch(err => console.error('Escalation Slack DM failed:', err.message))
     );
   } else {
-    console.warn('TOM_SLACK_USER_ID not set — skipping Slack DM');
+    console.warn('escalation: Tom slackUserId not in team.json — skipping Slack DM');
   }
 
   await Promise.all(promises);

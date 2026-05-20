@@ -1,26 +1,32 @@
-// Hide the canonical inbound-routes.json so incoming.js falls through to the
-// legacy INBOUND_ROUTES env-var path. These tests exercise the env-var path
-// because they need custom per-test fixture mappings (iOS-only, hybrid,
-// malformed). The real file is exercised by incoming.conformance.test.js.
+// Parametric TwiML-branch tests for incoming.js. Mocks team-registry to
+// return fixture routes per test — the real registry is exercised by
+// team-registry.conformance.test.js (schema + drift sentinels).
 //
-// Linus #5: full-path equality (not endsWith) — string-suffix matching would
-// silently break any future test that legitimately needs to check for a
-// different file ending in 'inbound-routes.json' (e.g., a staging mirror
-// at config/staging-inbound-routes.json). Pinning to the exact resolved
-// path keeps the mock surgical. Path is computed INSIDE the factory because
-// jest.mock factories can't reference out-of-scope variables (hoisting rule).
-jest.mock('fs', () => {
-  const realFs = jest.requireActual('fs');
-  const realPath = jest.requireActual('path');
-  const routesFileToHide = realPath.join(__dirname, '..', '..', 'config', 'inbound-routes.json');
-  return {
-    ...realFs,
-    existsSync: jest.fn((p) => {
-      if (p === routesFileToHide) return false;
-      return realFs.existsSync(p);
+// Schema decision: each route object has the SAME shape that
+// team-registry.getAllInboundRoutes() returns:
+//   { name, slack, forward? | iosIdentity? }
+// If iosIdentity is set, the iOS Client branch fires; if only forward,
+// the PSTN/conference branch fires; if both are set, iosIdentity wins
+// (per documented preference).
+
+// jest.mock factories run BEFORE any const declarations at module scope
+// (Babel hoisting), so the fixture must be defined inside the factory.
+// The constants below are also redeclared at the top of the file for
+// readability in the test bodies — they're identical to the factory's.
+jest.mock('../../lib/team-registry', () => ({
+  loadRegistry: jest.fn(() => ({
+    getAllInboundRoutes: () => ({
+      '+16026000188': { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
+      '+16029050230': { iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
+      '+16025550101': { forward: '+19995551111', iosIdentity: 'kate', slack: '', name: 'Kate' },
     }),
-  };
-});
+  })),
+  _resetForTesting: jest.fn(),
+}));
+
+const PSTN_NUMBER = '+16026000188';
+const IOS_NUMBER = '+16029050230';
+const HYBRID_NUMBER = '+16025550101';
 
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('../../lib/conference', () => ({
@@ -45,26 +51,12 @@ const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 const slack = require('../../lib/slack');
 
-const PSTN_NUMBER = '+16026000188';
-const IOS_NUMBER = '+16029050230';
-const HYBRID_NUMBER = '+16025550101';
-
 let app;
 beforeAll(() => {
-  // INBOUND_ROUTES is read at module load — set BEFORE require + cache the app.
-  process.env.INBOUND_ROUTES = JSON.stringify({
-    [PSTN_NUMBER]: { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
-    [IOS_NUMBER]: { iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
-    [HYBRID_NUMBER]: { forward: '+19995551111', iosIdentity: 'kate', slack: '', name: 'Kate' },
-  });
   app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use('/api/voice/incoming', require('../incoming'));
-});
-
-afterAll(() => {
-  delete process.env.INBOUND_ROUTES;
 });
 
 beforeEach(() => {
@@ -170,16 +162,21 @@ describe('POST /api/voice/incoming — hybrid route', () => {
   });
 });
 
-/* ─── (d) Malformed route — server fails to start ─── */
+/* ─── (d) team-registry load fails — server fails to start ─── */
 
-describe('INBOUND_ROUTES validator — boot-time', () => {
-  test('exits when a route has neither forward nor iosIdentity', () => {
-    // Save the good config from beforeAll so any future test added below
-    // this one (or test reordering via --testNamePattern) sees a sane env.
-    const original = process.env.INBOUND_ROUTES;
-    process.env.INBOUND_ROUTES = JSON.stringify({
-      [PSTN_NUMBER]: { slack: 'D-broken', name: 'Broken' },
-    });
+describe('incoming.js boot — registry load failure', () => {
+  test('process.exit(1) when team-registry throws on load', () => {
+    // Reset the module cache + re-mock team-registry to THROW this time.
+    // The file-level jest.mock returns a working fixture; we override here
+    // for the validator-fail path. jest.resetModules() forces incoming.js
+    // to re-evaluate its module-init block with the throwing mock active.
+    jest.resetModules();
+    jest.doMock('../../lib/team-registry', () => ({
+      loadRegistry: jest.fn(() => {
+        throw new Error('team-registry: every rep must have a valid inbound entry');
+      }),
+      _resetForTesting: jest.fn(),
+    }));
 
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called');
@@ -187,18 +184,15 @@ describe('INBOUND_ROUTES validator — boot-time', () => {
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      expect(() => {
-        jest.isolateModules(() => require('../incoming'));
-      }).toThrow('process.exit called');
-
+      expect(() => require('../incoming')).toThrow('process.exit called');
       expect(errSpy).toHaveBeenCalledWith(
-        'FATAL: inbound routes config invalid:',
-        expect.stringContaining('every route must have'),
+        'FATAL: team-registry load failed:',
+        expect.stringContaining('every rep must have'),
       );
     } finally {
-      process.env.INBOUND_ROUTES = original;
       exitSpy.mockRestore();
       errSpy.mockRestore();
+      jest.dontMock('../../lib/team-registry');
     }
   });
 });

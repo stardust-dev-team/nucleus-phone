@@ -37,8 +37,8 @@ Keep entries terse but self-contained — a fresh session should be able to act 
 **Action:**
 1. Buy a Phoenix-area Twilio DID via the Twilio Numbers API (`twilio api:core:available-phone-numbers:local:list --country-code US --area-code 602` or 480/623).
 2. Point its voiceUrl at `https://nucleus-phone.onrender.com/api/voice/incoming`.
-3. Add an entry to `server/config/inbound-routes.json` with `iosIdentity: "britt"` (her registered VoIP token receives push directly — no PSTN forward needed). Slack field stays `""` until she joins the workspace.
-4. Add a drift sentinel test for her route in `server/routes/__tests__/incoming.conformance.test.js` mirroring the Ryann + Tom sentinels.
+3. Edit Britt's entry in `server/config/team.json` — change `"inbound": null` to `{ "did": "+1XXXXXXXXXX", "type": "iosIdentity", "iosIdentity": "britt" }`. Her VoIP token receives push directly — no PSTN forward needed. The registry validator at server/lib/team-registry.js requires `type: 'forward'` rows to have a matching team-phones.json entry, but iosIdentity rows don't.
+4. Add a drift sentinel test for her route in `server/lib/__tests__/team-registry.conformance.test.js` mirroring the Ryann + Tom sentinels (replace the "Britt has no inbound entry" sentinel with the new positive assertion).
 5. Update `memory/runbooks/twilio-voice.md` + hub mirror.
 
 **Why it matters:** Britt has a VoIP token registered in `nucleus_phone_voip_tokens` (user_id=4, registered 2026-05-17) so the iOS app is live for outbound. Inbound requires the DID + route entry. Easy to forget if not tracked here.
