@@ -4,6 +4,24 @@ import { SENTIMENT_HISTORY_MAX } from '../components/cockpit/navigator-constants
 const MAX_RETRIES = 5;
 const RETRY_BASE_MS = 3000;
 
+/**
+ * Merge a sentiment_update WS payload with the prior sentiment state.
+ *
+ * Contract: backend always sends `history[]` today, but bare {customer,
+ * momentum} pings used to blank the sparkline because we reset history to [].
+ * Preserve prior history when the server omits it; truncate to the render
+ * window when provided.
+ *
+ * Exported for unit testing — see __tests__/useLiveAnalysis.test.js (u0r).
+ */
+export function mergeSentimentUpdate(prev, data) {
+  if (!data) return prev;
+  const history = Array.isArray(data.history)
+    ? data.history.slice(-SENTIMENT_HISTORY_MAX)
+    : (prev?.history || []);
+  return { ...data, history };
+}
+
 export default function useLiveAnalysis(callId, enabled = true) {
   // Equipment detection (existing)
   const [equipment, setEquipment] = useState([]);
@@ -113,14 +131,10 @@ export default function useLiveAnalysis(callId, enabled = true) {
             return;
           case 'sentiment_update': {
             if (!msg.data) return;
-            // Server owns history. Always trust `msg.data.history[]`; if it's
-            // missing, render with an empty history rather than synthesizing
-            // one locally. Mixing server-provided and client-appended entries
-            // creates duplicates when the server later re-sends the window.
-            const history = Array.isArray(msg.data.history)
-              ? msg.data.history.slice(-SENTIMENT_HISTORY_MAX)
-              : [];
-            setSentiment({ ...msg.data, history });
+            // Server owns history. mergeSentimentUpdate preserves prior history
+            // when the server omits it (nucleus-phone-u0r defends against
+            // contract drift; today the server always sends history).
+            setSentiment(prev => mergeSentimentUpdate(prev, msg.data));
             return;
           }
           case 'response_suggestion':
