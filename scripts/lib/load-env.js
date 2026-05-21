@@ -2,16 +2,22 @@ const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
 
-// Loads env from repo .env first, then ~/.joruva/secrets.env with override.
-// secrets.env is Tom's canonical source of truth (rotated atomically per the
-// clone-then-promote discipline) — repo .env is often stale.
+// Load precedence (low → high):
+//   1. repo <root>/.env        — fills gaps; may be stale (esp. credentials).
+//   2. ~/.joruva/secrets.env   — override:true. Canonical credentials, rotated
+//                                atomically via clone-then-promote.
+//   3. repo <root>/.env.local  — override:true. Project-context overrides
+//                                (e.g. APP_URL when secrets.env's global value
+//                                is set for another Joruva project).
+//                                Do NOT put credentials here.
+//   4. shell env               — always wins. Restored last. (FOOTGUN: do NOT
+//                                `export APP_URL` in zshrc — ~/.zshrc already
+//                                auto-sources secrets.env with `set -a`, so
+//                                shell-exported globals can re-create the leak
+//                                that .env.local was added to fix. 2026-05-20.)
 //
-// Shell env vars set in the calling shell are preserved (snapshot/restore
-// around the dotenv loads). Standard Unix expectation is "shell wins over
-// dotfiles." Trade-off: an inherited env var from a CI runner or wrapping
-// process will also win. If a CI environment defines a default DATABASE_URL
-// that you DON'T want, unset it explicitly before invoking these scripts —
-// the dotfile values won't override an inherited shell env.
+// CI/wrapping-process inherited vars also win as shell env. If a CI default
+// like DATABASE_URL is wrong, unset it before invoking these scripts.
 module.exports = function loadEnv() {
   const shellEnv = { ...process.env };
   const repoEnv = path.join(__dirname, '..', '..', '.env');
@@ -20,8 +26,8 @@ module.exports = function loadEnv() {
     const secretsEnv = path.join(process.env.HOME, '.joruva', 'secrets.env');
     if (fs.existsSync(secretsEnv)) dotenv.config({ path: secretsEnv, override: true });
   }
-  // Restore shell precedence. Object.keys returns own keys only — every entry
-  // had a string value at snapshot time, so the assignment is unconditional.
+  const repoEnvLocal = path.join(__dirname, '..', '..', '.env.local');
+  if (fs.existsSync(repoEnvLocal)) dotenv.config({ path: repoEnvLocal, override: true });
   for (const k of Object.keys(shellEnv)) {
     process.env[k] = shellEnv[k];
   }
