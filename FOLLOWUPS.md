@@ -42,11 +42,14 @@ Keep entries terse but self-contained — a fresh session should be able to act 
 
 There is NO Render env-var that can be flipped to restore service without a code push. That's a deliberate trade for the Linus #6 consolidation (one source of truth) — accepting harder recovery in exchange for impossible-to-drift configuration.
 
-If recovery via revert is ever blocked (e.g., the bad commit is itself the revert target), the manual escape is to push a hand-edited `team.json` with the known-good 8 rep entries. Reconstruction sources (the hub runbook does NOT have literal numbers — Linus pass-3 #1 caught the prior wording as misleading):
+If recovery via revert is ever blocked (e.g., the bad commit is itself the revert target), the manual escape is to push a hand-edited `team.json` with the known-good 8 rep entries. Reconstruction sources (verified against the actual schema, Linus pass-5 caught the prior wording as still wrong — `nucleus_phone_users` does NOT have a `mobile` column; `server/db.js:398-408` confirms columns are id/email/identity/role/display_name/is_active/created_at/updated_at/oid):
 - **Twilio Phone SIDs** (PN…): `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table — these are literal.
 - **Slack User IDs** (U…): same runbook, "Slack" column — also literal.
-- **Mobile numbers** (`+1…`): NOT in the hub runbook (it uses `${TOM_MOBILE}` style placeholders). Pull from `nucleus_phone_users.mobile` rows via `mcp__joruva-infra__db_query` against the prod Postgres, OR from `~/.joruva/secrets.env`'s `PHONE_*` historical env vars if they're still set.
-- **iosIdentity / inbound type / DID** (`+1…`): `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table has the DID (literal) + Tom's flagged as iosIdentity. Cross-reference inbound-routes commit history (`git log --all -- server/config/team.json server/config/inbound-routes.json`) for the canonical per-rep route shape at the time team.json was last sane.
+- **Mobile numbers** (`+1…`): the hub runbook uses `${TOM_MOBILE}` style placeholders, not literals. Recover from:
+  1. **`git log` on `server/config/team.json`** — the last good commit has all 8 mobiles inline. `git show <good-sha>:server/config/team.json | jq '.members'` extracts them.
+  2. `~/.joruva/secrets.env` `PHONE_*` env vars — may or may not still be set; check before relying on it.
+  3. As a last resort, ask each rep directly via Slack / phone — they all know their own number.
+- **iosIdentity / inbound type / DID** (`+1…`): `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table has the DID (literal) + Tom's flagged as iosIdentity. Cross-reference commit history for the canonical per-rep route shape at the time team.json was last sane: `git log -p --all -- server/config/team.json`.
 
 **Owner:** Tom (no action needed unless team.json gets corrupted).
 
