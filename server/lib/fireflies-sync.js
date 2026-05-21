@@ -222,7 +222,10 @@ async function sync() {
 
   let processed = 0;
   let skipped = 0;
-  let latestDate = fromDate;
+  // getLastSyncTime returns a Date via node-pg's timestamp parser today, but
+  // don't rely on driver convention — coerce here so latestDate is unambiguously
+  // a Date for every iteration of the loop below.
+  let latestDate = fromDate instanceof Date ? fromDate : new Date(fromDate);
 
   for (const transcript of relevant) {
     try {
@@ -290,8 +293,13 @@ async function sync() {
       }
 
       processed++;
-      if (new Date(transcript.date) > new Date(latestDate)) {
-        latestDate = transcript.date;
+      // Fireflies returns transcript.date as a Unix-ms integer. Coerce to Date
+      // at assignment so latestDate stays a Date throughout the loop and
+      // updateSyncTime hands node-postgres a proper timestamp (bare integers
+      // get parsed as YEAR by Postgres and overflow).
+      const tDate = new Date(transcript.date);
+      if (Number.isFinite(tDate.getTime()) && tDate > latestDate) {
+        latestDate = tDate;
       }
     } catch (err) {
       console.error(`Fireflies sync error for ${transcript.id}:`, err.message);

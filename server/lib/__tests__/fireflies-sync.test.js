@@ -46,7 +46,10 @@ function makeTranscript(overrides = {}) {
   return {
     id: 'ff-001',
     title: 'Sales call with prospect',
-    date: new Date().toISOString(),
+    // Fireflies returns DateTime as a Unix-ms integer, not an ISO string.
+    // Default to the realistic shape so tests that don't override `date`
+    // exercise the same code path as production.
+    date: Date.now(),
     duration: 300,
     organizer_email: 'tom@joruva.com',
     participants: ['tom@joruva.com', '+16305551234'],
@@ -251,19 +254,46 @@ describe('sync cursor', () => {
     );
   });
 
-  test('updates sync cursor after processing', async () => {
-    // Use a date guaranteed to be after the 7-day seed lookback
-    const recentDate = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago
-    const transcript = makeTranscript({ date: recentDate });
+  test('updates sync cursor after processing — coerces Fireflies ms-integer date to Date', async () => {
+    // Fireflies API returns transcript.date as a Unix-ms integer (DateTime
+    // GraphQL scalar). Use the real shape, not an ISO string, so the bug
+    // that previously shipped (passing the raw ms integer to Postgres,
+    // which read it as a YEAR and threw out-of-range) gets caught here.
+    const recentMs = Date.now() - 3600000; // 1 hour ago
+    const transcript = makeTranscript({ date: recentMs });
     mockFetchResponse({ data: { transcripts: [transcript] } });
     mockFetchResponse(CLAUDE_ANALYSIS);
 
     await sync();
 
-    expect(pool.query).toHaveBeenCalledWith(
-      expect.stringContaining("VALUES ('fireflies'"),
-      expect.arrayContaining([recentDate])
+    const upsertCalls = pool.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes("VALUES ('fireflies'")
     );
+    expect(upsertCalls).toHaveLength(1);
+    const [, params] = upsertCalls[0];
+    expect(params[0]).toBeInstanceOf(Date);
+    expect(params[0].getTime()).toBe(recentMs);
+  });
+
+  test('malformed transcript date does not poison the cursor', async () => {
+    // Fireflies edge case: a transcript with null/undefined/garbage date.
+    // The cursor should hold its prior value rather than advance to NaN/Invalid.
+    const goodMs = Date.now() - 7200000; // 2 hours ago
+    const badTranscript = makeTranscript({ id: 'ff-bad', date: null });
+    const goodTranscript = makeTranscript({ id: 'ff-good', date: goodMs });
+    mockFetchResponse({ data: { transcripts: [badTranscript, goodTranscript] } });
+    mockFetchResponse(CLAUDE_ANALYSIS);
+    mockFetchResponse(CLAUDE_ANALYSIS);
+
+    await sync();
+
+    const upsertCalls = pool.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes("VALUES ('fireflies'")
+    );
+    expect(upsertCalls).toHaveLength(1);
+    const [, params] = upsertCalls[0];
+    expect(params[0]).toBeInstanceOf(Date);
+    expect(params[0].getTime()).toBe(goodMs); // cursor advanced to the good one, not poisoned by the bad
   });
 });
 
