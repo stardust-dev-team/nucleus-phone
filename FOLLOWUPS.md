@@ -42,7 +42,11 @@ Keep entries terse but self-contained — a fresh session should be able to act 
 
 There is NO Render env-var that can be flipped to restore service without a code push. That's a deliberate trade for the Linus #6 consolidation (one source of truth) — accepting harder recovery in exchange for impossible-to-drift configuration.
 
-If recovery via revert is ever blocked (e.g., bad commit is itself the revert target), the manual escape is to push a hand-edited `team.json` with the known-good 8 rep entries — they're documented in `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table with placeholder mobile env vars, and the literal mobile + Slack IDs are recoverable from `nucleus_phone_users` DB rows + Slack `users.list`.
+If recovery via revert is ever blocked (e.g., the bad commit is itself the revert target), the manual escape is to push a hand-edited `team.json` with the known-good 8 rep entries. Reconstruction sources (the hub runbook does NOT have literal numbers — Linus pass-3 #1 caught the prior wording as misleading):
+- **Twilio Phone SIDs** (PN…): `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table — these are literal.
+- **Slack User IDs** (U…): same runbook, "Slack" column — also literal.
+- **Mobile numbers** (`+1…`): NOT in the hub runbook (it uses `${TOM_MOBILE}` style placeholders). Pull from `nucleus_phone_users.mobile` rows via `mcp__joruva-infra__db_query` against the prod Postgres, OR from `~/.joruva/secrets.env`'s `PHONE_*` historical env vars if they're still set.
+- **iosIdentity / inbound type / DID** (`+1…`): `~/stardust/knowledge/runbooks/twilio-voice.md` "Callback Number Registry" table has the DID (literal) + Tom's flagged as iosIdentity. Cross-reference inbound-routes commit history (`git log --all -- server/config/team.json server/config/inbound-routes.json`) for the canonical per-rep route shape at the time team.json was last sane.
 
 **Owner:** Tom (no action needed unless team.json gets corrupted).
 

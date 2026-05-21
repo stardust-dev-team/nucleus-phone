@@ -160,9 +160,14 @@ router.post('/call', sessionAuth, async (req, res) => {
     return res.status(400).json({ error: 'Invalid difficulty. Must be: easy, medium, hard' });
   }
 
-  // Phone mode requires a configured number
+  // Phone mode requires a configured number. Look it up ONCE here and
+  // re-use it at the createOutboundCall site below — Linus pass-3 #9
+  // pointed out the second lookupPhone call could in principle return
+  // null without a guard if validation moved. Hoisting eliminates the
+  // double lookup AND keeps the null guard the only place null matters.
+  let phone = null;
   if (mode === 'phone') {
-    const phone = lookupPhone(identity);
+    phone = lookupPhone(identity);
     if (!phone) {
       return res.status(400).json({ error: `No phone configured for ${identity}. Use browser mode instead.` });
     }
@@ -224,10 +229,10 @@ router.post('/call', sessionAuth, async (req, res) => {
     return;
   }
 
-  // Phone mode: server creates the Vapi call
+  // Phone mode: server creates the Vapi call. `phone` was hoisted +
+  // validated above (line ~167); re-using rather than re-looking-up.
   let call;
   try {
-    const phone = lookupPhone(identity);
     const greeting = pickGreeting(difficulty);
     call = await createOutboundCall({
       assistantId,

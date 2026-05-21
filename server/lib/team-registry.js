@@ -144,22 +144,41 @@ function loadRegistry() {
 }
 
 /**
- * Module-init wrapper: load the registry, log success, or process.exit(1)
+ * Module-init wrapper: load the registry, log success ONCE, or process.exit(1)
  * with a FATAL log on validation failure. All three call sites (incoming.js,
  * escalation.js, sim.js) should use THIS function at their module-init
- * rather than inlining try/catch — the Linus pass-3 review pointed out
- * that three independent try/catch blocks meant three inconsistent
- * failure modes (one process.exit, one runtime throw, one silent
- * env-var fallback). One place to fail loudly.
+ * rather than inlining try/catch — Linus pass-3 review pointed out that
+ * three independent try/catch blocks meant three inconsistent failure modes
+ * (one process.exit, one runtime throw, one silent env-var fallback). One
+ * place to fail loudly.
  *
  * Returns the registry on success. Never returns on failure (process.exit).
+ *
+ * Cached at the wrapper level (Linus pass-3 #5): the first successful call
+ * caches the result so subsequent calls return immediately. This means:
+ *   (a) only ONE "loaded N reps, M routes" log line at boot, not three
+ *       (was: one per consumer — noisy);
+ *   (b) a dynamic require() after startup (test setup, hot-reload, script)
+ *       won't re-exit the process if team.json is corrupted between
+ *       boot and that dynamic require — because the cached success
+ *       short-circuits before re-reading the file.
+ *
+ * The consumer label is preserved in the FATAL log on first-call failure
+ * so the operator knows which require triggered the boot crash, but on
+ * the success path it appears only once (from the first consumer to
+ * call this — typically incoming.js since server/index.js requires it
+ * before escalation.js or sim.js).
  */
+let cachedRegistry = null;
+
 function loadRegistryOrExit(consumerLabel) {
+  if (cachedRegistry) return cachedRegistry;
   try {
     const registry = loadRegistry();
     const routeCount = Object.keys(registry.getAllInboundRoutes()).length;
-    console.log(`${consumerLabel}: team-registry loaded (${registry.reps.length} reps, ${routeCount} inbound routes)`);
-    return registry;
+    console.log(`team-registry loaded (${registry.reps.length} reps, ${routeCount} inbound routes; first consumer=${consumerLabel})`);
+    cachedRegistry = registry;
+    return cachedRegistry;
   } catch (err) {
     console.error(`FATAL: team-registry load failed (consumer=${consumerLabel}):`, err.message);
     process.exit(1);
@@ -169,6 +188,7 @@ function loadRegistryOrExit(consumerLabel) {
 /** Test-only: forget the cached registry so the next loadRegistry() re-reads files. */
 function _resetForTesting() {
   cached = null;
+  cachedRegistry = null;
 }
 
 module.exports = { loadRegistry, loadRegistryOrExit, _resetForTesting };
