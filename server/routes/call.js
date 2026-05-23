@@ -362,7 +362,9 @@ router.post('/status', twilioWebhook, async (req, res) => {
   // is Vapi-as-Mike-Garza, not a PSTN lead. On conference-start we dial Vapi
   // outbound to NUCLEUS_SIM_CONFERENCE_NUMBER. Vapi's inbound TwiML
   // (provisioned separately — see follow-up bead) connects that leg into
-  // this same conference. Idempotency via SELECT FOR UPDATE on vapi_call_id.
+  // this same conference. Idempotency via SELECT FOR UPDATE on the
+  // sim_call_scores row keyed by conference_name; vapi_call_id IS NOT NULL
+  // is the sentinel check (sentinel column, not the locked column).
   //
   // This branch returns 204 inside handleSimConferenceStart and short-
   // circuits the rest of the handler so the real-call lead-dial path
