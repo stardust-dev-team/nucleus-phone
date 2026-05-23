@@ -152,7 +152,13 @@ function buildSimRepConferenceTwiml(conferenceName, statusCallback) {
     startConferenceOnEnter: true,
     beep: false,
     statusCallback,
-    statusCallbackEvent: 'start end',
+    // Subscribe to join/leave too: empirically, Twilio fires participant-join
+    // ~800ms before conference-start for PSTN-bridge calls (see call.js:377)
+    // and sometimes doesn't fire conference-start at all for REST-created
+    // bridge calls (q0z smoke 2026-05-22 verified conference resource exists
+    // but no `start` event fires). The status handler's sim branch tolerates
+    // either event via idempotency.
+    statusCallbackEvent: 'start end join leave',
     statusCallbackMethod: 'POST',
   }, conferenceName);
   return twiml.toString();

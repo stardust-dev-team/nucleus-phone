@@ -52,7 +52,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
     expect(res.headers['content-type']).toMatch(/text\/xml/);
     expect(res.text).toContain('<Conference');
     expect(res.text).toContain('>sim-42</Conference>');
-    expect(res.text).toMatch(/statusCallbackEvent="start end"/);
+    expect(res.text).toMatch(/statusCallbackEvent="start end join leave"/);
     expect(res.text).toMatch(/statusCallbackMethod="POST"/);
     expect(res.text).toMatch(/startConferenceOnEnter="true"/);
     expect(res.text).toMatch(/endConferenceOnExit="true"/);

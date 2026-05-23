@@ -279,7 +279,16 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
     expect(createOutboundCall).not.toHaveBeenCalled();
   });
 
-  test('non-conference-start events on sim FriendlyName do NOT trigger the bridge', async () => {
+  test('participant-join on sim FriendlyName triggers the bridge (Twilio sometimes skips conference-start for REST-created bridge calls — q0z 2026-05-22)', async () => {
+    mockTransaction({
+      selectRows: [{ id: 42, persona_id: 'mike-garza', difficulty: 'easy', vapi_call_id: null, status: 'in-progress' }],
+    });
+    createOutboundCall.mockResolvedValue({
+      id: 'vapi-uuid-pj',
+      monitor: { listenUrl: 'wss://listen', controlUrl: 'wss://control' },
+    });
+    conference.getConference.mockReturnValue({ type: 'sim', personaId: 'mike-garza', difficulty: 'easy', assistantId: 'assistant-from-memory' });
+
     await request(app)
       .post('/api/call/status')
       .type('form')
@@ -290,6 +299,24 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
         CallSid: 'CA50',
       })
       .expect(204);
+
+    expect(pool.connect).toHaveBeenCalled();
+    expect(createOutboundCall).toHaveBeenCalled();
+  });
+
+  test('participant-leave / unknown events on sim FriendlyName do NOT trigger the bridge', async () => {
+    for (const event of ['participant-leave', 'conference-end', 'announcement-end']) {
+      await request(app)
+        .post('/api/call/status')
+        .type('form')
+        .send({
+          StatusCallbackEvent: event,
+          FriendlyName: 'sim-42',
+          ConferenceSid: 'CF100',
+          CallSid: 'CA50',
+        })
+        .expect(204);
+    }
 
     expect(pool.connect).not.toHaveBeenCalled();
     expect(createOutboundCall).not.toHaveBeenCalled();
