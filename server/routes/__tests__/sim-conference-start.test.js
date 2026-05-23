@@ -301,10 +301,21 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
       .expect(204);
 
     expect(pool.connect).toHaveBeenCalled();
-    expect(createOutboundCall).toHaveBeenCalled();
+    expect(createOutboundCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantId: 'assistant-from-memory',
+        customerNumber: '+18885550000',
+        assistantOverrides: expect.objectContaining({
+          variableValues: expect.objectContaining({
+            simCallId: '42',
+            conferenceName: 'sim-42',
+          }),
+        }),
+      })
+    );
   });
 
-  test('participant-leave / unknown events on sim FriendlyName do NOT trigger the bridge', async () => {
+  test('non-trigger conference events on sim FriendlyName do NOT trigger the bridge', async () => {
     for (const event of ['participant-leave', 'conference-end', 'announcement-end']) {
       await request(app)
         .post('/api/call/status')
