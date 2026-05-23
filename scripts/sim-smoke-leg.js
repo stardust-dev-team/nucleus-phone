@@ -51,6 +51,11 @@
  *   3 — Twilio rejected the API call (auth, validation, dialing error)
  */
 
+// Defense against APP_URL leaking from a parent shell that worked in
+// stardust-nucleus (q0z smoke incident, 2026-05-21). load-env.js's design
+// gives shell-env final precedence, which defeats .env.local's override.
+// Clearing it here lets .env.local populate APP_URL with the nucleus-phone URL.
+delete process.env.APP_URL;
 require('./lib/load-env')();
 
 const twilio = require('twilio');

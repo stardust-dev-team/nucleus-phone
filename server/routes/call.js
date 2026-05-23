@@ -368,7 +368,15 @@ router.post('/status', twilioWebhook, async (req, res) => {
   // circuits the rest of the handler so the real-call lead-dial path
   // doesn't run for sims (sim conf.leadPhone is null anyway, so it would
   // no-op — but explicit is better than relying on that invariant).
-  if (StatusCallbackEvent === 'conference-start' && ConferenceSid && typeof FriendlyName === 'string' && FriendlyName.startsWith('sim-')) {
+  // Trigger on EITHER conference-start OR participant-join — for PSTN-bridge
+  // REST-created calls, Twilio sometimes fires only participant-join (q0z
+  // smoke 2026-05-22). handleSimConferenceStart's SELECT FOR UPDATE on
+  // vapi_call_id makes the second event a no-op short-circuit.
+  const isSimBridgeTrigger = (StatusCallbackEvent === 'conference-start' || StatusCallbackEvent === 'participant-join')
+    && ConferenceSid
+    && typeof FriendlyName === 'string'
+    && FriendlyName.startsWith('sim-');
+  if (isSimBridgeTrigger) {
     await handleSimConferenceStart({ FriendlyName, ConferenceSid, conf });
     return res.sendStatus(204);
   }

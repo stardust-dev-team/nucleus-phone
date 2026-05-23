@@ -30,6 +30,10 @@
  *   NUCLEUS_PHONE_BASE_URL  - defaults to https://nucleus-phone.onrender.com
  */
 
+// Defense against APP_URL leaking from a parent shell that worked in
+// stardust-nucleus (q0z smoke incident, 2026-05-21). See sim-smoke-leg.js
+// for the same defense; spawned child inherits parent env so both are needed.
+delete process.env.APP_URL;
 require('./lib/load-env')();
 
 const path = require('path');
