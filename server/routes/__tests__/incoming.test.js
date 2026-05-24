@@ -43,13 +43,21 @@ jest.mock('../../lib/conference', () => ({
 }));
 jest.mock('../../lib/twilio', () => {
   const real = jest.requireActual('twilio');
+  // Phase 2 error path: terminate-by-SID requires a two-step API call:
+  //   (a) client.conferences.list({friendlyName, status: 'in-progress'})
+  //       returns [{sid: 'CFxxx', ...}]
+  //   (b) client.conferences(sid).update({status: 'completed'})
+  // Both behaviors are exposed on the same mock so tests can either
+  // (1) ignore the SID path entirely (default — list returns empty,
+  //     terminate is a no-op log), or
+  // (2) override `conferences.list` to return a SID + assert
+  //     the update spy was called with that SID.
+  const conferencesMock = jest.fn();
+  conferencesMock.list = jest.fn().mockResolvedValue([]);
   return {
     VoiceResponse: real.twiml.VoiceResponse,
     client: {
-      conferences: jest.fn(),
-      // Phase 2: incoming.js calls `client.calls.create(...)` for the
-      // iOS-leg create. Default to resolved so tests that don't override
-      // get the success path.
+      conferences: conferencesMock,
       calls: { create: jest.fn().mockResolvedValue({ sid: 'CAfake' }) },
     },
   };
@@ -191,7 +199,15 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     expect(conference.createConference).toHaveBeenCalledTimes(1);
     const [confName, state] = conference.createConference.mock.calls[0];
     expect(confName).toMatch(/^nucleus-inbound-ios-[0-9a-f-]{36}$/);
-    expect(state).toMatchObject({ direction: 'inbound', repName: 'Paul' });
+    // callerIdentity MUST be the rep's iOS identity (NOT the literal
+    // string 'inbound') so call.js:310-313 auth lets iOS tear down via
+    // POST /api/call/end. Without this, the iOS-side endCall would 403
+    // (P0-1 from Linus review). Pin both fields to prevent regression.
+    expect(state).toMatchObject({
+      direction: 'inbound',
+      repName: 'Paul',
+      callerIdentity: 'paul',
+    });
     // iOS-leg REST create fires with the correct join URL + customParameters
     // attached via `to:` query string. These params become PushKit
     // `twi_params` → iOS `TVOCallInvite.customParameters`. The TwiML URL
@@ -207,10 +223,17 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     expect(createArgs.url).toContain(`conference=${encodeURIComponent(confName)}`);
   });
 
-  test('terminates the conference + Slack alert when calls.create throws', async () => {
+  test('terminates the conference BY SID + Slack alert when calls.create throws', async () => {
     twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down'));
+    // Phase 2 fix (Linus P1-1): server looks up the conference SID by
+    // friendly name FIRST, then calls update by SID. Twilio's API
+    // requires a SID — passing the friendly name 404s. Pin the
+    // list-by-name → update-by-SID sequence so a regression that
+    // shortcuts back to `client.conferences(name).update(...)` fails.
+    const fakeSid = 'CFinbound-resolved-sid';
+    twilioClient.conferences.list.mockResolvedValueOnce([{ sid: fakeSid }]);
     const updateSpy = jest.fn().mockResolvedValue({});
-    twilioClient.conferences.mockReturnValue({ update: updateSpy });
+    twilioClient.conferences.mockReturnValueOnce({ update: updateSpy });
 
     const res = await request(app)
       .post('/api/voice/incoming')
@@ -220,14 +243,40 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
 
     // Caller's TwiML was sent BEFORE the throw — caller is in the
     // conference. We MUST terminate via REST so they don't sit in hold
-    // music indefinitely. (The dial-complete action URL is the
-    // tertiary safety net if this REST race-fails too.)
+    // music indefinitely.
     expect(res.text).toContain('<Conference');
-    expect(twilioClient.conferences).toHaveBeenCalledWith(
-      expect.stringMatching(/^nucleus-inbound-ios-[0-9a-f-]{36}$/),
-    );
+    // Step 1: list by friendly name with in-progress filter.
+    expect(twilioClient.conferences.list).toHaveBeenCalledWith({
+      friendlyName: expect.stringMatching(/^nucleus-inbound-ios-[0-9a-f-]{36}$/),
+      status: 'in-progress',
+      limit: 1,
+    });
+    // Step 2: update by the SID returned from list.
+    expect(twilioClient.conferences).toHaveBeenCalledWith(fakeSid);
     expect(updateSpy).toHaveBeenCalledWith({ status: 'completed' });
     // Slack alert fires with diagnostic context.
+    const alertCalls = slack.sendSlackAlert.mock.calls.map(c => c[0].text);
+    expect(alertCalls.some(t => /conference join failed/.test(t))).toBe(true);
+  });
+
+  test('calls.create throws + conference not found in list → logs warning, no update call', async () => {
+    // Edge case: calls.create may have failed BEFORE Twilio created the
+    // conference resource (e.g., synchronous validation error). In
+    // that case list returns []. We log a warning and DON'T call
+    // update — calling update(undefined) would throw.
+    twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down pre-conference'));
+    twilioClient.conferences.list.mockResolvedValueOnce([]);  // no conference
+
+    await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-3' })
+      .expect(200);
+
+    expect(twilioClient.conferences.list).toHaveBeenCalled();
+    // No `client.conferences(sid)` call when sid is undefined.
+    expect(twilioClient.conferences).not.toHaveBeenCalled();
+    // Slack alert still fires.
     const alertCalls = slack.sendSlackAlert.mock.calls.map(c => c[0].text);
     expect(alertCalls.some(t => /conference join failed/.test(t))).toBe(true);
   });
@@ -287,6 +336,45 @@ describe('POST /api/voice/incoming — hybrid route', () => {
     expect(res.text).not.toContain('<Conference');
     expect(res.text).not.toContain('+19995551111');
     expect(conference.createConference).not.toHaveBeenCalled();
+  });
+});
+
+/* ─── (b.4) Phase 2 boot guard: NUCLEUS_PHONE_NUMBER required for iOS routes ─── */
+
+describe('incoming.js boot — NUCLEUS_PHONE_NUMBER guard (Linus P1-2)', () => {
+  test('process.exit(1) when iOS route exists but NUCLEUS_PHONE_NUMBER unset', () => {
+    // The default jest mock's fixture HAS an iOS route (paul on
+    // IOS_NUMBER), so loading incoming.js fresh without
+    // NUCLEUS_PHONE_NUMBER must exit. Pre-fix, the module loaded fine
+    // and the runtime fallback `from: callerPhone` would 21210 on
+    // every Phase 2 call.
+    jest.resetModules();
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called');
+    });
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const originalEnv = process.env.NUCLEUS_PHONE_NUMBER;
+    delete process.env.NUCLEUS_PHONE_NUMBER;
+    try {
+      expect(() => require('../incoming')).toThrow('process.exit called');
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('NUCLEUS_PHONE_NUMBER is not configured'),
+      );
+    } finally {
+      exitSpy.mockRestore();
+      errSpy.mockRestore();
+      if (originalEnv !== undefined) process.env.NUCLEUS_PHONE_NUMBER = originalEnv;
+    }
+  });
+
+  test('boot succeeds when NUCLEUS_PHONE_NUMBER is set even with iOS routes', () => {
+    jest.resetModules();
+    process.env.NUCLEUS_PHONE_NUMBER = '+15555550100';
+    try {
+      expect(() => require('../incoming')).not.toThrow();
+    } finally {
+      delete process.env.NUCLEUS_PHONE_NUMBER;
+    }
   });
 });
 
