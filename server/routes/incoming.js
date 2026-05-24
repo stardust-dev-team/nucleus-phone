@@ -41,21 +41,31 @@ const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 // boot consistently rather than producing a half-healthy deploy.
 const inboundRoutes = loadRegistryOrExit('incoming').getAllInboundRoutes();
 
-// Phase 2 deploy-config guard (Linus P1-2): if any route uses iOS
-// identity, NUCLEUS_PHONE_NUMBER MUST be configured so the iOS-leg
-// `calls.create({from: ..., to: 'client:<id>'})` has a valid Twilio
-// number to dial from. Without it, the fallback `from: callerPhone`
-// would use the inbound caller's E.164 — Twilio rejects with error
-// 21210 ("From is not a verified Twilio number"). The fallback was
-// added as defensive but is structurally wrong; fail at boot rather
-// than at every inbound call.
+// Phase 2 deploy-config guard (Linus P1-2 + R2 P1-A): when Phase 2 is
+// ENABLED (`INBOUND_CONFERENCE_ARCHITECTURE=true`) AND any route uses
+// iOS identity, `NUCLEUS_PHONE_NUMBER` MUST be configured. The Phase 2
+// branch calls `client.calls.create({from: NUCLEUS_PHONE_NUMBER, to:
+// 'client:<id>'})`; an unset env var without the guard would (today)
+// crash with a confusing Twilio error on every inbound iOS call.
+//
+// **The flag check matters for rollback.** When Phase 2 is OFF, the
+// iOS route uses the legacy `<Client>` TwiML path which never touches
+// `client.calls.create` — so `NUCLEUS_PHONE_NUMBER` isn't needed. If
+// the guard fired regardless of the flag, flipping
+// `INBOUND_CONFERENCE_ARCHITECTURE=false` as a rollback would also
+// require setting `NUCLEUS_PHONE_NUMBER`, defeating the rollback's
+// purpose. Tighten the predicate to only fire when Phase 2 is the
+// runtime branch that needs the env var.
 const hasIosRoute = Object.values(inboundRoutes).some((r) => r && r.iosIdentity);
-if (hasIosRoute && !process.env.NUCLEUS_PHONE_NUMBER) {
+const phase2Enabled = process.env.INBOUND_CONFERENCE_ARCHITECTURE === 'true';
+if (hasIosRoute && phase2Enabled && !process.env.NUCLEUS_PHONE_NUMBER) {
   console.error(
-    'FATAL: incoming.js — at least one inbound route uses iosIdentity but ' +
-      'NUCLEUS_PHONE_NUMBER is not configured. Phase 2 conference architecture ' +
-      'requires this env var to set the `from:` on `client.calls.create({to: "client:..."})`. ' +
-      'Set NUCLEUS_PHONE_NUMBER in the environment (Render dashboard) and redeploy.'
+    'FATAL: incoming.js — INBOUND_CONFERENCE_ARCHITECTURE=true AND at least one inbound ' +
+      'route uses iosIdentity, but NUCLEUS_PHONE_NUMBER is not configured. Phase 2 ' +
+      'conference architecture requires this env var to set the `from:` on ' +
+      '`client.calls.create({to: "client:..."})`. Either set NUCLEUS_PHONE_NUMBER in the ' +
+      'environment (Render dashboard) and redeploy, OR flip ' +
+      'INBOUND_CONFERENCE_ARCHITECTURE=false to roll back to the legacy <Client> path.'
   );
   process.exit(1);
 }
@@ -179,10 +189,14 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   //      killed apps (Apple requires PushKit pushes to map to real call
   //      events; we can't fake it with Notify).
   //   3. iOS-leg TwiML (returned from `/api/voice/inbound-conference-join`)
-  //      contains <Parameter name="conference_name" .../> + <Dial>
-  //      <Conference endConferenceOnExit="true">{name}</Conference></Dial>
-  //      so the iOS Voice SDK reads the canonical conference name on
-  //      receipt of the invite.
+  //      contains only <Dial><Conference endConferenceOnExit="true">
+  //      {name}</Conference></Dial>. customParameters (conference_name,
+  //      call_id, caller_phone) are delivered out-of-band via the `to:`
+  //      query string on calls.create — see the detailed comment block
+  //      at the calls.create site below (~line 280). <Parameter> tags
+  //      in this TwiML would NOT populate iOS customParameters: the
+  //      URL is fetched post-accept, after the PushKit invite already
+  //      landed on iOS.
   if (useConferenceArchitecture) {
     sendSlackAlert({
       text: `:telephone_receiver: Inbound call from ${callerPhone} → ${repName} (iOS conf)`,
