@@ -41,6 +41,25 @@ const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 // boot consistently rather than producing a half-healthy deploy.
 const inboundRoutes = loadRegistryOrExit('incoming').getAllInboundRoutes();
 
+// Phase 2 deploy-config guard (Linus P1-2): if any route uses iOS
+// identity, NUCLEUS_PHONE_NUMBER MUST be configured so the iOS-leg
+// `calls.create({from: ..., to: 'client:<id>'})` has a valid Twilio
+// number to dial from. Without it, the fallback `from: callerPhone`
+// would use the inbound caller's E.164 — Twilio rejects with error
+// 21210 ("From is not a verified Twilio number"). The fallback was
+// added as defensive but is structurally wrong; fail at boot rather
+// than at every inbound call.
+const hasIosRoute = Object.values(inboundRoutes).some((r) => r && r.iosIdentity);
+if (hasIosRoute && !process.env.NUCLEUS_PHONE_NUMBER) {
+  console.error(
+    'FATAL: incoming.js — at least one inbound route uses iosIdentity but ' +
+      'NUCLEUS_PHONE_NUMBER is not configured. Phase 2 conference architecture ' +
+      'requires this env var to set the `from:` on `client.calls.create({to: "client:..."})`. ' +
+      'Set NUCLEUS_PHONE_NUMBER in the environment (Render dashboard) and redeploy.'
+  );
+  process.exit(1);
+}
+
 /**
  * Resolve which rep to route to based on the called number.
  * Returns the route entry { forward?, iosIdentity?, slack, name } or null.
@@ -179,8 +198,23 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     // direction='inbound' so call.js doesn't try to dial a lead — the
     // caller is already in the conference; only the iOS leg needs to
     // join (which we fire below via calls.create).
+    //
+    // callerIdentity = the rep's iOS identity (NOT the literal string
+    // 'inbound'). Two reasons:
+    //   (1) `/api/call/end` (`call.js:310-313`) authorizes the teardown
+    //       by checking `conf.callerIdentity === req.user.identity` for
+    //       non-admin users. When iOS authenticates as `paul` and calls
+    //       `api.endCall(conferenceName:)` from the disconnect arm of
+    //       `VoIPPushDelegate.drainCallEvents`, the auth check must
+    //       pass — otherwise 403, iOS's `try?` swallows it, and the
+    //       conference resource leaks until Twilio's natural
+    //       conference-end webhook fires (3-5s+ delay, sometimes never).
+    //   (2) Semantically the rep IS the controlling user — they're the
+    //       one whose device is bridged into the conference. Matches
+    //       outbound's pattern at `call.js:64,69` where callerIdentity
+    //       is the dialing rep's identity.
     createConference(conferenceName, {
-      callerIdentity: 'inbound',
+      callerIdentity: iosIdentity,
       to: null,
       contactName: callerPhone,
       companyName: null,
@@ -269,7 +303,10 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     try {
       await client.calls.create({
         to: toWithParams,
-        from: process.env.NUCLEUS_PHONE_NUMBER || callerPhone,
+        // NUCLEUS_PHONE_NUMBER is guaranteed set by the module-init
+        // guard above (any iOS route requires it). No fallback to
+        // callerPhone — that would 21210 (caller's number isn't ours).
+        from: process.env.NUCLEUS_PHONE_NUMBER,
         url: joinUrl,
         method: 'POST',
       });
@@ -281,8 +318,31 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
       // Best-effort: terminate the conference so the caller doesn't sit
       // in hold music indefinitely. The caller's <Dial timeout=35>
       // action URL serves voicemail TwiML if this REST update races.
+      //
+      // **Twilio's API takes the conference SID, NOT the friendly name.**
+      // `client.conferences('nucleus-inbound-ios-...').update(...)` 404s.
+      // Look up the in-progress conference by friendlyName first, then
+      // update by SID. Mirrors the call.js:317 pattern (which works
+      // because outbound passes the SID it got from the
+      // conference-start status callback). For this error path the
+      // status callback may not have fired yet, so list-by-name is the
+      // only path available.
       try {
-        await client.conferences(conferenceName).update({ status: 'completed' });
+        const list = await client.conferences.list({
+          friendlyName: conferenceName,
+          status: 'in-progress',
+          limit: 1,
+        });
+        const sid = list?.[0]?.sid;
+        if (sid) {
+          await client.conferences(sid).update({ status: 'completed' });
+        } else {
+          // No in-progress conference found — the calls.create may have
+          // failed BEFORE Twilio created the conference resource, in
+          // which case there's nothing to terminate. Caller's <Dial
+          // timeout=35> still falls through to voicemail.
+          console.warn(`incoming: no in-progress conference found for terminate: ${conferenceName}`);
+        }
       } catch (termErr) {
         console.error('incoming: conference terminate failed:', termErr.message);
       }
