@@ -112,10 +112,18 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
 
-  // For iOS routes the prefix differentiates the audit trail — no Twilio
-  // conference is created server-side, but the DB row + voicemail callbacks
+  // For iOS routes the prefix differentiates the audit trail.
+  //
+  // Legacy (`INBOUND_CONFERENCE_ARCHITECTURE` unset/false): no Twilio
+  // conference is created server-side; the DB row + voicemail callbacks
   // still key off this name as a stable identifier.
+  //
+  // Phase 2 (`INBOUND_CONFERENCE_ARCHITECTURE=true`): a real Twilio
+  // conference IS created — the `-ios` prefix is preserved purely for
+  // log-grep continuity with the legacy path.
   const conferenceName = `${iosIdentity ? 'nucleus-inbound-ios' : 'nucleus-inbound'}-${uuidv4()}`;
+  const useConferenceArchitecture =
+    iosIdentity && process.env.INBOUND_CONFERENCE_ARCHITECTURE === 'true';
 
   const sink = iosIdentity ? `Client:${iosIdentity}` : forwardTo;
   console.log(`incoming: ${callerPhone} → ${repName} (${sink}) — ${conferenceName}`);
@@ -138,14 +146,157 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
 
-  // ─── iOS Client sink ─────────────────────────────────────────────
+  // ─── iOS Conference sink (Phase 2, gated) ────────────────────────
+  // INBOUND_CONFERENCE_ARCHITECTURE=true re-routes iOS inbound through a
+  // real Twilio conference so the flywheel (recording, RT transcription,
+  // equipment / conversation pipelines) runs identically to outbound.
+  // Architecture (joruva-dialer-mac plan tender-stargazing-valley.md §
+  // Phase 2):
+  //   1. Caller TwiML: <Dial><Conference>{name}</Conference></Dial> —
+  //      caller enters conference + hold music while we ring iOS.
+  //   2. Server fires Twilio REST `calls.create({ to: 'client:<id>', ... })`
+  //      → Twilio dispatches a VoIP push to the iOS device via the
+  //      existing TVO/PushKit credential. This preserves wake-on-push for
+  //      killed apps (Apple requires PushKit pushes to map to real call
+  //      events; we can't fake it with Notify).
+  //   3. iOS-leg TwiML (returned from `/api/voice/inbound-conference-join`)
+  //      contains <Parameter name="conference_name" .../> + <Dial>
+  //      <Conference endConferenceOnExit="true">{name}</Conference></Dial>
+  //      so the iOS Voice SDK reads the canonical conference name on
+  //      receipt of the invite.
+  if (useConferenceArchitecture) {
+    sendSlackAlert({
+      text: `:telephone_receiver: Inbound call from ${callerPhone} → ${repName} (iOS conf)`,
+    }).catch(() => {});
+    if (repSlackDm) {
+      sendSlackDM(repSlackDm,
+        `:telephone_receiver: Inbound call from ${callerPhone} — incoming on your iOS dialer`
+      ).catch(() => {});
+    }
+
+    // Stash conference state so /api/call/status's conference-start
+    // handler + recording/transcription pipeline can map by name.
+    // direction='inbound' so call.js doesn't try to dial a lead — the
+    // caller is already in the conference; only the iOS leg needs to
+    // join (which we fire below via calls.create).
+    createConference(conferenceName, {
+      callerIdentity: 'inbound',
+      to: null,
+      contactName: callerPhone,
+      companyName: null,
+      contactId: null,
+      dbRowId,
+      direction: 'inbound',
+      repSlackDm: repSlackDm || '',
+      repName: repName || 'Rep',
+    });
+
+    // RT transcription — same shape as the PSTN path below + voice.js
+    // outbound. partialResults:true is intentional for inbound (matches
+    // the PSTN inbound TwiML at line 200-211, NOT voice.js outbound's
+    // partialResults:false). The two paths converge on a single
+    // transcription stream per conference; both_tracks gives per-leg
+    // diarization for the speaker mapping in transcription.js.
+    const start = twiml.start();
+    const txOpts = {
+      statusCallbackUrl: `${baseUrl}/api/transcription`,
+      statusCallbackMethod: 'POST',
+      track: 'both_tracks',
+      languageCode: 'en-US',
+      partialResults: true,
+    };
+    if (process.env.TWILIO_INTELLIGENCE_SERVICE_SID) {
+      txOpts.intelligenceService = process.env.TWILIO_INTELLIGENCE_SERVICE_SID;
+    }
+    start.transcription(txOpts);
+
+    // Caller into conference. endConferenceOnExit=false so the caller
+    // hanging up does NOT prematurely terminate before voicemail
+    // routing; the iOS rep leg's endConferenceOnExit=true (set on the
+    // iOS-leg TwiML at /api/voice/inbound-conference-join) handles the
+    // rep-hangup termination path.
+    const dial = twiml.dial({
+      callerId: callerPhone,
+      timeout: 35,
+      action: `${baseUrl}/api/voice/incoming/dial-complete?conf=${encodeURIComponent(conferenceName)}&from=${encodeURIComponent(callerPhone)}`,
+    });
+    dial.conference({
+      record: 'record-from-start',
+      recordingStatusCallback: `${baseUrl}/api/call/recording-status`,
+      recordingStatusCallbackEvent: 'completed',
+      statusCallback: `${baseUrl}/api/call/status`,
+      statusCallbackEvent: 'start end join leave',
+      startConferenceOnEnter: true,
+      endConferenceOnExit: false,
+      beep: false,
+      waitUrl: '',
+    }, conferenceName);
+
+    // Tertiary voicemail safety net if the conference completes with
+    // no rep joining (dial-complete handler also catches no-answer).
+    appendVoicemailTwiml(twiml, callerPhone, conferenceName);
+
+    // Send caller's TwiML FIRST, then fire the iOS-leg create-call. If
+    // calls.create fails (Twilio outage, identity not registered, etc.)
+    // the caller is already in the conference with hold music; we
+    // terminate the conference to release them, and the dial-complete
+    // handler's voicemail TwiML fires when <Dial timeout=35> expires.
+    res.type('text/xml').send(twiml.toString());
+
+    // The `to:` query string is the OFFICIAL way to attach customParameters
+    // to a REST-initiated CallInvite. Twilio packages these as `twi_params`
+    // in the PushKit payload, which the iOS Voice SDK parses into
+    // `TVOCallInvite.customParameters` BEFORE the app sees the invite — i.e.
+    // synchronously during `handleInvite` (so the CallKit banner can be
+    // built with the right caller-phone-derived label without an async
+    // lookup). TwiML `<Parameter>` tags only populate customParameters when
+    // they're a child of `<Client>` in the DIALING TwiML — there's no
+    // dialing TwiML for REST-initiated calls, so the `to:` query string is
+    // the sole mechanism. (See Twilio changelog 2020-09-15 and support
+    // article 115011213347.)
+    //
+    // The URL TwiML below is fetched AFTER iOS accepts and is what actually
+    // bridges the iOS leg into the conference — it does NOT carry
+    // customParameters, only the conference-join verb.
+    const joinUrl =
+      `${baseUrl}/api/voice/inbound-conference-join` +
+      `?conference=${encodeURIComponent(conferenceName)}`;
+    const toWithParams =
+      `client:${iosIdentity}` +
+      `?conference_name=${encodeURIComponent(conferenceName)}` +
+      `&call_id=${encodeURIComponent(String(dbRowId))}` +
+      `&caller_phone=${encodeURIComponent(callerPhone)}`;
+    try {
+      await client.calls.create({
+        to: toWithParams,
+        from: process.env.NUCLEUS_PHONE_NUMBER || callerPhone,
+        url: joinUrl,
+        method: 'POST',
+      });
+    } catch (err) {
+      console.error('incoming: iOS calls.create failed:', err.message);
+      sendSlackAlert({
+        text: `:telephone_receiver: inbound conference join failed for ${iosIdentity}: ${err.message} (${conferenceName})`,
+      }).catch(() => {});
+      // Best-effort: terminate the conference so the caller doesn't sit
+      // in hold music indefinitely. The caller's <Dial timeout=35>
+      // action URL serves voicemail TwiML if this REST update races.
+      try {
+        await client.conferences(conferenceName).update({ status: 'completed' });
+      } catch (termErr) {
+        console.error('incoming: conference terminate failed:', termErr.message);
+      }
+    }
+    return;
+  }
+
+  // ─── iOS Client sink (legacy, default) ───────────────────────────
   // Twilio delivers the call as a VoIP push to whatever device registered
   // this identity (zht.3 binding). On accept, Twilio Voice SDK bridges
   // media between caller and iOS — no Twilio conference is created, so
   // the conference flywheel (recording, RT transcription, equipment
-  // detection) does NOT run for iOS-only routes. Future iOS-flywheel work
-  // (separate bead) would re-route inbound through a conference and have
-  // iOS join via Voice SDK Connect rather than direct Client dial.
+  // detection) does NOT run for iOS-only routes. Phase 2's
+  // INBOUND_CONFERENCE_ARCHITECTURE=true branch above closes that gap.
   if (iosIdentity) {
     sendSlackAlert({
       text: `:telephone_receiver: Inbound call from ${callerPhone} → ${repName} (iOS)`,
