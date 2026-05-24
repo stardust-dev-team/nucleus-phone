@@ -203,6 +203,64 @@ function handleSimBridgeTwiml(req, res) {
 router.get('/sim-bridge-twiml', handleSimBridgeTwiml);
 router.post('/sim-bridge-twiml', handleSimBridgeTwiml);
 
+// Same whitelist used by the sim-bridge endpoint — the conference name is
+// URL-bound input from the iOS leg's create-call URL so it MUST be
+// validated server-side regardless of whatever shape incoming.js writes.
+const INBOUND_CONF_RE = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * POST /api/voice/inbound-conference-join — TwiML for the iOS leg of a
+ * Phase 2 inbound conference (joruva-dialer-mac plan
+ * tender-stargazing-valley.md § Phase 2). Twilio fetches this URL AFTER
+ * iOS accepts the CallInvite, to determine what the iOS leg does next.
+ * The returned TwiML brings the iOS leg into the same conference the
+ * caller is already in.
+ *
+ * IMPORTANT: customParameters (`conference_name`, `call_id`,
+ * `caller_phone`) are NOT delivered via this TwiML. They are delivered
+ * via the query string on `calls.create`'s `to:` field — Twilio packages
+ * those into the PushKit payload's `twi_params` key, which the iOS SDK
+ * parses into `TVOCallInvite.customParameters` SYNCHRONOUSLY on receipt
+ * (before this URL is even fetched). See `incoming.js` Phase 2 branch
+ * and Twilio changelog 2020-09-15 / support article 115011213347.
+ *
+ * `endConferenceOnExit="true"` on the iOS leg's `<Conference>`: when the
+ * rep hangs up via InCallView's End button → CallKit ends → Twilio leg
+ * disconnects → conference ends → caller leg drops. This is the
+ * asymmetric counterpart to the caller leg's `endConferenceOnExit=false`
+ * in incoming.js (the caller leaving must NOT prematurely kill the
+ * voicemail-routing path).
+ *
+ * `answerOnBridge="true"` on `<Dial>`: iOS's `.connected` event fires
+ * when the conference bridge is established, not when this TwiML's leg
+ * is created. Without it, iOS would see `.connected` immediately and
+ * the rep would hear silence until the caller bridge actually formed.
+ *
+ * Query params (Twilio always POSTs):
+ *   conference — required. Conference name; validated against
+ *                INBOUND_CONF_RE to reject path traversal / TwiML
+ *                injection attempts.
+ */
+router.post('/inbound-conference-join', makeTwilioWebhook(), (req, res) => {
+  const conf = String(req.query.conference || '');
+
+  if (!conf || !INBOUND_CONF_RE.test(conf)) {
+    const twiml = new VoiceResponse();
+    twiml.say('Invalid conference name.');
+    twiml.hangup();
+    return res.status(400).type('text/xml').send(twiml.toString());
+  }
+
+  const twiml = new VoiceResponse();
+  twiml.dial({ answerOnBridge: true })
+    .conference({
+      endConferenceOnExit: true,
+      startConferenceOnEnter: true,
+      beep: false,
+    }, conf);
+  res.type('text/xml').send(twiml.toString());
+});
+
 /** Failure TwiML for the bridge endpoint. No <Say> — Vapi's the listener
  *  here, not a human, so TTS would just delay the hangup by 3-5s of robot
  *  apology and waste Vapi minutes. */

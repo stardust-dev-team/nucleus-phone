@@ -45,7 +45,13 @@ jest.mock('../../lib/twilio', () => {
   const real = jest.requireActual('twilio');
   return {
     VoiceResponse: real.twiml.VoiceResponse,
-    client: { conferences: jest.fn(), calls: jest.fn() },
+    client: {
+      conferences: jest.fn(),
+      // Phase 2: incoming.js calls `client.calls.create(...)` for the
+      // iOS-leg create. Default to resolved so tests that don't override
+      // get the success path.
+      calls: { create: jest.fn().mockResolvedValue({ sid: 'CAfake' }) },
+    },
   };
 });
 jest.mock('../../lib/slack', () => ({
@@ -58,6 +64,7 @@ const express = require('express');
 const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 const slack = require('../../lib/slack');
+const { client: twilioClient } = require('../../lib/twilio');
 
 let app;
 beforeAll(() => {
@@ -148,6 +155,119 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
       .expect(200);
 
     expect(res.text).toContain('<Parameter name="call_id" value="4242"/>');
+  });
+});
+
+/* ─── (b.2) iOS route with INBOUND_CONFERENCE_ARCHITECTURE=true ─── */
+
+describe('POST /api/voice/incoming — iOS route, conference architecture flag ON', () => {
+  beforeEach(() => {
+    process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'true';
+    process.env.NUCLEUS_PHONE_NUMBER = '+15555550100';
+    twilioClient.calls.create.mockResolvedValue({ sid: 'CAfake' });
+    twilioClient.conferences.mockReturnValue({
+      update: jest.fn().mockResolvedValue({}),
+    });
+  });
+  afterEach(() => {
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    delete process.env.NUCLEUS_PHONE_NUMBER;
+  });
+
+  test('emits <Conference> caller TwiML and fires calls.create to client:identity', async () => {
+    const res = await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-1' })
+      .expect(200);
+
+    // Caller TwiML: <Conference>, NOT <Client>. <Dial> still has the
+    // dial-complete action URL for the voicemail-fallback path.
+    expect(res.text).toContain('<Conference');
+    expect(res.text).not.toContain('<Client>');
+    expect(res.text).toMatch(/endConferenceOnExit="false"/);
+    expect(res.text).toMatch(/action=".*incoming\/dial-complete/);
+    // Conference state is registered for the flywheel.
+    expect(conference.createConference).toHaveBeenCalledTimes(1);
+    const [confName, state] = conference.createConference.mock.calls[0];
+    expect(confName).toMatch(/^nucleus-inbound-ios-[0-9a-f-]{36}$/);
+    expect(state).toMatchObject({ direction: 'inbound', repName: 'Paul' });
+    // iOS-leg REST create fires with the correct join URL + customParameters
+    // attached via `to:` query string. These params become PushKit
+    // `twi_params` → iOS `TVOCallInvite.customParameters`. The TwiML URL
+    // (fetched post-accept) does NOT carry customParameters.
+    expect(twilioClient.calls.create).toHaveBeenCalledTimes(1);
+    const createArgs = twilioClient.calls.create.mock.calls[0][0];
+    expect(createArgs.to).toMatch(/^client:paul\?/);
+    expect(createArgs.to).toContain(`conference_name=${encodeURIComponent(confName)}`);
+    expect(createArgs.to).toContain('call_id=');
+    expect(createArgs.to).toContain('caller_phone=');
+    expect(createArgs.from).toBe('+15555550100');
+    expect(createArgs.url).toMatch(/\/api\/voice\/inbound-conference-join/);
+    expect(createArgs.url).toContain(`conference=${encodeURIComponent(confName)}`);
+  });
+
+  test('terminates the conference + Slack alert when calls.create throws', async () => {
+    twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down'));
+    const updateSpy = jest.fn().mockResolvedValue({});
+    twilioClient.conferences.mockReturnValue({ update: updateSpy });
+
+    const res = await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-2' })
+      .expect(200);
+
+    // Caller's TwiML was sent BEFORE the throw — caller is in the
+    // conference. We MUST terminate via REST so they don't sit in hold
+    // music indefinitely. (The dial-complete action URL is the
+    // tertiary safety net if this REST race-fails too.)
+    expect(res.text).toContain('<Conference');
+    expect(twilioClient.conferences).toHaveBeenCalledWith(
+      expect.stringMatching(/^nucleus-inbound-ios-[0-9a-f-]{36}$/),
+    );
+    expect(updateSpy).toHaveBeenCalledWith({ status: 'completed' });
+    // Slack alert fires with diagnostic context.
+    const alertCalls = slack.sendSlackAlert.mock.calls.map(c => c[0].text);
+    expect(alertCalls.some(t => /conference join failed/.test(t))).toBe(true);
+  });
+});
+
+/* ─── (b.3) Flag-off rollback safety: legacy <Client> path stays default ─── */
+
+describe('POST /api/voice/incoming — iOS route, conference flag unset (rollback)', () => {
+  beforeEach(() => {
+    // Explicitly delete to assert the unset semantics — not 'false', but absent.
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+  });
+
+  test('unset flag falls back to legacy <Client> branch — calls.create NOT fired', async () => {
+    const res = await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-legacy-1' })
+      .expect(200);
+
+    expect(res.text).toMatch(/<Client>paul<Parameter name="call_id" value="\d+"\/><\/Client>/);
+    expect(res.text).not.toContain('<Conference');
+    expect(twilioClient.calls.create).not.toHaveBeenCalled();
+    expect(conference.createConference).not.toHaveBeenCalled();
+  });
+
+  test('flag set to "false" string also falls back to legacy <Client> branch', async () => {
+    process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'false';
+    try {
+      const res = await request(app)
+        .post('/api/voice/incoming')
+        .type('form')
+        .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-legacy-2' })
+        .expect(200);
+
+      expect(res.text).toContain('<Client>');
+      expect(twilioClient.calls.create).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    }
   });
 });
 
