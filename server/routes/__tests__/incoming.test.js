@@ -341,19 +341,34 @@ describe('POST /api/voice/incoming — hybrid route', () => {
 
 /* ─── (b.4) Phase 2 boot guard: NUCLEUS_PHONE_NUMBER required for iOS routes ─── */
 
-describe('incoming.js boot — NUCLEUS_PHONE_NUMBER guard (Linus P1-2)', () => {
-  test('process.exit(1) when iOS route exists but NUCLEUS_PHONE_NUMBER unset', () => {
+describe('incoming.js boot — NUCLEUS_PHONE_NUMBER guard (Linus P1-2, R2 P1-A)', () => {
+  // Shared snapshot helper — every test in this block must restore
+  // both env vars to whatever the CI runner had set, otherwise one
+  // test mutating env leaks into subsequent tests in the file.
+  const snapshotEnv = () => ({
+    phone: process.env.NUCLEUS_PHONE_NUMBER,
+    flag: process.env.INBOUND_CONFERENCE_ARCHITECTURE,
+  });
+  const restoreEnv = (snap) => {
+    if (snap.phone !== undefined) process.env.NUCLEUS_PHONE_NUMBER = snap.phone;
+    else delete process.env.NUCLEUS_PHONE_NUMBER;
+    if (snap.flag !== undefined) process.env.INBOUND_CONFERENCE_ARCHITECTURE = snap.flag;
+    else delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+  };
+
+  test('process.exit(1) when Phase 2 enabled + iOS route exists + NUCLEUS_PHONE_NUMBER unset', () => {
     // The default jest mock's fixture HAS an iOS route (paul on
-    // IOS_NUMBER), so loading incoming.js fresh without
-    // NUCLEUS_PHONE_NUMBER must exit. Pre-fix, the module loaded fine
-    // and the runtime fallback `from: callerPhone` would 21210 on
+    // IOS_NUMBER), so loading incoming.js fresh with the flag ON but
+    // NUCLEUS_PHONE_NUMBER unset must exit. Pre-fix, the module loaded
+    // fine and the runtime fallback `from: callerPhone` would 21210 on
     // every Phase 2 call.
+    const snap = snapshotEnv();
     jest.resetModules();
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called');
     });
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const originalEnv = process.env.NUCLEUS_PHONE_NUMBER;
+    process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'true';
     delete process.env.NUCLEUS_PHONE_NUMBER;
     try {
       expect(() => require('../incoming')).toThrow('process.exit called');
@@ -363,17 +378,51 @@ describe('incoming.js boot — NUCLEUS_PHONE_NUMBER guard (Linus P1-2)', () => {
     } finally {
       exitSpy.mockRestore();
       errSpy.mockRestore();
-      if (originalEnv !== undefined) process.env.NUCLEUS_PHONE_NUMBER = originalEnv;
+      restoreEnv(snap);
     }
   });
 
-  test('boot succeeds when NUCLEUS_PHONE_NUMBER is set even with iOS routes', () => {
+  test('R2 P1-A: boot SUCCEEDS when Phase 2 is OFF (rollback path) even with iOS routes + no NUCLEUS_PHONE_NUMBER', () => {
+    // Critical rollback assertion: when INBOUND_CONFERENCE_ARCHITECTURE
+    // is unset/false, the iOS route uses the legacy <Client> TwiML path
+    // which never touches `client.calls.create({from: ...})`. Requiring
+    // NUCLEUS_PHONE_NUMBER in this case would break the rollback knob:
+    // flipping Phase 2 off as an emergency mitigation would also need a
+    // separate env-var set. Pin the predicate so a regression that
+    // drops the flag check fails CI.
+    const snap = snapshotEnv();
     jest.resetModules();
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called (rollback regression)');
+    });
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    delete process.env.NUCLEUS_PHONE_NUMBER;
+    try {
+      expect(() => require('../incoming')).not.toThrow();
+      expect(exitSpy).not.toHaveBeenCalled();
+    } finally {
+      exitSpy.mockRestore();
+      restoreEnv(snap);
+    }
+  });
+
+  test('boot succeeds when Phase 2 enabled AND NUCLEUS_PHONE_NUMBER is set', () => {
+    // The configured-correctly happy path. Wrap with exitSpy (R2 N7):
+    // a regression making the guard exit despite valid config would
+    // otherwise crash the Jest worker instead of failing the test.
+    const snap = snapshotEnv();
+    jest.resetModules();
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called unexpectedly');
+    });
+    process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'true';
     process.env.NUCLEUS_PHONE_NUMBER = '+15555550100';
     try {
       expect(() => require('../incoming')).not.toThrow();
+      expect(exitSpy).not.toHaveBeenCalled();
     } finally {
-      delete process.env.NUCLEUS_PHONE_NUMBER;
+      exitSpy.mockRestore();
+      restoreEnv(snap);
     }
   });
 });

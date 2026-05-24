@@ -35,8 +35,12 @@ jest.mock('../../lib/slack', () => ({
 
 // Mock the auth middleware composer so the test can choose what req.user
 // looks like per request (admin vs rep, matching identity vs mismatched).
-// `bearerOrApiKeyOrSession` is the middleware mounted on the /end route;
-// we replace it with a router-level shim driven by request headers.
+// `bearerOrApiKeyOrSession` is the ONLY middleware function call.js
+// destructures from `../middleware/auth` (verified: `grep -n "middleware/auth"
+// server/routes/call.js` returns one match). Keeping the mock surface tight
+// to exactly what's imported prevents misleading-export drift (R2 N1):
+// the previous mock exported `requireInteractiveUser` and `isInteractiveUser`
+// — neither exists on the real module (real name is `isInteractiveCaller`).
 jest.mock('../../middleware/auth', () => ({
   bearerOrApiKeyOrSession: (req, res, next) => {
     const role = req.headers['x-test-role'] || 'admin';
@@ -44,12 +48,6 @@ jest.mock('../../middleware/auth', () => ({
     req.user = { id: 1, email: `${identity}@nucleus-phone`, identity, role, displayName: identity, authSource: 'session' };
     next();
   },
-  bearerOrSession: (req, res, next) => { req.user = { role: 'admin', identity: 'system' }; next(); },
-  apiKeyAuth: (req, res, next) => { req.user = { role: 'admin', identity: 'system' }; next(); },
-  sessionAuth: (req, res, next) => { req.user = { role: 'admin', identity: 'system' }; next(); },
-  bearerAuth: (req, res, next) => { req.user = { role: 'admin', identity: 'system' }; next(); },
-  requireInteractiveUser: (req, res, next) => next(),
-  isInteractiveUser: () => true,
 }));
 
 const request = require('supertest');
