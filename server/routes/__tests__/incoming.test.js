@@ -223,6 +223,55 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     expect(createArgs.url).toContain(`conference=${encodeURIComponent(confName)}`);
   });
 
+  test('pins timeout + statusCallback on calls.create (Linus R4 P1-1 + P1-2)', async () => {
+    // P1-1: Twilio's default ring is ~60s but the caller's <Dial
+    // timeout=35> gives up at 35s. Without explicit `timeout`, t=35..60s
+    // window where caller hits voicemail TwiML but rep can still accept
+    // → bridges into empty conference → empty recording. Pin
+    // timeout: 25 (matches PSTN's rep ring budget; the 35s caller <Dial>
+    // remains as belt-and-suspenders).
+    //
+    // P1-2: Without statusCallback, no-answer detection relies only on
+    // the 35s <Dial> action URL — slower than PSTN's 25s rep-status
+    // redirect. Pin that the iOS leg's statusCallback targets
+    // /api/voice/incoming/rep-status with the conference name so the
+    // existing rep-status handler's noAnswer arm fires its voicemail
+    // redirect cleanly.
+    //
+    // statusCallbackEvent is `['completed']` only (NOT 'ringing answered
+    // completed'). The in-progress arm in rep-status would no-op for
+    // Phase 2 — the iOS-leg join TwiML at voice.js:257 already sets
+    // endConferenceOnExit:true, AND at the `answered` event the iOS leg
+    // hasn't joined the conference yet (join is post-fetch of the
+    // join-URL TwiML), so participants(CallSid).update() would 404.
+    const res = await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-statuscb' })
+      .expect(200);
+    expect(res.status).toBe(200);
+
+    const createArgs = twilioClient.calls.create.mock.calls[0][0];
+
+    // P1-1: explicit timeout (NOT Twilio's 60s default).
+    expect(createArgs.timeout).toBe(25);
+
+    // P1-2: statusCallback to rep-status with the conference name so the
+    // existing noAnswer arm can find the caller_call_sid in the DB.
+    expect(createArgs.statusCallback).toMatch(/\/api\/voice\/incoming\/rep-status/);
+    expect(createArgs.statusCallback).toContain('conf=');
+
+    const confMatch = /conf=([^&]+)/.exec(createArgs.statusCallback);
+    expect(confMatch).not.toBeNull();
+    const callbackConfName = decodeURIComponent(confMatch[1]);
+    expect(callbackConfName).toMatch(/^nucleus-inbound-ios-[0-9a-f-]{36}$/);
+
+    // Only `completed` events — see comment above for why the
+    // in-progress arm is deliberately not fired for Phase 2.
+    expect(createArgs.statusCallbackEvent).toEqual(['completed']);
+    expect(createArgs.statusCallbackMethod).toBe('POST');
+  });
+
   test('terminates the conference BY SID + Slack alert when calls.create throws', async () => {
     twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down'));
     // Phase 2 fix (Linus P1-1): server looks up the conference SID by
