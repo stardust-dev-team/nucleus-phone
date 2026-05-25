@@ -407,24 +407,44 @@ describe('GET /api/call/active', () => {
 /* ───────────── POST /api/call/end ───────────── */
 
 describe('POST /api/call/end', () => {
-  test('returns 404 when conference not found', async () => {
+  test('returns 200 with alreadyEnded:true when conference already cleaned up (Linus R4 P1-3)', async () => {
+    // Phase 2 inbound happy path: Twilio's conference-end webhook beats
+    // iOS's tearDownServerConference. By the time api.endCall arrives,
+    // the in-memory entry is gone. Pre-fix: 404 → iOS logs .error on
+    // EVERY successful rep-hangup, drowning the real-leak signal. Fix:
+    // semantic 200 ("teardown succeeded by no-op").
     conference.getConference.mockReturnValue(null);
 
-    await request(app)
+    const res = await request(app)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
-      .send({ conferenceName: 'missing' })
-      .expect(404);
+      .send({ conferenceName: 'already-gone' })
+      .expect(200);
+
+    expect(res.body).toEqual({ success: true, alreadyEnded: true });
+    // No Twilio call to update — conference is already terminated.
+    expect(client.conferences).not.toHaveBeenCalled();
+    // No DB cleanup — the conference-end webhook arm already did it.
+    expect(conference.removeConference).not.toHaveBeenCalled();
   });
 
-  test('returns 404 when conference has no SID', async () => {
+  test('returns 200 with alreadyEnded:true when conference has no SID yet (Linus R4 P1-3)', async () => {
+    // Race window: caller's leg in conference but conference-start
+    // webhook hasn't fired yet → conf.conferenceSid is null. iOS rapid
+    // accept+hangup hits this. Treat same as already-cleaned: 200 no-op.
+    // Twilio's `endConferenceOnExit=true` on the iOS leg will tear down
+    // the conference naturally.
     conference.getConference.mockReturnValue({ conferenceSid: null });
 
-    await request(app)
+    const res = await request(app)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'no-sid' })
-      .expect(404);
+      .expect(200);
+
+    expect(res.body).toEqual({ success: true, alreadyEnded: true });
+    expect(client.conferences).not.toHaveBeenCalled();
+    expect(conference.removeConference).not.toHaveBeenCalled();
   });
 
   test('ends conference via Twilio + removes from active map (bd-sgc)', async () => {

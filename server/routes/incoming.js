@@ -314,6 +314,31 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
       `?conference_name=${encodeURIComponent(conferenceName)}` +
       `&call_id=${encodeURIComponent(String(dbRowId))}` +
       `&caller_phone=${encodeURIComponent(callerPhone)}`;
+    // Linus R4 P1-1 + P1-2: pair `timeout` with `statusCallback` on the
+    // iOS-leg create. Without these:
+    //   - default Twilio ring is ~60s, but the caller's `<Dial timeout=35>`
+    //     gives up at 35s and falls through to voicemail TwiML. Window
+    //     t=35..60s: rep accepts, iOS bridges into a conference the caller
+    //     already left → rep hears silence, empty recording captured.
+    //   - no `statusCallback` means no `no-answer` detection for the iOS
+    //     leg. The 35s `<Dial>` timeout becomes the ONLY voicemail trigger,
+    //     making iOS inbound feel slower than the PSTN inbound path (which
+    //     uses a 25s rep timeout via `participantOpts.statusCallback`).
+    //
+    // `timeout: 25` matches PSTN's rep ring budget. The 35s caller `<Dial>`
+    // remains as belt-and-suspenders for the edge where rep-status's
+    // voicemail redirect itself fails.
+    //
+    // `statusCallbackEvent: 'completed'` only (NOT 'ringing answered
+    // completed'). The rep-status `in-progress` arm at incoming.js:515-525
+    // exists for the PSTN path to flip `endConferenceOnExit: true` on the
+    // rep participant — for Phase 2 the iOS-leg join TwiML at
+    // voice.js:257 already sets it, AND at the `answered` event the iOS
+    // leg hasn't joined the conference yet (join happens AFTER fetching
+    // the join-URL TwiML), so `participants(CallSid).update()` would 404.
+    // Sending only `completed` lets the noAnswer arm (line 527) fire its
+    // voicemail redirect cleanly without dragging the in-progress no-op
+    // along.
     try {
       await client.calls.create({
         to: toWithParams,
@@ -323,6 +348,10 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
         from: process.env.NUCLEUS_PHONE_NUMBER,
         url: joinUrl,
         method: 'POST',
+        timeout: 25,
+        statusCallback: `${baseUrl}/api/voice/incoming/rep-status?conf=${encodeURIComponent(conferenceName)}`,
+        statusCallbackEvent: ['completed'],
+        statusCallbackMethod: 'POST',
       });
     } catch (err) {
       console.error('incoming: iOS calls.create failed:', err.message);
