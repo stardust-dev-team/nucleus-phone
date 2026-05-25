@@ -32,3 +32,35 @@ describe('mapSpeaker (joruva-dialer-mac-xft)', () => {
     }
   });
 });
+
+// joruva-dialer-mac-8vr: Pin the conference-architecture symmetry that
+// Phase 2 established. For both outbound AND inbound conferences, the
+// caller leg arrives on `inbound_track` and the iOS rep leg on
+// `outbound_track`. So speaker mapping is direction-agnostic; no
+// inversion needed when broadcasting inbound transcripts.
+//
+// If a future change introduces inbound-specific track routing (e.g.,
+// swapped leg ordering), this block fails loudly and the flip needs to
+// be done at the call-site, not silently in mapSpeaker().
+describe('inbound conference symmetry (joruva-dialer-mac-8vr)', () => {
+  test('inbound call: caller leg (inbound_track) still maps to customer', () => {
+    // In the Phase 2 architecture, the inbound PSTN caller dials into
+    // the conference — Twilio labels their track `inbound_track`.
+    expect(mapSpeaker('inbound_track')).toBe('customer');
+  });
+
+  test('inbound call: rep leg (outbound_track) still maps to agent', () => {
+    // The iOS rep is dialed INTO the same conference via
+    // `client.calls.create({to: 'client:identity'})` — that leg is
+    // outbound from Twilio's POV regardless of who originated the call.
+    expect(mapSpeaker('outbound_track')).toBe('agent');
+  });
+
+  test('mapping is a pure function of Track — no direction parameter', () => {
+    // Documents the architectural decision: speaker semantics live in
+    // the conference-leg topology, not the call's outbound/inbound flag.
+    // If you ever feel the urge to pass direction here, re-read plan
+    // tender-stargazing-valley.md §Phase 3 (A) first.
+    expect(mapSpeaker.length).toBe(1);
+  });
+});
