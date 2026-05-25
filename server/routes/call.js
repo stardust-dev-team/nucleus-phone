@@ -304,7 +304,25 @@ router.post('/end', ...callerGuard, async (req, res) => {
 
   const conf = getConference(conferenceName);
   if (!conf || !conf.conferenceSid) {
-    return res.status(404).json({ error: 'Conference not found' });
+    // Linus R4 P1-3: idempotent no-op when the conference is already
+    // cleaned up (or its SID hasn't landed yet). In the Phase 2 inbound
+    // happy path, the rep hangs up via CallKit → iOS Voice SDK
+    // disconnects → Twilio fires conference-end → server's /status
+    // webhook removeConference()s the in-memory entry — THEN iOS's drain
+    // yields `.disconnected` → tearDownServerConference → api.endCall
+    // arrives here with `conf === undefined`. Returning 404 made iOS log
+    // `.error` on every successful Phase 2 inbound call, drowning the
+    // real-leak signal the R3 logging upgrade was supposed to provide.
+    // Returning 200 honors the semantic ("your teardown intent
+    // succeeded — by no-op, because we already cleaned up") and keeps
+    // iOS's strict `.error`-on-failure contract intact for real failures.
+    //
+    // Security: this endpoint is auth-gated by callerGuard; the 200 vs
+    // 404 distinction conveys no information beyond what the auth
+    // boundary already covers. /join + /mute keep their 404 because for
+    // those endpoints "conference not found" IS a real client error,
+    // not a race against natural cleanup.
+    return res.json({ success: true, alreadyEnded: true });
   }
 
   if (req.user && !hasMinRole(req.user.role, 'admin')) {
