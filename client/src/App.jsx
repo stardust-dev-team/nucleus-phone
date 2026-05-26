@@ -166,13 +166,14 @@ function AppContent() {
             }
           />
           {/* TriStar-only routed surface (bead nucleus-phone-e91e). The
-            * /queue path resolves to nucleus-tristar via mode-router; in
-            * Joruva mode the menu link is hidden, so this route is
-            * unreachable from the cockpit UI. Direct URL access in
-            * Joruva mode would 404 on /api/queue with no DegradedBanner
-            * (LOCAL not DEGRADED) — acceptable since the URL isn't
-            * surfaced. Gating the route registration itself would
-            * prevent even an admin from URL-navigating for diagnostics. */}
+            * /queue path resolves to nucleus-tristar via mode-router. The
+            * Route conditional below is the load-bearing gate: when mode
+            * is JORUVA the Route is not registered, so direct URL access
+            * to /queue falls through to the catch-all <Route path="*"/>
+            * below and redirects to /. The menu-tab swap in Shell.jsx
+            * is a UX nicety, not the enforcement. (Linus pass-1 P2 fix:
+            * earlier comment claimed a /api/queue 404; that's wrong —
+            * the redirect-to-/ kicks in first.) */}
           {mode === MODES.TRISTAR && (
             <Route path="/queue" element={<Queue />} />
           )}

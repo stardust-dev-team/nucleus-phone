@@ -19,7 +19,7 @@ export default function Shell({ identity, role, mode, onLogout, deviceStatus, em
   // reps see the original Contacts/Activity/Practice loadout. Identity-
   // based UI is intentionally absent: the mode is the authoritative
   // gate, not the email — same source of truth as api.js routing.
-  const tabs = mode === 'tristar'
+  const tabs = mode === MODES.TRISTAR
     ? [
         { path: '/queue', label: 'Queue', icon: '📞' },
         ...(role === 'admin' ? [{ path: '/active', label: 'Live', icon: '📡' }] : []),

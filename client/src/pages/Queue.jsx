@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getQueue, ApiDegradedError } from '../lib/api';
 import { formatRelativeDay } from '../lib/format';
@@ -153,8 +153,10 @@ function PracticeCard({ row, onCall }) {
         </button>
       </div>
 
-      {/* Touchpoint grid: four last_*_{sent,replied}_at fields */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-aunshin-rule-d/50">
+      {/* Touchpoint grid: two channels (email + linkedin), four timestamps
+        * total (sent + replied per channel). Two-column layout — the
+        * grid was previously md:grid-cols-4 which left two empty cells. */}
+      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-aunshin-rule-d/50">
         <Touchpoint label="Email" sentAt={row.last_email_sent_at} repliedAt={row.last_email_replied_at} />
         <Touchpoint label="LinkedIn DM" sentAt={row.last_linkedin_dm_sent_at} repliedAt={row.last_linkedin_dm_replied_at} />
       </div>
@@ -208,12 +210,26 @@ export default function TriStarQueueView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tier, setTier] = useState('');
+  const [refreshTick, setRefreshTick] = useState(0);
 
-  const fetchQueue = useCallback((signal) => {
+  // Single owner for fetch lifecycle: this effect. The Refresh button
+  // bumps refreshTick to re-run the effect with a fresh AbortController
+  // instead of calling fetchQueue directly. Closes the Linus pass-1 P1
+  // race where a manual refresh path bypassed abort plumbing — N rapid
+  // clicks would otherwise produce N concurrent fetches with last-write-wins.
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
     setLoading(true);
     setError(null);
-    return getQueue({ tier: tier || undefined, signal })
+
+    getQueue({ tier: tier || undefined, signal })
       .then((res) => {
+        // AbortController.abort() does NOT reject already-settled promises.
+        // If the fetch resolved microseconds before the abort, .then still
+        // runs with stale closures. Gate every write on signal.aborted to
+        // close the stale-write race (Linus pass-1 P1).
+        if (signal.aborted) return;
         setData({
           practices: res.practices || [],
           sequencer_dry_run_state: res.sequencer_dry_run_state || null,
@@ -221,21 +237,24 @@ export default function TriStarQueueView() {
         });
       })
       .catch((err) => {
-        if (err.name === 'AbortError') return;
+        if (signal.aborted || err.name === 'AbortError') return;
         if (err instanceof ApiDegradedError) {
-          setError('TriStar mode config is missing. Ask Tom — the page can\'t fetch the queue until it\'s restored.');
-        } else {
-          setError(err.message || 'Failed to load queue.');
+          // Global DegradedBanner (App.jsx) already surfaces this. Clear
+          // local data so the empty state shows instead of double-rendering
+          // the alert. The banner is the canonical surface for missing
+          // TriStar config (Linus pass-1 P2 dual-alert fix).
+          setData({ practices: [], sequencer_dry_run_state: null, count: 0 });
+          return;
         }
+        setError(err.message || 'Failed to load queue.');
       })
-      .finally(() => setLoading(false));
-  }, [tier]);
+      .finally(() => {
+        if (signal.aborted) return;
+        setLoading(false);
+      });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchQueue(controller.signal);
     return () => controller.abort();
-  }, [fetchQueue]);
+  }, [tier, refreshTick]);
 
   function handleCall(phone) {
     navigate(`/cockpit/${encodeURIComponent(phone)}`);
@@ -254,7 +273,7 @@ export default function TriStarQueueView() {
         </h1>
         <button
           type="button"
-          onClick={() => fetchQueue()}
+          onClick={() => setRefreshTick((n) => n + 1)}
           disabled={loading}
           className="text-[11px] uppercase tracking-wider text-aunshin-sodium hover:text-aunshin-peach-light disabled:opacity-50"
           aria-label="Refresh queue"
