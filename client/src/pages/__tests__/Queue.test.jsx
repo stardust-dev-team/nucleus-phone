@@ -1,0 +1,253 @@
+/**
+ * Queue (TriStarQueueView) — bead nucleus-phone-e91e / stardust-tristar [coc.1.c].
+ *
+ * Covers the rendering + interaction contract:
+ *   - loading state shows on first render
+ *   - practices render after fetch with required fields
+ *   - owner_phone is the dial-target button (MOST CRITICAL field per bead)
+ *   - dry-run banner toggles on sequencer_dry_run_state !== 'live'
+ *   - empty state renders when practices array is empty
+ *   - ApiDegradedError is caught + surfaced inline (DegradedBanner is the
+ *     global banner; this page also shows a row-level message so the
+ *     content area isn't blank)
+ *   - touchpoint replied-at trumps sent-at visually
+ *   - tier filter button toggle re-issues getQueue with the right param
+ *
+ * NOT covered here (out of scope for this bead):
+ *   - Multi-in_progress-attempts warning (deferred to nucleus-tristar-40o
+ *     + the not-yet-built disposition modal)
+ *   - End-to-end mode routing through api.js → mode-router (covered by
+ *     api.test.js and mode-router.test.js — that's the contract this
+ *     page consumes, not redefines)
+ */
+
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+
+const mockNavigate = jest.fn();
+jest.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+// Mock getQueue + ApiDegradedError before importing the component. The
+// component imports both from ../lib/api at module load — the mock has to
+// be in place before that import is resolved.
+//
+// jest.mock factories are hoisted ABOVE top-level const/class declarations,
+// so the mock class is defined inside the factory and re-exported for use
+// in test bodies via the imported api module reference below.
+const mockGetQueue = jest.fn();
+jest.mock('../../lib/api', () => {
+  class ApiDegradedError extends Error {
+    constructor(path) {
+      super(`degraded: ${path}`);
+      this.name = 'ApiDegradedError';
+      this.path = path;
+    }
+  }
+  return {
+    getQueue: (...args) => mockGetQueue(...args),
+    ApiDegradedError,
+  };
+});
+
+import Queue from '../Queue';
+import { ApiDegradedError as MockApiDegradedError } from '../../lib/api';
+
+function makePractice(overrides = {}) {
+  return {
+    practice_id: 'p-1',
+    practice_name: 'Sunnyvale Veterinary',
+    practice_phone: '+15551110000',
+    owner_first_name: 'Jane',
+    owner_last_name: 'Doe',
+    owner_phone: '+15552223333',
+    owner_email: 'jane@sunnyvet.com',
+    owner_title: 'Practice Owner',
+    intent_tier: 'hot',
+    cadence_profile: 'high_intent',
+    attempt_sequence_label: 'Call 2 of 3, Day 7',
+    last_email_sent_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+    last_email_replied_at: null,
+    last_linkedin_dm_sent_at: null,
+    last_linkedin_dm_replied_at: null,
+    ...overrides,
+  };
+}
+
+function liveResponse(practices = [makePractice()]) {
+  return {
+    count: practices.length,
+    limit: 50,
+    tiers: ['warm', 'hot'],
+    sequencer_dry_run_state: 'live',
+    practices,
+  };
+}
+
+beforeEach(() => {
+  mockNavigate.mockReset();
+  mockGetQueue.mockReset();
+});
+
+describe('Queue / TriStarQueueView', () => {
+  it('shows loading state on first render', () => {
+    mockGetQueue.mockReturnValue(new Promise(() => {})); // never resolves
+    render(<Queue />);
+    expect(screen.getByText(/Loading queue/i)).toBeInTheDocument();
+  });
+
+  it('renders required fields for each practice', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse());
+    render(<Queue />);
+
+    expect(await screen.findByText('Sunnyvale Veterinary')).toBeInTheDocument();
+    // owner first + last
+    expect(screen.getByText(/Jane Doe/)).toBeInTheDocument();
+    // owner title
+    expect(screen.getByText(/Practice Owner/)).toBeInTheDocument();
+    // owner email
+    expect(screen.getByText('jane@sunnyvet.com')).toBeInTheDocument();
+    // attempt sequence label
+    expect(screen.getByText('Call 2 of 3, Day 7')).toBeInTheDocument();
+    // cadence profile
+    expect(screen.getByText('high_intent')).toBeInTheDocument();
+    // intent_tier badge — uppercased "HOT"
+    expect(screen.getByText('hot')).toBeInTheDocument();
+  });
+
+  it('renders owner_phone as the dial-target button (most critical field)', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse());
+    render(<Queue />);
+
+    const callButton = await screen.findByRole('button', { name: /Call Jane Doe at \+15552223333/ });
+    expect(callButton).toBeEnabled();
+    expect(callButton).toHaveTextContent('+15552223333');
+  });
+
+  it('falls back to practice_phone when owner_phone is null', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse([
+      makePractice({ owner_phone: null }),
+    ]));
+    render(<Queue />);
+
+    const callButton = await screen.findByRole('button', { name: /Call Jane Doe at \+15551110000/ });
+    expect(callButton).toHaveTextContent('+15551110000');
+  });
+
+  it('disables call button when no phone is on file', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse([
+      makePractice({ owner_phone: null, practice_phone: null }),
+    ]));
+    render(<Queue />);
+
+    const callButton = await screen.findByRole('button', { name: /No phone number on file/ });
+    expect(callButton).toBeDisabled();
+  });
+
+  it('navigates to /cockpit/<owner_phone> when call button clicked', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse());
+    render(<Queue />);
+
+    const callButton = await screen.findByRole('button', { name: /Call Jane Doe/ });
+    fireEvent.click(callButton);
+    // encodeURIComponent of "+15552223333" → "%2B15552223333"
+    expect(mockNavigate).toHaveBeenCalledWith('/cockpit/%2B15552223333');
+  });
+
+  describe('dry-run banner', () => {
+    it('hides when sequencer_dry_run_state is live', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse());
+      render(<Queue />);
+      await screen.findByText('Sunnyvale Veterinary');
+      expect(screen.queryByText(/OUTREACH/)).not.toBeInTheDocument();
+    });
+
+    it('shows global_dry_run banner', async () => {
+      mockGetQueue.mockResolvedValue({
+        ...liveResponse(),
+        sequencer_dry_run_state: 'global_dry_run',
+      });
+      render(<Queue />);
+      expect(await screen.findByText(/OUTREACH GLOBALLY GATED/)).toBeInTheDocument();
+    });
+
+    it('shows channel_dry_run banner', async () => {
+      mockGetQueue.mockResolvedValue({
+        ...liveResponse(),
+        sequencer_dry_run_state: 'channel_dry_run',
+      });
+      render(<Queue />);
+      expect(await screen.findByText(/OUTREACH CHANNEL GATED/)).toBeInTheDocument();
+    });
+  });
+
+  describe('touchpoints', () => {
+    it('shows "replied" when reply timestamp is present', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({
+          last_email_sent_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+          last_email_replied_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+        }),
+      ]));
+      render(<Queue />);
+      // formatRelativeDay → "Yesterday" for ~1 day ago
+      expect(await screen.findByText(/replied Yesterday/)).toBeInTheDocument();
+    });
+
+    it('shows "sent" when only the sent timestamp is present', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({
+          last_email_sent_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+          last_email_replied_at: null,
+        }),
+      ]));
+      render(<Queue />);
+      expect(await screen.findByText(/sent 3d ago/)).toBeInTheDocument();
+    });
+  });
+
+  it('renders empty state when practices is empty', async () => {
+    mockGetQueue.mockResolvedValue({
+      count: 0,
+      limit: 50,
+      tiers: ['warm', 'hot'],
+      sequencer_dry_run_state: 'live',
+      practices: [],
+    });
+    render(<Queue />);
+    expect(await screen.findByText(/No practices due/)).toBeInTheDocument();
+  });
+
+  it('catches ApiDegradedError and surfaces inline error', async () => {
+    mockGetQueue.mockRejectedValue(new MockApiDegradedError('/queue'));
+    render(<Queue />);
+    expect(await screen.findByText(/TriStar mode config is missing/)).toBeInTheDocument();
+  });
+
+  it('catches generic errors and surfaces the message', async () => {
+    mockGetQueue.mockRejectedValue(new Error('boom'));
+    render(<Queue />);
+    expect(await screen.findByText('boom')).toBeInTheDocument();
+  });
+
+  describe('tier filter', () => {
+    it('passes tier param to getQueue when a specific tier is selected', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse());
+      render(<Queue />);
+
+      // initial call — no tier filter
+      await screen.findByText('Sunnyvale Veterinary');
+      expect(mockGetQueue).toHaveBeenCalledWith(expect.objectContaining({ tier: undefined }));
+
+      // click Hot filter
+      const hotButton = screen.getByRole('button', { name: 'Hot' });
+      fireEvent.click(hotButton);
+
+      await waitFor(() => {
+        expect(mockGetQueue).toHaveBeenCalledWith(expect.objectContaining({ tier: 'hot' }));
+      });
+    });
+  });
+});
