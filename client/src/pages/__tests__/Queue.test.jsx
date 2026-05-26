@@ -73,7 +73,12 @@ function makePractice(overrides = {}) {
     intent_tier: 'hot',
     cadence_profile: 'high_intent',
     attempt_sequence_label: 'Call 2 of 3, Day 7',
-    last_email_sent_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+    // -60_000 buffer protects against same-ms boundary flake: both this
+    // fixture and formatRelativeDay floor on 86400000-ms intervals; if the
+    // test's Date.now happens microseconds before the boundary and the
+    // component's Date.now happens microseconds after, the bucket changes.
+    // 1-minute buffer absorbs CI clock jitter (Linus pass-3 P2-1 fix).
+    last_email_sent_at: new Date(Date.now() - 3 * 86400000 - 60_000).toISOString(),
     last_email_replied_at: null,
     last_linkedin_dm_sent_at: null,
     last_linkedin_dm_replied_at: null,
@@ -192,8 +197,8 @@ describe('Queue / TriStarQueueView', () => {
     it('shows "replied" when reply timestamp is present', async () => {
       mockGetQueue.mockResolvedValue(liveResponse([
         makePractice({
-          last_email_sent_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-          last_email_replied_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+          last_email_sent_at: new Date(Date.now() - 5 * 86400000 - 60_000).toISOString(),
+          last_email_replied_at: new Date(Date.now() - 1 * 86400000 - 60_000).toISOString(),
         }),
       ]));
       render(<Queue />);
@@ -204,7 +209,7 @@ describe('Queue / TriStarQueueView', () => {
     it('shows "sent" when only the sent timestamp is present', async () => {
       mockGetQueue.mockResolvedValue(liveResponse([
         makePractice({
-          last_email_sent_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+          last_email_sent_at: new Date(Date.now() - 3 * 86400000 - 60_000).toISOString(),
           last_email_replied_at: null,
         }),
       ]));
@@ -269,6 +274,27 @@ describe('Queue / TriStarQueueView', () => {
     mockGetQueue.mockRejectedValue(new Error('API 403: Forbidden'));
     render(<Queue />);
     expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
+  });
+
+  it('translates API 5xx into a calm wait-and-retry message (deploy / restart scenario)', async () => {
+    mockGetQueue.mockRejectedValue(new Error('API 503: Service Unavailable'));
+    render(<Queue />);
+    expect(await screen.findByText(/TriStar server is restarting/)).toBeInTheDocument();
+  });
+
+  it('marks the active tier filter with aria-pressed', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse());
+    render(<Queue />);
+    await screen.findByText('Sunnyvale Veterinary');
+
+    const allButton = screen.getByRole('button', { name: 'All' });
+    const hotButton = screen.getByRole('button', { name: 'Hot' });
+    expect(allButton).toHaveAttribute('aria-pressed', 'true');
+    expect(hotButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(hotButton);
+    expect(hotButton).toHaveAttribute('aria-pressed', 'true');
+    expect(allButton).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('renders unknown sequencer_dry_run_state with a "drift" banner instead of silently miscategorising', async () => {
