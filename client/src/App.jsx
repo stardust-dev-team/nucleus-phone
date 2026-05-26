@@ -176,14 +176,24 @@ function AppContent() {
 
         {/* Everything else renders inside Shell layout route */}
         <Route element={<Shell identity={identity} role={role} mode={mode} onLogout={handleLogout} deviceStatus={twilioHook.status} emailReady={emailReady} />}>
+          {/* `/` is mode-branched so back-nav from Cockpit (handleBack →
+            * navigate('/')) and the catch-all `*` redirect both land the
+            * user on their correct landing surface. Without this, a
+            * TriStar user tapping wrong-row → Cockpit → back gets dumped
+            * on a Joruva-mode Contacts page with no obvious recovery.
+            * (Linus pass-5 P1 fix.) */}
           <Route
             path="/"
             element={
-              <Contacts
-                identity={identity}
-                callState={callState}
-                twilioStatus={twilioHook.status}
-              />
+              mode === MODES.TRISTAR
+                ? <Queue />
+                : (
+                  <Contacts
+                    identity={identity}
+                    callState={callState}
+                    twilioStatus={twilioHook.status}
+                  />
+                )
             }
           />
           {/* TriStar-only routed surface (bead nucleus-phone-e91e). The
