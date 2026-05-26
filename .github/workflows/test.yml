@@ -33,3 +33,18 @@ jobs:
         # as failures, disables interactive watch/snapshot prompts, and emits
         # JUnit-compatible output. nucleus-phone-3n33.
         run: npm test -- --ci
+
+      - name: Run cross-cutting contract tests (top-level __tests__/)
+        # Top-level __tests__/ holds integration tests that cross the
+        # client/server boundary. Currently the only resident is
+        # tristar-mode-no-local-writes (bead nucleus-phone-bboo) — the
+        # load-bearing alarm for the "no local writes when TARGETS.TRISTAR
+        # resolves" contract. Layer 4 of that test walks server/ and asserts
+        # the nucleus_phone_calls write-site map is exactly the documented
+        # set; a new write site appearing outside the set fails CI here.
+        #
+        # Targeted via testPathPatterns rather than running the full client
+        # config because client/src has pre-existing React-version test
+        # failures tracked separately. Widen to the full client config when
+        # those clear.
+        run: npm run test:client -- --ci --testPathPatterns="__tests__/tristar-mode-no-local-writes"

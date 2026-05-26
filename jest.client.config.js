@@ -1,6 +1,9 @@
 module.exports = {
   testEnvironment: 'jsdom',
-  roots: ['<rootDir>/client/src'],
+  // Top-level <rootDir>/__tests__ is included for cross-cutting integration
+  // tests like tristar-mode-no-local-writes — the bead nucleus-phone-bboo
+  // specifies that exact path. Tests under client/src use the same testMatch.
+  roots: ['<rootDir>/client/src', '<rootDir>/__tests__'],
   testMatch: ['**/__tests__/**/*.test.{js,jsx}'],
   transform: {
     '\\.[jt]sx?$': ['babel-jest', {
