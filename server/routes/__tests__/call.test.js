@@ -48,6 +48,19 @@ afterAll(() => {
 beforeEach(() => {
   jest.clearAllMocks();
   pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+  // jest.clearAllMocks() resets call history but NOT mock implementations.
+  // Tests that set `client.conferences.mockReturnValue(...)` with a rejecting
+  // implementation (e.g. the `returns 500 when Twilio fails` tests) would
+  // otherwise leak that implementation into every subsequent test. Reset
+  // to a passing default here. Individual tests that need a different
+  // implementation override this in their own setup.
+  client.conferences.mockReturnValue({
+    update: jest.fn().mockResolvedValue({}),
+    participants: {
+      list: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({}),
+    },
+  });
 });
 
 /* ───────────── POST /api/call/initiate ───────────── */
@@ -774,5 +787,141 @@ describe('POST /api/call/status', () => {
     }).expect(204);
 
     expect(conference.removeConference).toHaveBeenCalledWith('nucleus-call-abc');
+  });
+});
+
+/* ───────────── Phase J: assist_event_log persistence (o8s) ───────────── */
+
+// Both /api/call/end (synchronous, rep-initiated) and the /status conference-end
+// webhook (Twilio-initiated) capture the Live Assist event log BEFORE
+// cleanupConversation deletes the in-memory state, then fire-and-forget the
+// DB write via lib/inflight's track(). Idempotency vs the same-call race is
+// enforced UPSTREAM: when /end wins, removeConference is called and the
+// conference-end webhook's `&& conf` short-circuit skips the persist
+// entirely. The helper itself just honors the contract "if caller passes
+// null, don't write."
+describe('Phase J: assist_event_log persistence', () => {
+  const cp = require('../../lib/conversation-pipeline');
+  const { persistAssistEventLog } = require('../call').__testing;
+  const { drain } = require('../../lib/inflight');
+
+  afterEach(async () => {
+    cp._callState.clear();
+    // Drain any track()'d in-flight persists from this test so the next
+    // test's mock-call assertions don't see stale calls from prior runs.
+    await drain(1000);
+  });
+
+  test('POST /api/call/end persists captured event log via fire-and-forget', async () => {
+    const conferenceName = 'nucleus-call-phase-j-1';
+    const events = [
+      { ts: 1700000000000, type: 'phase_change', from: 'greeting', to: 'discovery' },
+      { ts: 1700000010000, type: 'objection', objection: 'too expensive' },
+    ];
+    // _initState() gives the full state shape — cleanupConversation reads
+    // .usage.cycles and other fields, so a partial seed would NPE before
+    // our capture even runs.
+    const state = cp._initState();
+    state.eventLog = events;
+    cp._callState.set(conferenceName, state);
+
+    conference.getConference.mockReturnValue({
+      conferenceSid: 'CF111',
+      startedAt: new Date(Date.now() - 5_000),
+    });
+
+    await request(app)
+      .post('/api/call/end')
+      .set('x-api-key', API_KEY)
+      .send({ conferenceName })
+      .expect(200);
+
+    // The persist is fire-and-forget — drain settles the in-flight promise
+    // before we assert on pool.query.
+    await drain(1000);
+
+    const assistUpdate = pool.query.mock.calls.find((c) =>
+      typeof c[0] === 'string' && c[0].includes('SET assist_event_log =')
+    );
+    expect(assistUpdate).toBeDefined();
+    expect(assistUpdate[1]).toEqual([JSON.stringify(events), conferenceName]);
+
+    // Ordering invariant: state must already be cleaned up post-request
+    // (cleanupConversation ran). If capture had happened AFTER cleanup,
+    // getCallEventLog would have returned null and the persist UPDATE
+    // would not appear at all. The presence of assistUpdate above and
+    // absence of state below jointly enforce ordering.
+    expect(cp._callState.get(conferenceName)).toBeUndefined();
+  });
+
+  test('POST /api/call/status conference-end persists captured event log', async () => {
+    const conferenceName = 'nucleus-call-phase-j-2';
+    const events = [
+      { ts: 1700000020000, type: 'suggestion', trigger: 'objection', source: 'tier-1' },
+    ];
+    const state = cp._initState();
+    state.eventLog = events;
+    cp._callState.set(conferenceName, state);
+
+    conference.getConference.mockReturnValue({
+      conferenceSid: 'CF222',
+      startedAt: new Date(Date.now() - 10_000),
+      participants: [],
+    });
+
+    await request(app)
+      .post('/api/call/status')
+      .send({
+        StatusCallbackEvent: 'conference-end',
+        FriendlyName: conferenceName,
+        ConferenceSid: 'CF222',
+      })
+      .expect(204);
+
+    await drain(1000);
+
+    const assistUpdate = pool.query.mock.calls.find((c) =>
+      typeof c[0] === 'string' && c[0].includes('SET assist_event_log =')
+    );
+    expect(assistUpdate).toBeDefined();
+    expect(assistUpdate[1]).toEqual([JSON.stringify(events), conferenceName]);
+  });
+
+  test('persistAssistEventLog no-ops when eventLog is null (never-tracked call)', async () => {
+    // Caller's contract: pass null when getCallEventLog returned null
+    // (callState had no entry). Helper writes nothing — preserves the
+    // NULL column value so the iOS section-visibility logic sees this
+    // row as "pre-Phase-J / not captured."
+    await persistAssistEventLog('never-tracked', null);
+
+    const assistUpdate = pool.query.mock.calls.find((c) =>
+      typeof c[0] === 'string' && c[0].includes('SET assist_event_log =')
+    );
+    expect(assistUpdate).toBeUndefined();
+  });
+
+  test('persistAssistEventLog persists an empty array (call ended with no events)', async () => {
+    // Empty array path is distinct from null — the column flips from NULL
+    // (pre-Phase-J) to '[]' (Phase-J row, no qualifying events fired).
+    // iOS renders the empty-state row for this case; downstream consumers
+    // (Phase I) can distinguish "captured but quiet" from "never captured."
+    await persistAssistEventLog('nucleus-call-phase-j-empty', []);
+
+    const assistUpdate = pool.query.mock.calls.find((c) =>
+      typeof c[0] === 'string' && c[0].includes('SET assist_event_log =')
+    );
+    expect(assistUpdate).toBeDefined();
+    expect(assistUpdate[1]).toEqual(['[]', 'nucleus-call-phase-j-empty']);
+  });
+
+  test('persistAssistEventLog swallows DB errors without throwing', async () => {
+    // Fire-and-forget callers can't catch — the helper must not throw.
+    // Mock rejection on the next pool.query call simulates a stalled or
+    // failing DB connection.
+    pool.query.mockRejectedValueOnce(new Error('connection refused'));
+
+    await expect(
+      persistAssistEventLog('nucleus-call-phase-j-dberr', [{ ts: 1, type: 'phase_change' }])
+    ).resolves.toBeUndefined();
   });
 });

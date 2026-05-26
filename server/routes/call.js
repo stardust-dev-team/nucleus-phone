@@ -9,7 +9,8 @@ const {
   removeConference, listActiveConferences, claimLeadDial,
 } = require('../lib/conference');
 const { cleanupCall } = require('../lib/live-analysis');
-const { cleanupConversation } = require('../lib/conversation-pipeline');
+const { cleanupConversation, getCallEventLog } = require('../lib/conversation-pipeline');
+const { track } = require('../lib/inflight');
 const { cleanupPipelineState } = require('../lib/equipment-pipeline');
 const { sendSlackAlert, sendSystemAlert } = require('../lib/slack');
 const { createOutboundCall } = require('../lib/vapi');
@@ -341,6 +342,24 @@ router.post('/end', ...callerGuard, async (req, res) => {
     // already gone. Stale-sweep / Twilio webhook will retry on the
     // next opportunity.
   }
+  // Phase J: persist the Live Assist event log BEFORE cleanupConversation
+  // destroys the state. Fire-and-forget via track() so a stalled DB write
+  // doesn't gate the rep's "end call" UI (the row UPDATE on line 331 is
+  // load-bearing for status='completed'; this one is post-call replay
+  // data only). track() registers with lib/inflight for graceful SIGTERM
+  // drain — the promise survives the response return and finishes
+  // independently. Capture happens synchronously below, so the in-memory
+  // eventLog is read off callState before cleanupConversation deletes it.
+  //
+  // User-visible consequence of fire-and-forget: if the rep opens History
+  // detail for THIS call within ~50ms of hangup, GET /api/history/:id
+  // races the persist write and reads assist_event_log = NULL → iOS
+  // AssistReplaySection hides the section → looks like the replay didn't
+  // capture anything. The persist drains a few hundred ms later but the
+  // detail screen won't auto-refresh. Mitigation: pull-to-refresh or
+  // back-and-forward. Acceptable v1; revisit if reps complain.
+  const eventLogForEnd = getCallEventLog(conferenceName);
+  track(persistAssistEventLog(conferenceName, eventLogForEnd));
   cleanupConversation(conferenceName);
   cleanupPipelineState(conferenceName);
   cleanupCall(conferenceName);
@@ -468,7 +487,23 @@ router.post('/status', twilioWebhook, async (req, res) => {
     }
 
     removeConference(FriendlyName);
-    // TODO: capture getCallEventLog(FriendlyName) before cleanup when real-call debrief is added
+    // Phase J: persist the Live Assist event log BEFORE cleanupConversation
+    // destroys the state. Idempotency vs POST /api/call/end is enforced
+    // UPSTREAM by the `&& conf` guard on this branch's `if`: when /end
+    // wins the race, it calls removeConference, getConference returns
+    // undefined here, and the entire conference-end branch is skipped —
+    // we never reach this line. So the same-call double-write is
+    // structurally impossible, not just behaviorally suppressed.
+    // Fire-and-forget via track() (matches /end above). The null-return
+    // inside persistAssistEventLog is a backup for the "never tracked by
+    // the conversation pipeline" case (callId mismatches, sim path
+    // misroutes).
+    //
+    // Same History-detail race window as /end: a rep who taps detail
+    // before the persist drains sees assist_event_log = NULL and the
+    // section hides. Pull-to-refresh resolves it.
+    const eventLogForWebhook = getCallEventLog(FriendlyName);
+    track(persistAssistEventLog(FriendlyName, eventLogForWebhook));
     cleanupConversation(FriendlyName);
     cleanupPipelineState(FriendlyName);
     cleanupCall(FriendlyName);
@@ -476,6 +511,40 @@ router.post('/status', twilioWebhook, async (req, res) => {
 
   res.sendStatus(204);
 });
+
+/**
+ * Phase J (joruva-dialer-mac-o8s): persist the Live Assist event log to
+ * `nucleus_phone_calls.assist_event_log` (JSONB, nullable).
+ *
+ * Caller responsibility: read `getCallEventLog(conferenceName)` BEFORE
+ * `cleanupConversation` runs, and pass the captured array (or null) in.
+ * This contract is enforced by the call sites in POST /api/call/end and
+ * in the /status conference-end webhook — both grab the log synchronously
+ * BEFORE handing this off to track().
+ *
+ * `eventLog === null` means the conversation pipeline never tracked this
+ * callId (sim conferences, callId mismatches, or webhook arrived after
+ * the synchronous /end already cleaned up). We don't write — leaving the
+ * column NULL preserves the "pre-Phase-J / not-captured" three-state
+ * semantics the iOS section-visibility logic relies on.
+ *
+ * Errors are swallowed and logged. Fire-and-forget via lib/inflight's
+ * track() means this runs after the route handler already responded, so
+ * an exception here can't surface to the user — log only.
+ */
+async function persistAssistEventLog(conferenceName, eventLog) {
+  if (eventLog === null) return;
+  try {
+    await pool.query(
+      `UPDATE nucleus_phone_calls
+       SET assist_event_log = $1::jsonb
+       WHERE conference_name = $2`,
+      [JSON.stringify(eventLog), conferenceName]
+    );
+  } catch (err) {
+    console.error('persistAssistEventLog failed:', err.message);
+  }
+}
 
 /**
  * Handle Twilio's conference-start callback for a sim conference (B2b).
@@ -685,4 +754,4 @@ async function markSimFailed(conferenceName, errorMessage) {
   );
 }
 
-module.exports = Object.assign(router, { __testing: { handleSimConferenceStart, markSimFailed, failOnLockedRow } });
+module.exports = Object.assign(router, { __testing: { handleSimConferenceStart, markSimFailed, failOnLockedRow, persistAssistEventLog } });
