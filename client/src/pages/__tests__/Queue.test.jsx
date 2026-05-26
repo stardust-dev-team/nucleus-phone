@@ -26,7 +26,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 const mockNavigate = jest.fn();
+// requireActual + override: preserves anything else this page might import
+// from react-router-dom in future (Link, NavLink, Outlet) without silently
+// returning undefined. Today only useNavigate is consumed. (Linus pass-1 P3
+// future-proofing.)
 jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
   useNavigate: () => mockNavigate,
 }));
 
@@ -230,21 +235,49 @@ describe('Queue / TriStarQueueView', () => {
     expect(screen.queryByText(/TriStar mode config is missing/)).not.toBeInTheDocument();
   });
 
-  it('does not write state after unmount (AbortController cleanup)', async () => {
+  it('does not write state after unmount (AbortController cleanup, signal.aborted gates)', async () => {
+    // Load-bearing assertion: spy on console.error and fail if React
+    // warns about "Can't perform a React state update on an unmounted
+    // component" or "act(...)" in production. Without this spy the test
+    // is tautological — it would pass even if the signal.aborted guards
+    // were ripped out (Linus pass-2 P2-1 fix).
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     let resolveFn;
     mockGetQueue.mockReturnValue(new Promise((r) => { resolveFn = r; }));
     const { unmount } = render(<Queue />);
     unmount();
-    // Resolving after unmount must not throw or warn — the signal.aborted
-    // gate in .then / .finally is what makes this safe (Linus pass-1 P1).
     resolveFn(liveResponse());
     // Allow microtask queue to drain so any unguarded setState would fire.
     await Promise.resolve();
     await Promise.resolve();
-    // No assertion needed beyond "no React act() warning thrown" — but we
-    // also confirm mockGetQueue was called exactly once (no rerun on
-    // unmount cleanup).
+    const offenders = errSpy.mock.calls.filter((args) => {
+      const msg = String(args[0] || '');
+      return /unmounted component|act\(\.\.\.\)/.test(msg);
+    });
+    expect(offenders).toEqual([]);
     expect(mockGetQueue).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
+
+  it('translates API 401 into a re-login CTA (rotated TRISTAR_API_KEY)', async () => {
+    mockGetQueue.mockRejectedValue(new Error('API 401: Unauthorized'));
+    render(<Queue />);
+    expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
+  });
+
+  it('translates API 403 into a re-login CTA', async () => {
+    mockGetQueue.mockRejectedValue(new Error('API 403: Forbidden'));
+    render(<Queue />);
+    expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
+  });
+
+  it('renders unknown sequencer_dry_run_state with a "drift" banner instead of silently miscategorising', async () => {
+    mockGetQueue.mockResolvedValue({
+      ...liveResponse(),
+      sequencer_dry_run_state: 'planet_aligned',
+    });
+    render(<Queue />);
+    expect(await screen.findByText(/unknown state: planet_aligned/)).toBeInTheDocument();
   });
 
   it('catches generic errors and surfaces the message', async () => {
@@ -258,9 +291,11 @@ describe('Queue / TriStarQueueView', () => {
       mockGetQueue.mockResolvedValue(liveResponse());
       render(<Queue />);
 
-      // initial call — no tier filter
+      // initial call — no tier filter (Queue passes `tier: undefined` when
+      // the filter state is '', so the api.js getQueue helper omits the
+      // query string). Linus pass-2 N-4 tightening: assert literal value.
       await screen.findByText('Sunnyvale Veterinary');
-      expect(mockGetQueue).toHaveBeenCalledWith(expect.objectContaining({ tier: undefined }));
+      expect(mockGetQueue.mock.calls[0][0].tier).toBeUndefined();
 
       // click Hot filter
       const hotButton = screen.getByRole('button', { name: 'Hot' });

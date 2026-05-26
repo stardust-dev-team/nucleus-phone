@@ -175,12 +175,26 @@ function PracticeCard({ row, onCall }) {
  */
 function DryRunBanner({ state }) {
   if (state === 'live' || !state) return null;
-  const label = state === 'global_dry_run'
-    ? 'OUTREACH GLOBALLY GATED'
-    : 'OUTREACH CHANNEL GATED';
-  const detail = state === 'global_dry_run'
-    ? 'Sequencer is in dry-run — no email or LinkedIn DMs are being sent. Touchpoint timestamps reflect prior live runs only.'
-    : 'One or more outreach channels (Instantly or PhantomBuster) are in dry-run. Some touchpoints below may not reflect real sends.';
+
+  // Explicit per-state branch — DO NOT collapse the unknown case into a
+  // default "channel gated" label. The enum lives across an HTTP boundary
+  // (nucleus-tristar SEQUENCER_DRY_RUN_STATES); a fourth state added
+  // there must NOT auto-mislabel here as "channel gated." Fail loud with
+  // a generic warning + raw state name so ops notices the drift instead
+  // of Britt seeing the wrong banner copy and acting on it.
+  // (Linus pass-1 P1 fix.)
+  let label;
+  let detail;
+  if (state === 'global_dry_run') {
+    label = 'OUTREACH GLOBALLY GATED';
+    detail = 'Sequencer is in dry-run — no email or LinkedIn DMs are being sent. Touchpoint timestamps reflect prior live runs only.';
+  } else if (state === 'channel_dry_run') {
+    label = 'OUTREACH CHANNEL GATED';
+    detail = 'One or more outreach channels (Instantly or PhantomBuster) are in dry-run. Some touchpoints below may not reflect real sends.';
+  } else {
+    label = `OUTREACH GATED (unknown state: ${state})`;
+    detail = 'Server reported a sequencer state this client does not recognize. Surface to ops — nucleus-tristar SEQUENCER_DRY_RUN_STATES may have drifted from the client copy.';
+  }
 
   return (
     <div
@@ -246,6 +260,16 @@ export default function TriStarQueueView() {
           setData({ practices: [], sequencer_dry_run_state: null, count: 0 });
           return;
         }
+        // 401/403 from nucleus-tristar means the shared TRISTAR_API_KEY
+        // has rotated since the cockpit booted (configureApi captured the
+        // old key at /me time). The raw apiFetch error reads "API 401:
+        // <body>" — useless to Britt. Translate to a re-login CTA. A
+        // proper typed ApiAuthError from apiFetch would let every consumer
+        // benefit; tracked as nucleus-phone follow-up (Linus pass-2 P1-1).
+        if (/^API 40[13]:/.test(err.message || '')) {
+          setError('Your TriStar session has expired. Please log out and back in.');
+          return;
+        }
         setError(err.message || 'Failed to load queue.');
       })
       .finally(() => {
@@ -265,9 +289,11 @@ export default function TriStarQueueView() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-semibold text-aunshin-peach-light">
           TriStar Queue
-          {!loading && data.count > 0 && (
+          {/* Use practices.length over data.count so the pill never lies
+            * about the row count being rendered (Linus pass-2 N-2 fix). */}
+          {!loading && data.practices.length > 0 && (
             <span className="ml-2 text-sm text-aunshin-quiet-d font-normal">
-              {data.count} due
+              {data.practices.length} due
             </span>
           )}
         </h1>
