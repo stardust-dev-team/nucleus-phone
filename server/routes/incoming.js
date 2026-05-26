@@ -170,7 +170,12 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     const clientNode = dial.client(iosIdentity);
     clientNode.parameter({ name: 'call_id', value: String(dbRowId) });
 
-    appendVoicemailTwiml(twiml, callerPhone, conferenceName);
+    // No inline voicemail TwiML here: <Dial> above sets `action`, and per
+    // Twilio's documented semantics, verbs after a <Dial> with an action URL
+    // are never executed — Twilio uses the action URL's response in every
+    // outcome (answered, no-answer, busy, failed). On action-URL failure
+    // Twilio falls back to the number's configured Voice URL fallback, not
+    // back to inline TwiML, so an append here would be dead code.
     return res.type('text/xml').send(twiml.toString());
   }
 
@@ -216,9 +221,13 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   //
   // The <Dial timeout=35> is a SAFETY NET, not the primary voicemail trigger.
   // Primary path: rep's 25s timeout fires → rep-status callback redirects
-  // caller to voicemail via Twilio REST API. If that redirect fails, the
-  // caller sits in an empty conference for ~10 more seconds until this 35s
-  // <Dial> expires, then dial-complete action URL serves voicemail TwiML.
+  // the caller to /voicemail via Twilio REST API. If that REST redirect
+  // fails, the caller sits in an empty conference for ~10 more seconds
+  // until this 35s <Dial> expires, then Twilio fetches the action URL
+  // (/dial-complete) which returns voicemail TwiML. There is no inline
+  // tertiary fallback because Twilio does not execute verbs after a <Dial>
+  // with an action URL — on action-URL failure it goes to the number's
+  // Voice URL fallback, not back to inline TwiML.
   const dial = twiml.dial({
     callerId: callerPhone,
     timeout: 35,
@@ -236,17 +245,14 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     waitUrl: '', // Twilio default hold music while waiting for rep
   }, conferenceName);
 
-  // Inline voicemail TwiML after <Dial> — tertiary safety net if both
-  // the rep-status redirect AND dial-complete action URL somehow fail.
-  appendVoicemailTwiml(twiml, callerPhone, conferenceName);
-
-  // Slack: alert admin channel + DM the rep with cockpit deep link
-  const cockpitUrl = `${baseUrl}/cockpit/${encodeURIComponent(callerPhone)}?conf=${encodeURIComponent(conferenceName)}`;
+  // Slack: alert admin channel + DM the rep with cockpit deep link.
+  // cockpitUrl is only used by the DM, so build it inside the DM branch.
   sendSlackAlert({
     text: `:telephone_receiver: Inbound call from ${callerPhone} → ${repName}`,
   }).catch(() => {});
 
   if (repSlackDm) {
+    const cockpitUrl = `${baseUrl}/cockpit/${encodeURIComponent(callerPhone)}?conf=${encodeURIComponent(conferenceName)}`;
     sendSlackDM(repSlackDm,
       `:telephone_receiver: Inbound call from ${callerPhone}\n<${cockpitUrl}|Open Cockpit>`
     ).catch(() => {});
