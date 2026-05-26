@@ -66,8 +66,8 @@ function resolveRoute(calledNumber) {
 
 /**
  * Append voicemail TwiML (say + record + goodbye) to a VoiceResponse.
- * Used by three paths: inline safety net, dial-complete fallback, and
- * rep-status redirect. Kept in one place to avoid drift.
+ * Used by /dial-complete (the <Dial action> URL fallback) and /voicemail
+ * (the rep-status REST redirect target). Kept in one place to avoid drift.
  */
 function appendVoicemailTwiml(twiml, callerPhone, conferenceName) {
   twiml.say({
@@ -170,12 +170,8 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     const clientNode = dial.client(iosIdentity);
     clientNode.parameter({ name: 'call_id', value: String(dbRowId) });
 
-    // No inline voicemail TwiML here: <Dial> above sets `action`, and per
-    // Twilio's documented semantics, verbs after a <Dial> with an action URL
-    // are never executed — Twilio uses the action URL's response in every
-    // outcome (answered, no-answer, busy, failed). On action-URL failure
-    // Twilio falls back to the number's configured Voice URL fallback, not
-    // back to inline TwiML, so an append here would be dead code.
+    // No verbs after <Dial action=...>: per Twilio's docs the action URL
+    // response is the only continuation. https://www.twilio.com/docs/voice/twiml/dial
     return res.type('text/xml').send(twiml.toString());
   }
 
@@ -219,15 +215,11 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   // startConferenceOnEnter=true → conference starts immediately.
   // Status callback fires conference-start → dials the rep (25s timeout).
   //
-  // The <Dial timeout=35> is a SAFETY NET, not the primary voicemail trigger.
-  // Primary path: rep's 25s timeout fires → rep-status callback redirects
-  // the caller to /voicemail via Twilio REST API. If that REST redirect
-  // fails, the caller sits in an empty conference for ~10 more seconds
-  // until this 35s <Dial> expires, then Twilio fetches the action URL
-  // (/dial-complete) which returns voicemail TwiML. There is no inline
-  // tertiary fallback because Twilio does not execute verbs after a <Dial>
-  // with an action URL — on action-URL failure it goes to the number's
-  // Voice URL fallback, not back to inline TwiML.
+  // <Dial timeout=35> is the secondary voicemail trigger:
+  //   primary  — rep-status REST redirect on rep's 25s timeout → /voicemail
+  //   secondary — this <Dial> expires → action URL /dial-complete → voicemail
+  // No verbs after <Dial action=...>; the action URL response is the only
+  // continuation. https://www.twilio.com/docs/voice/twiml/dial
   const dial = twiml.dial({
     callerId: callerPhone,
     timeout: 35,
@@ -246,7 +238,6 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   }, conferenceName);
 
   // Slack: alert admin channel + DM the rep with cockpit deep link.
-  // cockpitUrl is only used by the DM, so build it inside the DM branch.
   sendSlackAlert({
     text: `:telephone_receiver: Inbound call from ${callerPhone} → ${repName}`,
   }).catch(() => {});
