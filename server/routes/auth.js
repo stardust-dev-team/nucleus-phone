@@ -182,9 +182,42 @@ router.get('/callback', async (req, res) => {
   }
 });
 
-// GET /api/auth/me — return current user from session cookie
+// GET /api/auth/me — return current user from session cookie + TriStar
+// config block (bead nucleus-phone-gxt2 / stardust-tristar [coc.1.b]).
+//
+// The tristar block is null for users not on TRISTAR_ALLOWED_IDENTITIES.
+// For allowlisted users, it returns {baseUrl, apiKey} read from server
+// env — the API key NEVER appears in the static client bundle, only in
+// the per-session /me response over the authenticated cookie session.
+// (Still extractable from the browser's JS heap by anyone with dev tools
+// on the user's own machine — that's the v1 trust model; bead
+// nucleus-phone-stet (P1) proxies through this server to eliminate
+// client-side key exposure entirely.)
+//
+// If allowlisted but env is missing, baseUrl/apiKey come back null and
+// the cockpit's configureApi resolves to TARGETS.DEGRADED — the
+// DegradedBanner fires so ops sees the misconfig immediately.
+function buildTristarConfig(user) {
+  const allowedRaw = process.env.TRISTAR_ALLOWED_IDENTITIES || '';
+  const allowed = allowedRaw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!user || typeof user.identity !== 'string') return null;
+  if (!allowed.includes(user.identity)) return null;
+  // Trim env reads: Render env vars routinely pick up leading/trailing
+  // whitespace from paste. Without trim, a stray space makes the client's
+  // normalizeTristarBaseUrl reject the URL and the user sees DEGRADED
+  // with no clear cause — env LOOKS set, system behaves broken. Linus
+  // pass-1 P1-2 fix.
+  return {
+    baseUrl: (process.env.TRISTAR_API_BASE_URL || '').trim() || null,
+    apiKey: (process.env.TRISTAR_API_KEY || '').trim() || null,
+  };
+}
+
 router.get('/me', sessionAuth, (req, res) => {
-  res.json(req.user);
+  res.json({
+    ...req.user,
+    tristar: buildTristarConfig(req.user),
+  });
 });
 
 // GET /api/auth/email-ready — check if rep has MSAL tokens for email sending
