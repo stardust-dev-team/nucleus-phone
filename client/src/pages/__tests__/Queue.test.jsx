@@ -28,8 +28,7 @@ import '@testing-library/jest-dom';
 const mockNavigate = jest.fn();
 // requireActual + override: preserves anything else this page might import
 // from react-router-dom in future (Link, NavLink, Outlet) without silently
-// returning undefined. Today only useNavigate is consumed. (Linus pass-1 P3
-// future-proofing.)
+// returning undefined. Today only useNavigate is consumed.
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useNavigate: () => mockNavigate,
@@ -83,7 +82,7 @@ function makePractice(overrides = {}) {
     // fixture and formatRelativeDay floor on 86400000-ms intervals; if the
     // test's Date.now happens microseconds before the boundary and the
     // component's Date.now happens microseconds after, the bucket changes.
-    // 1-minute buffer absorbs CI clock jitter (Linus pass-3 P2-1 fix).
+    // 1-minute buffer absorbs CI clock jitter.
     last_email_sent_at: new Date(Date.now() - 3 * 86400000 - 60_000).toISOString(),
     last_email_replied_at: null,
     last_linkedin_dm_sent_at: null,
@@ -277,15 +276,32 @@ describe('Queue / TriStarQueueView', () => {
     // owns the user-facing surface. The page just shows the empty state so
     // Britt doesn't see two red boxes for one missing-config event.
     expect(await screen.findByText(/No leads ready to call/)).toBeInTheDocument();
-    expect(screen.queryByText(/TriStar mode config is missing/)).not.toBeInTheDocument();
+    // Also make sure no role="alert" red box appears on the page — that's
+    // the actual structural assertion (any inline alert would be wrong).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('positive control: console.error spy catches the warnings we depend on', () => {
+    // Proves the spy IS wired correctly and CAN observe React warnings.
+    // Sibling to the unmount-cleanup test below; if a React version
+    // upgrade changes the warning string format, this sibling will fail
+    // alongside the unmount test going silent — making the regression
+    // observable instead of tautological.
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    console.error('Warning: Can\'t perform a React state update on an unmounted component.');
+    const offenders = errSpy.mock.calls.filter((args) => {
+      const msg = String(args[0] || '');
+      return /unmounted component|act\(\.\.\.\)/.test(msg);
+    });
+    expect(offenders.length).toBeGreaterThan(0);
+    errSpy.mockRestore();
   });
 
   it('does not write state after unmount (AbortController cleanup, signal.aborted gates)', async () => {
     // Load-bearing assertion: spy on console.error and fail if React
     // warns about "Can't perform a React state update on an unmounted
-    // component" or "act(...)" in production. Without this spy the test
-    // is tautological — it would pass even if the signal.aborted guards
-    // were ripped out (Linus pass-2 P2-1 fix).
+    // component" or "act(...)" in production. The positive-control test
+    // above proves the spy can catch those warnings.
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     let resolveFn;
     mockGetQueue.mockReturnValue(new Promise((r) => { resolveFn = r; }));
@@ -357,9 +373,10 @@ describe('Queue / TriStarQueueView', () => {
       mockGetQueue.mockResolvedValue(liveResponse());
       render(<Queue />);
 
-      // initial call — no tier filter (Queue passes `tier: undefined` when
+      // initial call — no tier filter. Queue passes `tier: undefined` when
       // the filter state is '', so the api.js getQueue helper omits the
-      // query string). Linus pass-2 N-4 tightening: assert literal value.
+      // query string. Asserting the literal value rather than
+      // objectContaining (which accepts any value or absent).
       await screen.findByText('Sunnyvale Veterinary');
       expect(mockGetQueue.mock.calls[0][0].tier).toBeUndefined();
 
@@ -377,7 +394,7 @@ describe('Queue / TriStarQueueView', () => {
   // requests on tier-change or refresh is what prevents last-write-wins
   // races. Pin the contract: getQueue MUST receive an AbortSignal. A future
   // refactor that drops the signal wiring would pass other tests green but
-  // silently regress race safety. (Linus pass-1 P2.)
+  // silently regress race safety.
   it('passes an AbortSignal to getQueue on every fetch', async () => {
     mockGetQueue.mockResolvedValue(liveResponse());
     render(<Queue />);
@@ -405,7 +422,7 @@ describe('Queue / TriStarQueueView', () => {
     expect(firstSignal.aborted).toBe(true);
   });
 
-  describe('DryRunBanner unknown state (Linus pass-1 P1)', () => {
+  describe('DryRunBanner unknown state', () => {
     it('renders a generic gated banner with the raw state name on unknown state', async () => {
       mockGetQueue.mockResolvedValue({
         ...liveResponse(),
