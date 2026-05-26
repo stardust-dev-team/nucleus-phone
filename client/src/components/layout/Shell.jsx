@@ -1,4 +1,5 @@
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { MODES } from '../../lib/mode-router';
 
 const STATUS_COLORS = {
   initializing: 'bg-aunshin-sodium',
@@ -8,18 +9,32 @@ const STATUS_COLORS = {
   error: 'bg-aunshin-alert',
 };
 
-export default function Shell({ identity, role, onLogout, deviceStatus, emailReady }) {
+export default function Shell({ identity, role, mode, onLogout, deviceStatus, emailReady }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const tabs = [
-    { path: '/', label: 'Contacts', icon: '👤' },
-    ...(role === 'admin' ? [{ path: '/active', label: 'Live', icon: '📡' }] : []),
-    { path: '/activity', label: 'Activity', icon: '📊' },
-    { path: '/scoreboard', label: 'Score', icon: '🏆' },
-    { path: '/practice', label: 'Practice', icon: '🎯' },
-    { path: '/ask', label: 'Ask', icon: '💬' },
-  ];
+  // TriStar-mode reps get a Queue tab in place of Contacts as the primary
+  // landing surface — the queue IS their inbound work (sequencer-driven),
+  // and contacts (signal-driven from joruva.com) is irrelevant. Joruva
+  // reps see the original Contacts/Activity/Practice loadout. Identity-
+  // based UI is intentionally absent: the mode is the authoritative
+  // gate, not the email — same source of truth as api.js routing.
+  const tabs = mode === 'tristar'
+    ? [
+        { path: '/queue', label: 'Queue', icon: '📞' },
+        ...(role === 'admin' ? [{ path: '/active', label: 'Live', icon: '📡' }] : []),
+        { path: '/activity', label: 'Activity', icon: '📊' },
+        { path: '/scoreboard', label: 'Score', icon: '🏆' },
+        { path: '/ask', label: 'Ask', icon: '💬' },
+      ]
+    : [
+        { path: '/', label: 'Contacts', icon: '👤' },
+        ...(role === 'admin' ? [{ path: '/active', label: 'Live', icon: '📡' }] : []),
+        { path: '/activity', label: 'Activity', icon: '📊' },
+        { path: '/scoreboard', label: 'Score', icon: '🏆' },
+        { path: '/practice', label: 'Practice', icon: '🎯' },
+        { path: '/ask', label: 'Ask', icon: '💬' },
+      ];
 
   return (
     <div className="flex flex-col h-full">

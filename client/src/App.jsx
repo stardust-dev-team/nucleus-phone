@@ -11,6 +11,7 @@ import Scoreboard from './pages/Scoreboard';
 import Activity from './pages/Activity';
 import AskNucleus from './pages/AskNucleus';
 import Debug from './pages/Debug';
+import Queue from './pages/Queue';
 import useTwilioDevice from './hooks/useTwilioDevice';
 import useCallState from './hooks/useCallState';
 import { configureApi } from './lib/api';
@@ -54,6 +55,7 @@ class ErrorBoundary extends Component {
 
 function AppContent() {
   const [user, setUser] = useState(null); // { identity, role, email }
+  const [mode, setMode] = useState(MODES.JORUVA); // mirrors api.js config for UI gating (queue link, /queue route)
   const [loading, setLoading] = useState(true);
   const [emailReady, setEmailReady] = useState(null); // null = loading, true = tokens exist, false = re-login needed
 
@@ -63,6 +65,13 @@ function AppContent() {
   // hook fires an API call; that's why it's inside this effect's .then,
   // not a separate effect with [user] dep — hooks like useTwilioDevice
   // read from api.js the moment user is non-null.
+  //
+  // We also mirror the mode into React state so Shell and App can gate
+  // the TriStar-only UI (queue menu link, /queue route). The api.js
+  // module-level config remains authoritative for what FETCH does; the
+  // React mirror is purely for rendering. Drift between the two is
+  // impossible by construction — both are set in the same callback from
+  // the same source of truth.
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : null))
@@ -75,8 +84,10 @@ function AppContent() {
             tristarBaseUrl: tristar.baseUrl,
             tristarApiKey: tristar.apiKey,
           });
+          setMode(MODES.TRISTAR);
         } else {
           configureApi({ mode: MODES.JORUVA });
+          setMode(MODES.JORUVA);
         }
         setUser(userFields);
       })
@@ -143,7 +154,7 @@ function AppContent() {
         />
 
         {/* Everything else renders inside Shell layout route */}
-        <Route element={<Shell identity={identity} role={role} onLogout={handleLogout} deviceStatus={twilioHook.status} emailReady={emailReady} />}>
+        <Route element={<Shell identity={identity} role={role} mode={mode} onLogout={handleLogout} deviceStatus={twilioHook.status} emailReady={emailReady} />}>
           <Route
             path="/"
             element={
@@ -154,6 +165,17 @@ function AppContent() {
               />
             }
           />
+          {/* TriStar-only routed surface (bead nucleus-phone-e91e). The
+            * /queue path resolves to nucleus-tristar via mode-router; in
+            * Joruva mode the menu link is hidden, so this route is
+            * unreachable from the cockpit UI. Direct URL access in
+            * Joruva mode would 404 on /api/queue with no DegradedBanner
+            * (LOCAL not DEGRADED) — acceptable since the URL isn't
+            * surfaced. Gating the route registration itself would
+            * prevent even an admin from URL-navigating for diagnostics. */}
+          {mode === MODES.TRISTAR && (
+            <Route path="/queue" element={<Queue />} />
+          )}
           <Route
             path="/dialer"
             element={
