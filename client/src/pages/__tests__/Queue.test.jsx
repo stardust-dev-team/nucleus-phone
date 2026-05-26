@@ -220,10 +220,31 @@ describe('Queue / TriStarQueueView', () => {
     expect(await screen.findByText(/No practices due/)).toBeInTheDocument();
   });
 
-  it('catches ApiDegradedError and surfaces inline error', async () => {
+  it('catches ApiDegradedError and falls through to empty state (global DegradedBanner handles the alert)', async () => {
     mockGetQueue.mockRejectedValue(new MockApiDegradedError('/queue'));
     render(<Queue />);
-    expect(await screen.findByText(/TriStar mode config is missing/)).toBeInTheDocument();
+    // The page should NOT render its own alert — DegradedBanner at App level
+    // owns the user-facing surface. The page just shows the empty state so
+    // Britt doesn't see two red boxes for one missing-config event.
+    expect(await screen.findByText(/No practices due/)).toBeInTheDocument();
+    expect(screen.queryByText(/TriStar mode config is missing/)).not.toBeInTheDocument();
+  });
+
+  it('does not write state after unmount (AbortController cleanup)', async () => {
+    let resolveFn;
+    mockGetQueue.mockReturnValue(new Promise((r) => { resolveFn = r; }));
+    const { unmount } = render(<Queue />);
+    unmount();
+    // Resolving after unmount must not throw or warn — the signal.aborted
+    // gate in .then / .finally is what makes this safe (Linus pass-1 P1).
+    resolveFn(liveResponse());
+    // Allow microtask queue to drain so any unguarded setState would fire.
+    await Promise.resolve();
+    await Promise.resolve();
+    // No assertion needed beyond "no React act() warning thrown" — but we
+    // also confirm mockGetQueue was called exactly once (no rerun on
+    // unmount cleanup).
+    expect(mockGetQueue).toHaveBeenCalledTimes(1);
   });
 
   it('catches generic errors and surfaces the message', async () => {
