@@ -317,6 +317,23 @@ async function initSchema() {
     `);
     console.log('msal_token_cache + email columns ready');
 
+    // Live Assist persisted event log (joruva-dialer-mac-o8s, Phase J).
+    // Captured at hangup BEFORE cleanupConversation destroys the in-memory
+    // callState. NULLABLE (no DEFAULT) — three-state semantics carried by
+    // the column itself:
+    //   NULL         → row predates Phase J or persist hasn't run yet
+    //   '[]'::jsonb  → call ended with no qualifying events fired
+    //   '[...]'::jsonb → call ended with captured events
+    // Phase I (disposition pre-fill) and the iOS-side AssistReplaySection
+    // both rely on the NULL distinction to hide UI / skip processing for
+    // historical rows. A NOT NULL DEFAULT '[]' would stamp every legacy
+    // row at ALTER TABLE time and erase that distinction.
+    await client.query(`
+      ALTER TABLE nucleus_phone_calls
+        ADD COLUMN IF NOT EXISTS assist_event_log JSONB;
+    `);
+    console.log('assist_event_log column ready');
+
     // ── Signal enrichment (Phase 4b) ─────────────────────────────
     // Extend v35_pb_contacts for Apollo-enriched contacts.
     // Full migration with constraint surgery is in migrations/004_signal_contacts_schema.sql

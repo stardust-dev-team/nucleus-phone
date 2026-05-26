@@ -26,12 +26,17 @@ const LIST_COLUMNS = `npc.id, npc.created_at, npc.conference_name, npc.caller_id
 
 // DETAIL_COLUMNS — used by GET /:id (detail view). Explicit list (no npc.*)
 // so new secret columns don't silently leak to the client.
+// assist_event_log (Phase J, joruva-dialer-mac-o8s): JSONB array of Live
+// Assist events captured at hangup. NULL on pre-Phase-J rows. Safe to
+// expose to the caller — these are the same events the in-call
+// WebSocket pushed live, just replayed from post-call storage.
 const DETAIL_COLUMNS = `npc.id, npc.created_at, npc.conference_name, npc.caller_identity,
   npc.lead_phone, npc.lead_name, npc.lead_company, npc.hubspot_contact_id,
   npc.direction, npc.status, npc.duration_seconds, npc.disposition, npc.qualification,
   npc.products_discussed, npc.notes, npc.recording_url, npc.recording_duration,
   npc.fireflies_uploaded, npc.lead_email, npc.follow_up_email_sent,
-  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.transcript`;
+  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.transcript,
+  npc.assist_event_log`;
 
 // CALL_COLUMNS — used by POST /:id/disposition UPDATE RETURNING (no JOIN).
 const CALL_COLUMNS = `id, created_at, conference_name, caller_identity, lead_phone,
