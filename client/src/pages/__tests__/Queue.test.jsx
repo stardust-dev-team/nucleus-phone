@@ -172,6 +172,37 @@ describe('Queue / TriStarQueueView', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/cockpit/%2B15552223333');
   });
 
+  describe('attempt sequence label sanity gate', () => {
+    it('hides the label pill when call_number > total_calls (server cadence-drift defense)', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({
+          attempt_sequence_label: 'Call 7 of 3, Day 14',
+          attempt_call_number: 7,
+          attempt_total_calls: 3,
+        }),
+      ]));
+      render(<Queue />);
+      await screen.findByText('Sunnyvale Veterinary');
+      // The card still renders — only the label pill is suppressed.
+      // Britt seeing no label is better than seeing impossible-numbers
+      // and either freezing or trusting the bad sequence.
+      expect(screen.queryByText(/Call 7 of 3/)).not.toBeInTheDocument();
+    });
+
+    it('hides the label pill when raw call_number / total_calls are missing', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({
+          attempt_sequence_label: 'Call 2 of 3, Day 7',
+          attempt_call_number: null,
+          attempt_total_calls: null,
+        }),
+      ]));
+      render(<Queue />);
+      await screen.findByText('Sunnyvale Veterinary');
+      expect(screen.queryByText(/Call 2 of 3/)).not.toBeInTheDocument();
+    });
+  });
+
   describe('dry-run banner', () => {
     it('hides when sequencer_dry_run_state is live', async () => {
       mockGetQueue.mockResolvedValue(liveResponse());
