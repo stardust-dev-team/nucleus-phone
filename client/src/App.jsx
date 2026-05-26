@@ -86,7 +86,16 @@ function AppContent() {
           });
           setMode(MODES.TRISTAR);
         } else {
-          configureApi({ mode: MODES.JORUVA });
+          // Belt-and-suspenders: NULL out tristarBaseUrl/tristarApiKey on
+          // the Joruva path. configureApi uses object spread (api.js:49)
+          // so omitting these would leave any prior TriStar-session key
+          // resident in module memory. Critical on a shared iPad where
+          // Britt logs out and Tom logs in (Linus pass-3 P1-1).
+          configureApi({
+            mode: MODES.JORUVA,
+            tristarBaseUrl: null,
+            tristarApiKey: null,
+          });
           setMode(MODES.JORUVA);
         }
         setUser(userFields);
@@ -111,6 +120,18 @@ function AppContent() {
   const callState = useCallState(twilioHook);
 
   function handleLogout() {
+    // Clear TriStar credentials from module-level config BEFORE the
+    // network round-trip — protects against state-bleed if the next user
+    // logs in fast and the second /me response races the first. Without
+    // this, a JORUVA-mode next-user could have a prior session's
+    // TRISTAR_API_KEY in module memory until their /me result lands.
+    // (Linus pass-3 P1-1 fix.)
+    configureApi({
+      mode: MODES.JORUVA,
+      tristarBaseUrl: null,
+      tristarApiKey: null,
+    });
+    setMode(MODES.JORUVA);
     fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
       .then(() => {
         setUser(null);

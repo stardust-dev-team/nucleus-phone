@@ -220,7 +220,10 @@ const TIER_FILTERS = [
 
 export default function TriStarQueueView() {
   const navigate = useNavigate();
-  const [data, setData] = useState({ practices: [], sequencer_dry_run_state: null, count: 0 });
+  // count was tracked alongside practices for the header pill but the pill
+  // now reads practices.length directly (Linus pass-2 N-2). Dropped here
+  // (pass-3 N-4) so state isn't carrying a value nothing reads.
+  const [data, setData] = useState({ practices: [], sequencer_dry_run_state: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tier, setTier] = useState('');
@@ -247,7 +250,6 @@ export default function TriStarQueueView() {
         setData({
           practices: res.practices || [],
           sequencer_dry_run_state: res.sequencer_dry_run_state || null,
-          count: res.count || 0,
         });
       })
       .catch((err) => {
@@ -257,7 +259,7 @@ export default function TriStarQueueView() {
           // local data so the empty state shows instead of double-rendering
           // the alert. The banner is the canonical surface for missing
           // TriStar config (Linus pass-1 P2 dual-alert fix).
-          setData({ practices: [], sequencer_dry_run_state: null, count: 0 });
+          setData({ practices: [], sequencer_dry_run_state: null });
           return;
         }
         // 401/403 from nucleus-tristar means the shared TRISTAR_API_KEY
@@ -265,9 +267,17 @@ export default function TriStarQueueView() {
         // old key at /me time). The raw apiFetch error reads "API 401:
         // <body>" — useless to Britt. Translate to a re-login CTA. A
         // proper typed ApiAuthError from apiFetch would let every consumer
-        // benefit; tracked as nucleus-phone follow-up (Linus pass-2 P1-1).
+        // benefit; tracked as nucleus-phone-sj5m (Linus pass-2 P1-1).
         if (/^API 40[13]:/.test(err.message || '')) {
           setError('Your TriStar session has expired. Please log out and back in.');
+          return;
+        }
+        // 5xx from nucleus-tristar typically means a deploy / restart in
+        // progress. Britt can't act on a stack-trace message; surface a
+        // calm wait-and-retry instead. No auto-poll — silent retry could
+        // mask a real outage. (Linus pass-3 P1-3 fix.)
+        if (/^API 5\d\d:/.test(err.message || '')) {
+          setError('TriStar server is restarting. Tap Refresh in a moment.');
           return;
         }
         setError(err.message || 'Failed to load queue.');
@@ -297,11 +307,14 @@ export default function TriStarQueueView() {
             </span>
           )}
         </h1>
+        {/* min-h-[44px] min-w-[44px] enforces Apple HIG tap target on iPad
+          * landscape (Britt's primary device). px-3 py-2 keeps visual
+          * weight modest. (Linus pass-3 P1-2 fix.) */}
         <button
           type="button"
           onClick={() => setRefreshTick((n) => n + 1)}
           disabled={loading}
-          className="text-[11px] uppercase tracking-wider text-aunshin-sodium hover:text-aunshin-peach-light disabled:opacity-50"
+          className="text-[11px] uppercase tracking-wider text-aunshin-sodium hover:text-aunshin-peach-light disabled:opacity-50 px-3 py-2 min-h-[44px] min-w-[44px]"
           aria-label="Refresh queue"
         >
           {loading ? 'Loading…' : 'Refresh'}
@@ -310,17 +323,19 @@ export default function TriStarQueueView() {
 
       <DryRunBanner state={data.sequencer_dry_run_state} />
 
-      {/* Tier filter */}
-      <div className="flex gap-2 mb-4">
+      {/* Tier filter — aria-pressed gives screen readers the toggle state.
+        * min-h-[44px] enforces iPad tap target (Linus pass-3 P1-2 + P2-2). */}
+      <div className="flex gap-2 mb-4" role="group" aria-label="Filter by intent tier">
         {TIER_FILTERS.map((opt) => (
           <button
             key={opt.value || 'all'}
             type="button"
             onClick={() => setTier(opt.value)}
+            aria-pressed={tier === opt.value}
             className={
               tier === opt.value
-                ? 'px-3 py-1.5 rounded-lg text-[11px] uppercase tracking-wider font-semibold bg-aunshin-sodium text-aunshin-twilight-2'
-                : 'px-3 py-1.5 rounded-lg text-[11px] uppercase tracking-wider text-aunshin-quiet-d border border-aunshin-rule-d hover:text-aunshin-peach-light'
+                ? 'px-4 py-2 min-h-[44px] rounded-lg text-[11px] uppercase tracking-wider font-semibold bg-aunshin-sodium text-aunshin-twilight-2'
+                : 'px-4 py-2 min-h-[44px] rounded-lg text-[11px] uppercase tracking-wider text-aunshin-quiet-d border border-aunshin-rule-d hover:text-aunshin-peach-light'
             }
           >
             {opt.label}
@@ -335,7 +350,13 @@ export default function TriStarQueueView() {
       )}
 
       {loading && data.practices.length === 0 && (
-        <div className="text-aunshin-quiet-d text-sm py-12 text-center">Loading queue…</div>
+        <div
+          role="status"
+          aria-live="polite"
+          className="text-aunshin-quiet-d text-sm py-12 text-center"
+        >
+          Loading queue…
+        </div>
       )}
 
       {!loading && !error && data.practices.length === 0 && (
