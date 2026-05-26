@@ -99,18 +99,28 @@ export const TARGETS = Object.freeze({
 });
 
 /**
- * The three paths that, in TriStar mode, leave the local /api/ surface.
+ * Paths that, in TriStar mode, leave the local /api/ surface.
  * Frozen so a mutation throws in strict mode (ES modules are implicit
  * strict mode, so push() throws in normal use). Mutating this set would
  * silently widen / narrow the routed surface and relax the no-local-writes
  * contract — the freeze converts that footgun into a runtime error.
  *
- * Order matches the bead spec; downstream code must not depend on order.
+ * Downstream code must not depend on order.
+ *
+ * /token (added per bead nucleus-phone-ln18): the cockpit's Twilio Voice
+ * SDK device must register against TriStar's Twilio account when the
+ * cockpit is in TriStar mode. Without routing /token, the device fetches
+ * a Joruva-account JWT and cannot join TriStar's conferences — the lead
+ * dial in nucleus-tristar/src/routes/call.js never reaches the rep.
+ * nucleus-tristar exposes GET /api/token?identity=… (verb-matched to
+ * nucleus-phone's local /api/token so getToken() doesn't need a special
+ * case). Authentication via X-API-Key is injected by applyHeaders.
  */
 export const ROUTED_PATHS = Object.freeze([
   '/queue',
   '/call/initiate',
   '/call/:id/disposition',
+  '/token',
 ]);
 
 /**

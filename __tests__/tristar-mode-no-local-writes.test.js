@@ -71,12 +71,15 @@ const TRISTAR_OPTS = {
 describe('tristar-mode-no-local-writes', () => {
   // ── Layer 1: unit ────────────────────────────────────────────
 
+  // /token added per bead nucleus-phone-ln18 — cockpit's Twilio Voice
+  // SDK must register against TriStar's account in TriStar mode.
   describe('ROUTED_PATHS — frozen, exact', () => {
     test('matches bead spec exactly', () => {
       expect(Array.from(ROUTED_PATHS)).toEqual([
         '/queue',
         '/call/initiate',
         '/call/:id/disposition',
+        '/token',
       ]);
     });
 
@@ -149,6 +152,7 @@ describe('tristar-mode-no-local-writes', () => {
       ['/queue'],
       ['/call/initiate'],
       ['/call/abc-123/disposition'],
+      ['/token'],
     ])('routes %s to TARGETS.TRISTAR with X-API-Key', (p) => {
       const r = resolveRoute(p, TRISTAR_OPTS);
       expect(r.target).toBe(TARGETS.TRISTAR);
