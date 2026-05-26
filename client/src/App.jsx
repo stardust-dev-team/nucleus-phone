@@ -13,6 +13,9 @@ import AskNucleus from './pages/AskNucleus';
 import Debug from './pages/Debug';
 import useTwilioDevice from './hooks/useTwilioDevice';
 import useCallState from './hooks/useCallState';
+import { configureApi } from './lib/api';
+import { MODES } from './lib/mode-router';
+import DegradedBanner from './components/layout/DegradedBanner';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -54,12 +57,28 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [emailReady, setEmailReady] = useState(null); // null = loading, true = tokens exist, false = re-login needed
 
-  // Check session on mount
+  // Check session on mount. If the /me response carries a tristar block
+  // (server gates by TRISTAR_ALLOWED_IDENTITIES — see server/routes/auth.js),
+  // flip api.js into TriStar mode. configureApi MUST run before any other
+  // hook fires an API call; that's why it's inside this effect's .then,
+  // not a separate effect with [user] dep — hooks like useTwilioDevice
+  // read from api.js the moment user is non-null.
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) setUser(data);
+        if (!data) return;
+        const { tristar, ...userFields } = data;
+        if (tristar) {
+          configureApi({
+            mode: MODES.TRISTAR,
+            tristarBaseUrl: tristar.baseUrl,
+            tristarApiKey: tristar.apiKey,
+          });
+        } else {
+          configureApi({ mode: MODES.JORUVA });
+        }
+        setUser(userFields);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -100,90 +119,97 @@ function AppContent() {
   }
 
   return (
-    <Routes>
-      {/* Real cockpit renders WITHOUT Shell (full-screen focus) */}
-      <Route
-        path="/cockpit/:id"
-        element={
-          <Cockpit
-            identity={identity}
-            role={role}
-            callState={callState}
-            twilioStatus={twilioHook.status}
-            onSendDigits={twilioHook.sendDigits}
-            onToggleMute={twilioHook.toggleMute}
-            muted={twilioHook.muted}
-          />
-        }
-      />
-
-      {/* Everything else renders inside Shell layout route */}
-      <Route element={<Shell identity={identity} role={role} onLogout={handleLogout} deviceStatus={twilioHook.status} emailReady={emailReady} />}>
+    <>
+      {/* TriStar mode degraded-config banner (bead nucleus-phone-gxt2).
+        * Mounted at App level so it sits above BOTH the Cockpit route
+        * (which renders without Shell) and the Shell-wrapped routes.
+        * The banner is its own listener; no prop wiring required. */}
+      <DegradedBanner />
+      <Routes>
+        {/* Real cockpit renders WITHOUT Shell (full-screen focus) */}
         <Route
-          path="/"
-          element={
-            <Contacts
-              identity={identity}
-              callState={callState}
-              twilioStatus={twilioHook.status}
-            />
-          }
-        />
-        <Route
-          path="/dialer"
-          element={
-            <Dialer
-              identity={identity}
-              twilioHook={twilioHook}
-              callState={callState}
-            />
-          }
-        />
-        <Route
-          path="/complete"
-          element={
-            <CallComplete
-              callState={callState}
-              identity={identity}
-              emailReady={emailReady}
-            />
-          }
-        />
-        {role === 'admin' && (
-          <Route
-            path="/active"
-            element={
-              <ActiveCalls
-                identity={identity}
-                callState={callState}
-                twilioHook={twilioHook}
-              />
-            }
-          />
-        )}
-        {role === 'admin' && (
-          <Route path="/debug" element={<Debug />} />
-        )}
-        <Route path="/activity" element={<Activity identity={identity} role={role} emailReady={emailReady} />} />
-        <Route path="/history" element={<Navigate to="/activity" replace />} />
-        <Route path="/summaries" element={<Navigate to="/activity" replace />} />
-        <Route path="/ask" element={<AskNucleus />} />
-        <Route path="/scoreboard" element={<Scoreboard />} />
-        <Route
-          path="/practice"
+          path="/cockpit/:id"
           element={
             <Cockpit
               identity={identity}
               role={role}
               callState={callState}
               twilioStatus={twilioHook.status}
-              forcedId="sim-mike-garza"
+              onSendDigits={twilioHook.sendDigits}
+              onToggleMute={twilioHook.toggleMute}
+              muted={twilioHook.muted}
             />
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+
+        {/* Everything else renders inside Shell layout route */}
+        <Route element={<Shell identity={identity} role={role} onLogout={handleLogout} deviceStatus={twilioHook.status} emailReady={emailReady} />}>
+          <Route
+            path="/"
+            element={
+              <Contacts
+                identity={identity}
+                callState={callState}
+                twilioStatus={twilioHook.status}
+              />
+            }
+          />
+          <Route
+            path="/dialer"
+            element={
+              <Dialer
+                identity={identity}
+                twilioHook={twilioHook}
+                callState={callState}
+              />
+            }
+          />
+          <Route
+            path="/complete"
+            element={
+              <CallComplete
+                callState={callState}
+                identity={identity}
+                emailReady={emailReady}
+              />
+            }
+          />
+          {role === 'admin' && (
+            <Route
+              path="/active"
+              element={
+                <ActiveCalls
+                  identity={identity}
+                  callState={callState}
+                  twilioHook={twilioHook}
+                />
+              }
+            />
+          )}
+          {role === 'admin' && (
+            <Route path="/debug" element={<Debug />} />
+          )}
+          <Route path="/activity" element={<Activity identity={identity} role={role} emailReady={emailReady} />} />
+          <Route path="/history" element={<Navigate to="/activity" replace />} />
+          <Route path="/summaries" element={<Navigate to="/activity" replace />} />
+          <Route path="/ask" element={<AskNucleus />} />
+          <Route path="/scoreboard" element={<Scoreboard />} />
+          <Route
+            path="/practice"
+            element={
+              <Cockpit
+                identity={identity}
+                role={role}
+                callState={callState}
+                twilioStatus={twilioHook.status}
+                forcedId="sim-mike-garza"
+              />
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
 
