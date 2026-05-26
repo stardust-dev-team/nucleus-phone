@@ -73,6 +73,12 @@ function makePractice(overrides = {}) {
     intent_tier: 'hot',
     cadence_profile: 'high_intent',
     attempt_sequence_label: 'Call 2 of 3, Day 7',
+    // call_number + total_calls required for the cadence-drift gate in
+    // PracticeCard. Without them (or with call_number > total_calls), the
+    // label pill is hidden as a defensive measure — see Queue.jsx ~115.
+    attempt_call_number: 2,
+    attempt_total_calls: 3,
+    attempt_day_offset: 7,
     // -60_000 buffer protects against same-ms boundary flake: both this
     // fixture and formatRelativeDay floor on 86400000-ms intervals; if the
     // test's Date.now happens microseconds before the boundary and the
@@ -230,7 +236,7 @@ describe('Queue / TriStarQueueView', () => {
       practices: [],
     });
     render(<Queue />);
-    expect(await screen.findByText(/No practices due/)).toBeInTheDocument();
+    expect(await screen.findByText(/No leads ready to call/)).toBeInTheDocument();
   });
 
   it('catches ApiDegradedError and falls through to empty state (global DegradedBanner handles the alert)', async () => {
@@ -239,7 +245,7 @@ describe('Queue / TriStarQueueView', () => {
     // The page should NOT render its own alert — DegradedBanner at App level
     // owns the user-facing surface. The page just shows the empty state so
     // Britt doesn't see two red boxes for one missing-config event.
-    expect(await screen.findByText(/No practices due/)).toBeInTheDocument();
+    expect(await screen.findByText(/No leads ready to call/)).toBeInTheDocument();
     expect(screen.queryByText(/TriStar mode config is missing/)).not.toBeInTheDocument();
   });
 
