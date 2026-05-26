@@ -110,11 +110,24 @@ function PracticeCard({ row, onCall }) {
         <span className="font-semibold text-sm text-aunshin-peach-light">
           {row.practice_name || '(unnamed practice)'}
         </span>
-        {row.attempt_sequence_label && (
-          <span className="text-[11px] font-mono text-aunshin-sodium bg-aunshin-sodium/10 px-2 py-0.5 rounded">
-            {row.attempt_sequence_label}
-          </span>
-        )}
+        {/* attempt_sequence_label is server-interpolated at nucleus-tristar
+          * queue.js:75 from CADENCES constants (callNumber, totalCalls,
+          * day_offset — all integers from a hardcoded enum). Safe to
+          * render as text. If queue.js ever interpolates a DB-sourced
+          * string into this label, this safety claim needs re-evaluation.
+          *
+          * Sanity gate: hide the pill if call_number > total_calls — that
+          * combination is a server cadence-drift bug (cadences.js step
+          * order mismatched the LATERAL pick). Britt seeing "Call 7 of 3"
+          * is worse than seeing no label. */}
+        {row.attempt_sequence_label
+          && row.attempt_call_number != null
+          && row.attempt_total_calls != null
+          && row.attempt_call_number <= row.attempt_total_calls && (
+            <span className="text-[11px] font-mono text-aunshin-sodium bg-aunshin-sodium/10 px-2 py-0.5 rounded">
+              {row.attempt_sequence_label}
+            </span>
+          )}
         {row.cadence_profile && (
           <span className="text-[10px] uppercase tracking-wide text-aunshin-quiet-d">
             {row.cadence_profile}
@@ -186,11 +199,11 @@ function DryRunBanner({ state }) {
   let label;
   let detail;
   if (state === 'global_dry_run') {
-    label = 'OUTREACH GLOBALLY GATED';
-    detail = 'Sequencer is in dry-run — no email or LinkedIn DMs are being sent. Touchpoint timestamps reflect prior live runs only.';
+    label = 'AUTOMATED SENDS PAUSED';
+    detail = 'All automated email and LinkedIn sends are paused. You can still call. Touchpoints below reflect prior live runs only.';
   } else if (state === 'channel_dry_run') {
-    label = 'OUTREACH CHANNEL GATED';
-    detail = 'One or more outreach channels (Instantly or PhantomBuster) are in dry-run. Some touchpoints below may not reflect real sends.';
+    label = 'SOME AUTOMATED CHANNELS PAUSED';
+    detail = 'Some automated email or LinkedIn channels are paused. Touchpoint history may be incomplete. Calls work normally.';
   } else {
     label = `OUTREACH GATED (unknown state: ${state})`;
     detail = 'Server reported a sequencer state this client does not recognize. Surface to ops — nucleus-tristar SEQUENCER_DRY_RUN_STATES may have drifted from the client copy.';
@@ -361,7 +374,7 @@ export default function TriStarQueueView() {
 
       {!loading && !error && data.practices.length === 0 && (
         <div className="text-aunshin-quiet-d text-sm py-12 text-center">
-          No practices due. The sequencer has nothing in the phone pipeline right now.
+          No leads ready to call right now. Tap Refresh to check again.
         </div>
       )}
 

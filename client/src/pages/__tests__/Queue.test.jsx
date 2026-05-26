@@ -171,25 +171,28 @@ describe('Queue / TriStarQueueView', () => {
       mockGetQueue.mockResolvedValue(liveResponse());
       render(<Queue />);
       await screen.findByText('Sunnyvale Veterinary');
-      expect(screen.queryByText(/OUTREACH/)).not.toBeInTheDocument();
+      // Banner copy uses the words "PAUSED" (Blake-friendly). Match the
+      // label fragment so a future copy revision that keeps the meaning
+      // doesn't break the test for cosmetic reasons.
+      expect(screen.queryByText(/PAUSED/)).not.toBeInTheDocument();
     });
 
-    it('shows global_dry_run banner', async () => {
+    it('shows global_dry_run banner with rep-friendly copy', async () => {
       mockGetQueue.mockResolvedValue({
         ...liveResponse(),
         sequencer_dry_run_state: 'global_dry_run',
       });
       render(<Queue />);
-      expect(await screen.findByText(/OUTREACH GLOBALLY GATED/)).toBeInTheDocument();
+      expect(await screen.findByText(/AUTOMATED SENDS PAUSED/)).toBeInTheDocument();
     });
 
-    it('shows channel_dry_run banner', async () => {
+    it('shows channel_dry_run banner with rep-friendly copy', async () => {
       mockGetQueue.mockResolvedValue({
         ...liveResponse(),
         sequencer_dry_run_state: 'channel_dry_run',
       });
       render(<Queue />);
-      expect(await screen.findByText(/OUTREACH CHANNEL GATED/)).toBeInTheDocument();
+      expect(await screen.findByText(/SOME AUTOMATED CHANNELS PAUSED/)).toBeInTheDocument();
     });
   });
 
