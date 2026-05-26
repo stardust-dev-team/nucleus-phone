@@ -90,7 +90,7 @@ function AppContent() {
           // the Joruva path. configureApi uses object spread (api.js:49)
           // so omitting these would leave any prior TriStar-session key
           // resident in module memory. Critical on a shared iPad where
-          // Britt logs out and Tom logs in (Linus pass-3 P1-1).
+          // Britt logs out and Tom logs in.
           configureApi({
             mode: MODES.JORUVA,
             tristarBaseUrl: null,
@@ -125,17 +125,18 @@ function AppContent() {
     // logs in fast and the second /me response races the first. Without
     // this, a JORUVA-mode next-user could have a prior session's
     // TRISTAR_API_KEY in module memory until their /me result lands.
-    // (Linus pass-3 P1-1 fix.)
     configureApi({
       mode: MODES.JORUVA,
       tristarBaseUrl: null,
       tristarApiKey: null,
     });
     setMode(MODES.JORUVA);
+    // .finally — if the /logout POST rejects (flaky network), creds are
+    // already wiped client-side; we still need to drop the UI to Login
+    // or the user is stranded in a half-logged-out state.
     fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-      .then(() => {
-        setUser(null);
-      });
+      .catch(() => {})
+      .finally(() => setUser(null));
   }
 
   if (loading) {
@@ -181,7 +182,7 @@ function AppContent() {
             * user on their correct landing surface. Without this, a
             * TriStar user tapping wrong-row → Cockpit → back gets dumped
             * on a Joruva-mode Contacts page with no obvious recovery.
-            * (Linus pass-5 P1 fix.) */}
+            * */}
           <Route
             path="/"
             element={
@@ -202,9 +203,7 @@ function AppContent() {
             * is JORUVA the Route is not registered, so direct URL access
             * to /queue falls through to the catch-all <Route path="*"/>
             * below and redirects to /. The menu-tab swap in Shell.jsx
-            * is a UX nicety, not the enforcement. (Linus pass-1 P2 fix:
-            * earlier comment claimed a /api/queue 404; that's wrong —
-            * the redirect-to-/ kicks in first.) */}
+            * is a UX nicety, not the enforcement. */}
           {mode === MODES.TRISTAR && (
             <Route path="/queue" element={<Queue />} />
           )}

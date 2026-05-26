@@ -116,13 +116,26 @@ function PracticeCard({ row, onCall }) {
           * render as text. If queue.js ever interpolates a DB-sourced
           * string into this label, this safety claim needs re-evaluation.
           *
-          * Sanity gate: hide the pill if call_number > total_calls — that
-          * combination is a server cadence-drift bug (cadences.js step
-          * order mismatched the LATERAL pick). Britt seeing "Call 7 of 3"
-          * is worse than seeing no label. */}
+          * Sanity gate: hide the pill on any cadence-drift signal. Four
+          * cases the gate must catch:
+          *   1. call_number > total_calls   — "Call 7 of 3" (cadence step
+          *      ordering mismatched the LATERAL pick in cadences.js)
+          *   2. call_number < 1             — "Call 0 of N" (placeholder /
+          *      uninitialized row)
+          *   3. total_calls < 1             — "Call N of 0" (cadence with
+          *      zero phone steps somehow surfaced)
+          *   4. non-finite values (NaN/Infinity/strings) — server bug or
+          *      JSON-cast surprise. Number.isFinite catches all of these
+          *      BEFORE the numeric comparisons, which would otherwise
+          *      return false for NaN but true for Infinity. Belt-and-
+          *      suspenders against any future server-side serialization
+          *      change. (Linus session-pass P2-6 fix.)
+          * Britt seeing any of these is worse than seeing no label. */}
         {row.attempt_sequence_label
-          && row.attempt_call_number != null
-          && row.attempt_total_calls != null
+          && Number.isFinite(row.attempt_call_number)
+          && Number.isFinite(row.attempt_total_calls)
+          && row.attempt_call_number >= 1
+          && row.attempt_total_calls >= 1
           && row.attempt_call_number <= row.attempt_total_calls && (
             <span className="text-[11px] font-mono text-aunshin-sodium bg-aunshin-sodium/10 px-2 py-0.5 rounded">
               {row.attempt_sequence_label}
@@ -195,7 +208,7 @@ function DryRunBanner({ state }) {
   // there must NOT auto-mislabel here as "channel gated." Fail loud with
   // a generic warning + raw state name so ops notices the drift instead
   // of Britt seeing the wrong banner copy and acting on it.
-  // (Linus pass-1 P1 fix.)
+  //
   let label;
   let detail;
   if (state === 'global_dry_run') {
@@ -234,7 +247,7 @@ const TIER_FILTERS = [
 export default function TriStarQueueView() {
   const navigate = useNavigate();
   // count was tracked alongside practices for the header pill but the pill
-  // now reads practices.length directly (Linus pass-2 N-2). Dropped here
+  // now reads practices.length directly. Dropped here
   // (pass-3 N-4) so state isn't carrying a value nothing reads.
   const [data, setData] = useState({ practices: [], sequencer_dry_run_state: null });
   const [loading, setLoading] = useState(true);
@@ -244,9 +257,8 @@ export default function TriStarQueueView() {
 
   // Single owner for fetch lifecycle: this effect. The Refresh button
   // bumps refreshTick to re-run the effect with a fresh AbortController
-  // instead of calling fetchQueue directly. Closes the Linus pass-1 P1
-  // race where a manual refresh path bypassed abort plumbing — N rapid
-  // clicks would otherwise produce N concurrent fetches with last-write-wins.
+  // instead of issuing a direct fetch. Closes the race where N rapid
+  // refresh clicks would produce N concurrent fetches with last-write-wins.
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
@@ -258,7 +270,7 @@ export default function TriStarQueueView() {
         // AbortController.abort() does NOT reject already-settled promises.
         // If the fetch resolved microseconds before the abort, .then still
         // runs with stale closures. Gate every write on signal.aborted to
-        // close the stale-write race (Linus pass-1 P1).
+        // close the stale-write race.
         if (signal.aborted) return;
         setData({
           practices: res.practices || [],
@@ -271,7 +283,7 @@ export default function TriStarQueueView() {
           // Global DegradedBanner (App.jsx) already surfaces this. Clear
           // local data so the empty state shows instead of double-rendering
           // the alert. The banner is the canonical surface for missing
-          // TriStar config (Linus pass-1 P2 dual-alert fix).
+          // TriStar config.
           setData({ practices: [], sequencer_dry_run_state: null });
           return;
         }
@@ -280,7 +292,7 @@ export default function TriStarQueueView() {
         // old key at /me time). The raw apiFetch error reads "API 401:
         // <body>" — useless to Britt. Translate to a re-login CTA. A
         // proper typed ApiAuthError from apiFetch would let every consumer
-        // benefit; tracked as nucleus-phone-sj5m (Linus pass-2 P1-1).
+        // benefit; tracked as nucleus-phone-sj5m.
         if (/^API 40[13]:/.test(err.message || '')) {
           setError('Your TriStar session has expired. Please log out and back in.');
           return;
@@ -288,7 +300,7 @@ export default function TriStarQueueView() {
         // 5xx from nucleus-tristar typically means a deploy / restart in
         // progress. Britt can't act on a stack-trace message; surface a
         // calm wait-and-retry instead. No auto-poll — silent retry could
-        // mask a real outage. (Linus pass-3 P1-3 fix.)
+        // mask a real outage.
         if (/^API 5\d\d:/.test(err.message || '')) {
           setError('TriStar server is restarting. Tap Refresh in a moment.');
           return;
@@ -313,7 +325,7 @@ export default function TriStarQueueView() {
         <h1 className="text-lg font-semibold text-aunshin-peach-light">
           TriStar Queue
           {/* Use practices.length over data.count so the pill never lies
-            * about the row count being rendered (Linus pass-2 N-2 fix). */}
+            * about the row count being rendered. */}
           {!loading && data.practices.length > 0 && (
             <span className="ml-2 text-sm text-aunshin-quiet-d font-normal">
               {data.practices.length} due
@@ -322,7 +334,7 @@ export default function TriStarQueueView() {
         </h1>
         {/* min-h-[44px] min-w-[44px] enforces Apple HIG tap target on iPad
           * landscape (Britt's primary device). px-3 py-2 keeps visual
-          * weight modest. (Linus pass-3 P1-2 fix.) */}
+          * weight modest. */}
         <button
           type="button"
           onClick={() => setRefreshTick((n) => n + 1)}
@@ -337,7 +349,7 @@ export default function TriStarQueueView() {
       <DryRunBanner state={data.sequencer_dry_run_state} />
 
       {/* Tier filter — aria-pressed gives screen readers the toggle state.
-        * min-h-[44px] enforces iPad tap target (Linus pass-3 P1-2 + P2-2). */}
+        * min-h-[44px] enforces iPad tap target. */}
       <div className="flex gap-2 mb-4" role="group" aria-label="Filter by intent tier">
         {TIER_FILTERS.map((opt) => (
           <button

@@ -207,7 +207,7 @@ function buildTristarConfig(user) {
   // trusting THAT PERSON with extractable creds. v1 allowlist: Britt,
   // Blake, Tom. See client/src/lib/mode-router.js:27-41 for the trust
   // model docstring and bead nucleus-phone-e91e (HARD LOCK section) for
-  // the requirement origin. (Linus pass-5 P2 fix.)
+  // the requirement origin.
   const allowedRaw = process.env.TRISTAR_ALLOWED_IDENTITIES || '';
   const allowed = allowedRaw.split(',').map((s) => s.trim()).filter(Boolean);
   if (!user || typeof user.identity !== 'string') return null;
