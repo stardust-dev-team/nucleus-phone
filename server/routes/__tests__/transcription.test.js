@@ -1,6 +1,32 @@
 // joruva-dialer-mac-xft: pure-function test for the Twilio Track →
-// typed speaker mapping. The route as a whole has no unit-test coverage
-// yet; this is the narrow slice that pins the contract iOS depends on.
+// typed speaker mapping. The narrow slice that pins the contract iOS
+// depends on. joruva-dialer-mac-8vr extends this with a route-level
+// integration test at the bottom of the file.
+jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
+jest.mock('../../lib/live-analysis', () => ({
+  broadcast: jest.fn(),
+  attachWebSocket: jest.fn(),
+  cleanupCall: jest.fn(),
+  getCallEquipment: jest.fn(),
+  resetCallEquipment: jest.fn(),
+  getCallAirQuality: jest.fn(),
+  setCallAirQuality: jest.fn(),
+  getConnectionStats: jest.fn(),
+}));
+jest.mock('../../lib/equipment-pipeline', () => ({
+  processEquipmentChunk: jest.fn().mockResolvedValue(),
+}));
+jest.mock('../../lib/conversation-pipeline', () => ({
+  processConversationChunk: jest.fn().mockResolvedValue(),
+}));
+jest.mock('../../lib/phone-extractor', () => ({
+  capturePhones: jest.fn().mockResolvedValue(),
+}));
+jest.mock('../../lib/call-summarizer', () => ({
+  summarizeCall: jest.fn(),
+  MIN_TRANSCRIPT_LENGTH: 100,
+}));
+
 const { mapSpeaker } = require('../transcription');
 
 describe('mapSpeaker (joruva-dialer-mac-xft)', () => {
@@ -33,34 +59,81 @@ describe('mapSpeaker (joruva-dialer-mac-xft)', () => {
   });
 });
 
-// joruva-dialer-mac-8vr: Pin the conference-architecture symmetry that
-// Phase 2 established. For both outbound AND inbound conferences, the
-// caller leg arrives on `inbound_track` and the iOS rep leg on
-// `outbound_track`. So speaker mapping is direction-agnostic; no
-// inversion needed when broadcasting inbound transcripts.
+// joruva-dialer-mac-8vr: Route-level pin of the inbound broadcast
+// contract. Phase 2 (axg) gave inbound calls a real Twilio conference;
+// Phase 3 flipped iOS `liveAnalysisEnabled=true` for inbound. The thing
+// iOS now depends on, end-to-end, is that POST /twilio/transcription:
+//   1. Resolves CallSid → conference_name via caller_call_sid.
+//   2. Calls broadcast(conference_name, ...) — NOT call.id or some
+//      direction-keyed identifier — so iOS's WebSocket subscription
+//      (keyed on the same conference_name) receives the chunk.
+//   3. Applies mapSpeaker(Track) so the speaker field decodes to iOS's
+//      TranscriptSpeaker enum.
 //
-// If a future change introduces inbound-specific track routing (e.g.,
-// swapped leg ordering), this block fails loudly and the flip needs to
-// be done at the call-site, not silently in mapSpeaker().
-describe('inbound conference symmetry (joruva-dialer-mac-8vr)', () => {
-  test('inbound call: caller leg (inbound_track) still maps to customer', () => {
-    // In the Phase 2 architecture, the inbound PSTN caller dials into
-    // the conference — Twilio labels their track `inbound_track`.
-    expect(mapSpeaker('inbound_track')).toBe('customer');
+// If a future change keys broadcasts on call.id, or introduces a
+// direction-aware path that bypasses mapSpeaker, this block fails
+// loudly. Pure mapSpeaker tests above can't catch either regression
+// because they don't exercise the route.
+const request = require('supertest');
+const express = require('express');
+const { pool } = require('../../db');
+const { broadcast } = require('../../lib/live-analysis');
+
+describe('POST /twilio/transcription — inbound broadcast contract (joruva-dialer-mac-8vr)', () => {
+  let app;
+
+  beforeAll(() => {
+    app = express();
+    app.use(express.urlencoded({ extended: false }));
+    app.use(express.json());
+    app.use('/twilio/transcription', require('../transcription'));
   });
 
-  test('inbound call: rep leg (outbound_track) still maps to agent', () => {
-    // The iOS rep is dialed INTO the same conference via
-    // `client.calls.create({to: 'client:identity'})` — that leg is
-    // outbound from Twilio's POV regardless of who originated the call.
-    expect(mapSpeaker('outbound_track')).toBe('agent');
+  beforeEach(() => {
+    broadcast.mockClear();
+    pool.query.mockReset();
   });
 
-  test('mapping is a pure function of Track — no direction parameter', () => {
-    // Documents the architectural decision: speaker semantics live in
-    // the conference-leg topology, not the call's outbound/inbound flag.
-    // If you ever feel the urge to pass direction here, re-read plan
-    // tender-stargazing-valley.md §Phase 3 (A) first.
-    expect(mapSpeaker.length).toBe(1);
+  test('inbound caller chunk: broadcasts on conference_name with speaker=customer', async () => {
+    // Inbound call row written by Phase 2 — caller_call_sid resolves
+    // to the conference Twilio created for the inbound iOS routing.
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 42, conference_name: 'nucleus-inbound-ios-abc', lead_phone: '+15555550101' }],
+      })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    await request(app)
+      .post('/twilio/transcription')
+      .send({ CallSid: 'CA-inbound-caller', TranscriptionText: 'hello', Track: 'inbound_track' })
+      .expect(204);
+
+    // Route responds 204 before its post-work runs; flush microtasks.
+    await new Promise((r) => setImmediate(r));
+
+    expect(broadcast).toHaveBeenCalledWith('nucleus-inbound-ios-abc', {
+      type: 'transcript_chunk',
+      data: { text: 'hello', speaker: 'customer' },
+    });
+  });
+
+  test('inbound rep chunk: same conference_name, speaker=agent', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 42, conference_name: 'nucleus-inbound-ios-abc', lead_phone: '+15555550101' }],
+      })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    await request(app)
+      .post('/twilio/transcription')
+      .send({ CallSid: 'CA-inbound-rep', TranscriptionText: 'thanks for calling', Track: 'outbound_track' })
+      .expect(204);
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(broadcast).toHaveBeenCalledWith('nucleus-inbound-ios-abc', {
+      type: 'transcript_chunk',
+      data: { text: 'thanks for calling', speaker: 'agent' },
+    });
   });
 });

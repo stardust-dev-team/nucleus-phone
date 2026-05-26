@@ -37,6 +37,13 @@ const twilioWebhook = makeTwilioWebhook();
 // / `unknown`. Outbound = the rep's mic feed (us), inbound = the lead's.
 // joruva-dialer-mac-xft: pre-fix, raw Twilio values were forwarded and
 // iOS DecodingError tore the live-analysis WebSocket down on first chunk.
+// joruva-dialer-mac-8vr: Phase 2's conference architecture is symmetric —
+// caller=inbound_track, rep=outbound_track in BOTH outbound and inbound
+// conferences (Twilio labels tracks from the starting-leg POV, and
+// <Start><Transcription> fires from the caller's TwiML in both cases). So
+// this function takes Track alone — no direction parameter, ever. If you
+// feel the urge to add one, re-read plan tender-stargazing-valley.md
+// §Phase 3 (A) first, and file a real-webhook fixture (joruva-dialer-mac-9exm).
 function mapSpeaker(track) {
   if (track === 'outbound_track') return 'agent';
   if (track === 'inbound_track') return 'customer';
