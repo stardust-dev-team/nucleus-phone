@@ -306,4 +306,50 @@ describe('Queue / TriStarQueueView', () => {
       });
     });
   });
+
+  // The mode-routed /queue request crosses the network; cancelling in-flight
+  // requests on tier-change or refresh is what prevents last-write-wins
+  // races. Pin the contract: getQueue MUST receive an AbortSignal. A future
+  // refactor that drops the signal wiring would pass other tests green but
+  // silently regress race safety. (Linus pass-1 P2.)
+  it('passes an AbortSignal to getQueue on every fetch', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse());
+    render(<Queue />);
+
+    await screen.findByText('Sunnyvale Veterinary');
+    expect(mockGetQueue).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  it('aborts the previous request when tier changes', async () => {
+    mockGetQueue.mockResolvedValue(liveResponse());
+    render(<Queue />);
+
+    await screen.findByText('Sunnyvale Veterinary');
+    const firstSignal = mockGetQueue.mock.calls[0][0].signal;
+    expect(firstSignal.aborted).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hot' }));
+
+    await waitFor(() => expect(mockGetQueue).toHaveBeenCalledTimes(2));
+    // Effect cleanup MUST abort the first request so a slow first response
+    // can't clobber the second. This is the race the refreshTick pattern
+    // and the AbortController-per-effect were introduced to close.
+    expect(firstSignal.aborted).toBe(true);
+  });
+
+  describe('DryRunBanner unknown state (Linus pass-1 P1)', () => {
+    it('renders a generic gated banner with the raw state name on unknown state', async () => {
+      mockGetQueue.mockResolvedValue({
+        ...liveResponse(),
+        sequencer_dry_run_state: 'maintenance_window',
+      });
+      render(<Queue />);
+      // Must NOT mislabel as either of the known states.
+      expect(await screen.findByText(/unknown state: maintenance_window/i)).toBeInTheDocument();
+      expect(screen.queryByText(/OUTREACH CHANNEL GATED$/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/OUTREACH GLOBALLY GATED$/)).not.toBeInTheDocument();
+    });
+  });
 });
