@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getQueue, ApiDegradedError } from '../lib/api';
+import { getQueue, ApiDegradedError, ApiAuthError } from '../lib/api';
 import { formatRelativeDay } from '../lib/format';
 
 /**
@@ -287,13 +287,12 @@ export default function TriStarQueueView() {
           setData({ practices: [], sequencer_dry_run_state: null });
           return;
         }
-        // 401/403 from nucleus-tristar means the shared TRISTAR_API_KEY
-        // has rotated since the cockpit booted (configureApi captured the
-        // old key at /me time). The raw apiFetch error reads "API 401:
-        // <body>" — useless to Britt. Translate to a re-login CTA. A
-        // proper typed ApiAuthError from apiFetch would let every consumer
-        // benefit; tracked as nucleus-phone-sj5m.
-        if (/^API 40[13]:/.test(err.message || '')) {
+        // 401/403 surfaces as ApiAuthError (sj5m/7w3t). The TriStar-target
+        // variant ALSO fires api:auth-failed → DegradedBanner shows the
+        // ops-actionable "key rotation may be needed" copy. The local
+        // string here is the user-actionable CTA for the case where the
+        // banner is dismissed / not visible yet.
+        if (err instanceof ApiAuthError) {
           setError('Your TriStar session has expired. Please log out and back in.');
           return;
         }
