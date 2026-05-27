@@ -43,22 +43,19 @@ jest.mock('../../lib/conference', () => ({
 }));
 jest.mock('../../lib/twilio', () => {
   const real = jest.requireActual('twilio');
-  // Phase 2 error path: terminate-by-SID requires a two-step API call:
-  //   (a) client.conferences.list({friendlyName, status: 'in-progress'})
-  //       returns [{sid: 'CFxxx', ...}]
-  //   (b) client.conferences(sid).update({status: 'completed'})
-  // Both behaviors are exposed on the same mock so tests can either
-  // (1) ignore the SID path entirely (default — list returns empty,
-  //     terminate is a no-op log), or
-  // (2) override `conferences.list` to return a SID + assert
-  //     the update spy was called with that SID.
-  const conferencesMock = jest.fn();
-  conferencesMock.list = jest.fn().mockResolvedValue([]);
+  // `client.calls` is a callable AND a namespace:
+  //   - `client.calls.create({...})`     — REST-initiate the iOS leg (Phase 2)
+  //   - `client.calls(sid).update({...})` — redirect a caller leg to voicemail
+  //                                         TwiML (Phase 2 calls.create failure path)
+  // Default to a no-op update spy; tests assign per-test spies when they
+  // need to assert on update args.
+  const callsMock = jest.fn(() => ({ update: jest.fn().mockResolvedValue({}) }));
+  callsMock.create = jest.fn().mockResolvedValue({ sid: 'CAfake' });
   return {
     VoiceResponse: real.twiml.VoiceResponse,
     client: {
-      conferences: conferencesMock,
-      calls: { create: jest.fn().mockResolvedValue({ sid: 'CAfake' }) },
+      conferences: jest.fn(),
+      calls: callsMock,
     },
   };
 });
@@ -272,17 +269,16 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     expect(createArgs.statusCallbackMethod).toBe('POST');
   });
 
-  test('terminates the conference BY SID + Slack alert when calls.create throws', async () => {
+  test('redirects caller to voicemail TwiML + Slack alert when calls.create throws (Linus P2-1)', async () => {
     twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down'));
-    // Phase 2 fix (Linus P1-1): server looks up the conference SID by
-    // friendly name FIRST, then calls update by SID. Twilio's API
-    // requires a SID — passing the friendly name 404s. Pin the
-    // list-by-name → update-by-SID sequence so a regression that
-    // shortcuts back to `client.conferences(name).update(...)` fails.
-    const fakeSid = 'CFinbound-resolved-sid';
-    twilioClient.conferences.list.mockResolvedValueOnce([{ sid: fakeSid }]);
+    // Linus P2-1: previously this path terminated the conference via REST,
+    // which left `DialCallStatus=completed` → `dial-complete` returned
+    // `<Hangup/>` → caller heard a drop, not voicemail. The redirect
+    // pattern (mirrors rep-status's no-answer branch at line ~556) replaces
+    // the caller's TwiML mid-call so they hear `appendVoicemailTwiml` and
+    // can leave a message.
     const updateSpy = jest.fn().mockResolvedValue({});
-    twilioClient.conferences.mockReturnValueOnce({ update: updateSpy });
+    twilioClient.calls.mockReturnValueOnce({ update: updateSpy });
 
     const res = await request(app)
       .post('/api/voice/incoming')
@@ -290,31 +286,29 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-2' })
       .expect(200);
 
-    // Caller's TwiML was sent BEFORE the throw — caller is in the
-    // conference. We MUST terminate via REST so they don't sit in hold
-    // music indefinitely.
+    // Caller's TwiML was sent BEFORE the throw — caller is in the conference.
     expect(res.text).toContain('<Conference');
-    // Step 1: list by friendly name with in-progress filter.
-    expect(twilioClient.conferences.list).toHaveBeenCalledWith({
-      friendlyName: expect.stringMatching(/^nucleus-inbound-ios-[0-9a-f-]{36}$/),
-      status: 'in-progress',
-      limit: 1,
-    });
-    // Step 2: update by the SID returned from list.
-    expect(twilioClient.conferences).toHaveBeenCalledWith(fakeSid);
-    expect(updateSpy).toHaveBeenCalledWith({ status: 'completed' });
-    // Slack alert fires with diagnostic context.
+    // The redirect must target the caller's own CallSid (NOT the iOS leg's),
+    // pointing at the voicemail TwiML endpoint with `from` + `conf` params
+    // so `appendVoicemailTwiml` produces a recordingStatusCallback that
+    // updates the right nucleus_phone_calls row.
+    expect(twilioClient.calls).toHaveBeenCalledWith('CA-ios-conf-2');
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const updateArgs = updateSpy.mock.calls[0][0];
+    expect(updateArgs.method).toBe('POST');
+    expect(updateArgs.url).toMatch(/\/api\/voice\/incoming\/voicemail\?from=.+&conf=nucleus-inbound-ios-/);
+    // Slack alert fires with diagnostic context for ops.
     const alertCalls = slack.sendSlackAlert.mock.calls.map(c => c[0].text);
     expect(alertCalls.some(t => /conference join failed/.test(t))).toBe(true);
   });
 
-  test('calls.create throws + conference not found in list → logs warning, no update call', async () => {
-    // Edge case: calls.create may have failed BEFORE Twilio created the
-    // conference resource (e.g., synchronous validation error). In
-    // that case list returns []. We log a warning and DON'T call
-    // update — calling update(undefined) would throw.
-    twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down pre-conference'));
-    twilioClient.conferences.list.mockResolvedValueOnce([]);  // no conference
+  test('calls.create throws + voicemail redirect itself fails → logs error, does not crash', async () => {
+    // Edge case: even the salvage redirect can fail (Twilio fully down).
+    // The handler must swallow the secondary error so the request
+    // doesn't 500 — caller is already on the line and we can't recover.
+    twilioClient.calls.create.mockRejectedValueOnce(new Error('twilio down'));
+    const updateSpy = jest.fn().mockRejectedValue(new Error('still down'));
+    twilioClient.calls.mockReturnValueOnce({ update: updateSpy });
 
     await request(app)
       .post('/api/voice/incoming')
@@ -322,10 +316,8 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-3' })
       .expect(200);
 
-    expect(twilioClient.conferences.list).toHaveBeenCalled();
-    // No `client.conferences(sid)` call when sid is undefined.
-    expect(twilioClient.conferences).not.toHaveBeenCalled();
-    // Slack alert still fires.
+    expect(updateSpy).toHaveBeenCalled();
+    // Slack alert still fires for the primary failure.
     const alertCalls = slack.sendSlackAlert.mock.calls.map(c => c[0].text);
     expect(alertCalls.some(t => /conference join failed/.test(t))).toBe(true);
   });
