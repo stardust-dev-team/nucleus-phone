@@ -319,4 +319,119 @@ describe('client/src/lib/api.js — mode-router wiring', () => {
       expect(degradedEvents).toHaveLength(0);
     });
   });
+
+  // ── 401/403 — typed ApiAuthError + auth-failed event ─────────────────
+  // Added per Linus-review-#2 of bead nucleus-phone-ln18. Closes the
+  // duplicate-bead pair sj5m + 7w3t (typed auth error).
+
+  describe('401/403 returns ApiAuthError + api:auth-failed (sj5m/7w3t/ln18)', () => {
+    let authFailedEvents;
+    function authFailedListener(e) { authFailedEvents.push(e.detail); }
+
+    beforeEach(() => {
+      authFailedEvents = [];
+      window.addEventListener('api:auth-failed', authFailedListener);
+    });
+
+    afterEach(() => {
+      window.removeEventListener('api:auth-failed', authFailedListener);
+    });
+
+    function mockStatus(status, body = 'denied') {
+      global.fetch = jest.fn(async (url, init) => {
+        fetchCalls.push({ url, init });
+        return {
+          ok: false,
+          status,
+          json: async () => ({ error: body }),
+          text: async () => body,
+        };
+      });
+    }
+
+    test('TriStar-target 401 throws ApiAuthError with target=tristar', async () => {
+      configureApi(TRISTAR_CFG);
+      mockStatus(401, 'invalid_or_missing_api_key');
+
+      const { ApiAuthError } = await import('../api');
+      try {
+        await getQueue();
+        throw new Error('expected to throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiAuthError);
+        expect(err.name).toBe('ApiAuthError');
+        expect(err.status).toBe(401);
+        expect(err.target).toBe('tristar');
+        expect(err.path).toBe('/queue');
+        expect(err.body).toBe('invalid_or_missing_api_key');
+      }
+    });
+
+    test('TriStar-target 403 also throws ApiAuthError (parity with 401)', async () => {
+      configureApi(TRISTAR_CFG);
+      mockStatus(403, 'forbidden');
+
+      const { ApiAuthError } = await import('../api');
+      await expect(getQueue()).rejects.toBeInstanceOf(ApiAuthError);
+    });
+
+    test('TriStar-target 401 dispatches api:auth-failed with path + status', async () => {
+      configureApi(TRISTAR_CFG);
+      mockStatus(401);
+      await expect(getQueue()).rejects.toThrow();
+      expect(authFailedEvents).toHaveLength(1);
+      expect(authFailedEvents[0].path).toBe('/queue');
+      expect(authFailedEvents[0].status).toBe(401);
+      expect(typeof authFailedEvents[0].timestamp).toBe('number');
+    });
+
+    test('LOCAL-target 401 throws ApiAuthError but does NOT dispatch auth-failed', async () => {
+      // Session-cookie expiry on local routes is user-actionable (re-login)
+      // not ops-actionable (key rotation). DegradedBanner is for the ops
+      // signal; local-target 401 stays a per-component concern.
+      configureApi(JORUVA_CFG);
+      mockStatus(401);
+
+      const { ApiAuthError } = await import('../api');
+      try {
+        await getScoreboard();
+        throw new Error('expected to throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiAuthError);
+        expect(err.target).toBe('local');
+      }
+      expect(authFailedEvents).toHaveLength(0);
+    });
+
+    test('Non-401/403 errors still throw plain Error with the legacy message format', async () => {
+      // Don't broaden ApiAuthError to all !ok. 5xx and 4xx-other-than-auth
+      // are different consumer concerns and the legacy "API <status>: <text>"
+      // format is what existing Queue.jsx code still pattern-matches on.
+      configureApi(TRISTAR_CFG);
+      mockStatus(500, 'boom');
+
+      const { ApiAuthError } = await import('../api');
+      try {
+        await getQueue();
+        throw new Error('expected to throw');
+      } catch (err) {
+        expect(err).not.toBeInstanceOf(ApiAuthError);
+        expect(err.message).toBe('API 500: boom');
+      }
+      expect(authFailedEvents).toHaveLength(0);
+    });
+
+    test('ApiAuthError is constructed with all five fields readable', async () => {
+      const { ApiAuthError } = await import('../api');
+      const e = new ApiAuthError('/x', 401, 'tristar', 'body-text');
+      expect(e.path).toBe('/x');
+      expect(e.status).toBe(401);
+      expect(e.target).toBe('tristar');
+      expect(e.body).toBe('body-text');
+      expect(e.name).toBe('ApiAuthError');
+      // class identity is the stable surface
+      expect(e instanceof ApiAuthError).toBe(true);
+      expect(e instanceof Error).toBe(true);
+    });
+  });
 });

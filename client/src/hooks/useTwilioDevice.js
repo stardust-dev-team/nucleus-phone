@@ -62,15 +62,42 @@ export default function useTwilioDevice(identity) {
           if (!destroyed) setStatus('error');
         });
 
-        dev.on('tokenWillExpire', async () => {
+        // tokenWillExpire fires once ~10s before Twilio considers the JWT
+        // expired. The single-attempt refresh that lived here pre-ln18
+        // would set status='error' on the first network blip — a mid-deploy
+        // 502 from nucleus-tristar at hour 23 of a shift would end Britt's
+        // queue, with no operator-visible recourse besides reload. Mirror
+        // the `unregistered` handler's exponential backoff: 4 attempts,
+        // 2s/4s/8s/16s, capped at 30s. On total failure the natural
+        // unregister chain still fires once Twilio actually drops the
+        // token — that handler retries again from zero. Two layers of
+        // recovery, both bounded.
+        let refreshAttempts = 0;
+        const MAX_REFRESH = 4;
+
+        async function attemptRefresh() {
+          if (destroyed) return;
           try {
             const { token: newToken } = await getToken(identity);
             dev.updateToken(newToken);
+            refreshAttempts = 0; // reset on success
           } catch (err) {
-            console.error('Token refresh failed:', err);
-            if (!destroyed) setStatus('error');
+            refreshAttempts++;
+            if (refreshAttempts > MAX_REFRESH) {
+              console.error(`Token refresh: gave up after ${MAX_REFRESH} attempts`, err);
+              // Don't flip to 'error' here — the natural token-expiry →
+              // unregistered chain will fire and run its own 4-attempt
+              // backoff. Setting 'error' now would hide that this is a
+              // refresh issue (the device is still operational for ~10s).
+              return;
+            }
+            const delay = Math.min(2000 * Math.pow(2, refreshAttempts - 1), 30000);
+            console.warn(`Token refresh failed, attempt ${refreshAttempts}/${MAX_REFRESH} in ${delay}ms:`, err.message || err);
+            setTimeout(attemptRefresh, delay);
           }
-        });
+        }
+
+        dev.on('tokenWillExpire', attemptRefresh);
 
         deviceRef.current = dev;
         if (!destroyed) setDevice(dev);

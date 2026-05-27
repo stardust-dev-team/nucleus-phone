@@ -72,6 +72,30 @@ export class ApiDegradedError extends Error {
 }
 
 /**
+ * Thrown by apiFetch when the server returns 401 or 403. Replaces the
+ * regex-on-error-message workaround that lived in Queue.jsx (sj5m/7w3t).
+ *
+ * .target is set to the resolved route target ('tristar' or 'local') so
+ * consumers can distinguish "TriStar API key rotated under us" (auth
+ * with TriStar) from "your session cookie expired" (auth with local).
+ * The first is an ops-actionable signal (DegradedBanner surfaces it); the
+ * second is a user-actionable signal (re-login prompt).
+ *
+ * Class identity is the stable surface — test via instanceof, not via
+ * .name or .message.
+ */
+export class ApiAuthError extends Error {
+  constructor(path, status, target, body) {
+    super(`Auth failed (${status}) on ${target}:${path}`);
+    this.name = 'ApiAuthError';
+    this.path = path;
+    this.status = status;
+    this.target = target;
+    this.body = body;
+  }
+}
+
+/**
  * Dispatch the degraded event on window so DegradedBanner.jsx (or any
  * other listener) can surface ops failure without prop-drilling through
  * every component. Guarded against SSR / non-browser environments where
@@ -96,6 +120,24 @@ function notifyTristarOk(path) {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent('api:tristar-ok', {
     detail: { path, timestamp: Date.now() },
+  }));
+}
+
+/**
+ * Dispatch an "auth failed" event when a TARGETS.TRISTAR fetch returns
+ * 401/403. Pre-ln18, key rotation would surface as `status='error'` on
+ * the Voice SDK device with no operator-visible reason — Britt would
+ * see a red dot, think "cockpit is broken," and not know to ask Tom to
+ * rotate the API key.
+ *
+ * Local-target 401s (session cookie expired) don't fire this — those
+ * are user-actionable (re-login), not ops-actionable. Consumers can
+ * still catch ApiAuthError instanceof and branch on .target.
+ */
+function notifyAuthFailed(path, status) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent('api:auth-failed', {
+    detail: { path, status, timestamp: Date.now() },
   }));
 }
 
@@ -176,6 +218,17 @@ export async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     const text = await res.text();
+    // 401/403 gets typed so consumers can switch on instanceof
+    // instead of regex-sniffing the message string. The TriStar-target
+    // variant also fires the auth-failed window event so DegradedBanner
+    // can surface "TriStar API key rotation needed" — pre-ln18 a key
+    // rotation looked identical to "device broke for no reason." (sj5m/7w3t)
+    if (res.status === 401 || res.status === 403) {
+      if (route.target === TARGETS.TRISTAR) {
+        notifyAuthFailed(path, res.status);
+      }
+      throw new ApiAuthError(path, res.status, route.target, text);
+    }
     throw new Error(`API ${res.status}: ${text}`);
   }
 
