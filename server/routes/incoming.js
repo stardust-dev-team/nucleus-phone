@@ -358,36 +358,24 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
       sendSlackAlert({
         text: `:telephone_receiver: inbound conference join failed for ${iosIdentity}: ${err.message} (${conferenceName})`,
       }).catch(() => {});
-      // Best-effort: terminate the conference so the caller doesn't sit
-      // in hold music indefinitely. The caller's <Dial timeout=35>
-      // action URL serves voicemail TwiML if this REST update races.
+      // Redirect the caller's existing leg to voicemail TwiML. Mirrors
+      // the rep-status no-answer branch (line ~556) — proven pattern in
+      // prod. Conference ends naturally when the caller leaves it via
+      // the redirect; no explicit conference-terminate needed.
       //
-      // **Twilio's API takes the conference SID, NOT the friendly name.**
-      // `client.conferences('nucleus-inbound-ios-...').update(...)` 404s.
-      // Look up the in-progress conference by friendlyName first, then
-      // update by SID. Mirrors the call.js:317 pattern (which works
-      // because outbound passes the SID it got from the
-      // conference-start status callback). For this error path the
-      // status callback may not have fired yet, so list-by-name is the
-      // only path available.
+      // Linus P2-1 (axg follow-up): previously this path terminated the
+      // conference via REST, which resolved the caller's `<Dial>` with
+      // `DialCallStatus=completed` → `dial-complete` returned `<Hangup/>`
+      // → caller heard a dropped call, not voicemail. The inline
+      // `appendVoicemailTwiml` (line 285) never fired because Twilio
+      // honors the action-URL response over next-sibling TwiML.
       try {
-        const list = await client.conferences.list({
-          friendlyName: conferenceName,
-          status: 'in-progress',
-          limit: 1,
+        await client.calls(callerCallSid).update({
+          url: `${baseUrl}/api/voice/incoming/voicemail?from=${encodeURIComponent(callerPhone)}&conf=${encodeURIComponent(conferenceName)}`,
+          method: 'POST',
         });
-        const sid = list?.[0]?.sid;
-        if (sid) {
-          await client.conferences(sid).update({ status: 'completed' });
-        } else {
-          // No in-progress conference found — the calls.create may have
-          // failed BEFORE Twilio created the conference resource, in
-          // which case there's nothing to terminate. Caller's <Dial
-          // timeout=35> still falls through to voicemail.
-          console.warn(`incoming: no in-progress conference found for terminate: ${conferenceName}`);
-        }
-      } catch (termErr) {
-        console.error('incoming: conference terminate failed:', termErr.message);
+      } catch (redirErr) {
+        console.error('incoming: voicemail redirect failed:', redirErr.message);
       }
     }
     return;
@@ -517,7 +505,6 @@ router.post('/dial-complete', makeTwilioWebhook(), (req, res) => {
   const callerPhone = req.query.from || 'unknown';
   const conf = conferenceName ? getConference(conferenceName) : null;
   if (conferenceName && !conf) console.warn(`incoming: dial-complete: conference ${conferenceName} already swept`);
-  const repSlack = conf?.repSlackDm || '';
   const twiml = new VoiceResponse();
 
   if (DialCallStatus === 'completed') {
@@ -570,8 +557,6 @@ router.post('/rep-status', makeTwilioWebhook(), async (req, res) => {
       return;
     }
 
-    const conf = getConference(conferenceName);
-    const repSlack = conf?.repSlackDm || '';
     await client.calls(callerSid).update({
       url: `${baseUrl}/api/voice/incoming/voicemail?from=${encodeURIComponent(callerPhone)}&conf=${encodeURIComponent(conferenceName)}`,
       method: 'POST',
