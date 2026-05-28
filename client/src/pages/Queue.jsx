@@ -32,11 +32,10 @@ import { formatRelativeDay } from '../lib/format';
  * the banner; we just keep the page useful (showing the error inline so
  * the page doesn't go blank).
  *
- * Multi-in_progress-attempts warning is NOT implemented in this bead —
- * /queue currently exposes only the single due attempt per practice
- * (LIMIT 1 LATERAL in queue.js:165-175). Filed as a nucleus-tristar
- * follow-up; the disposition modal that surfaces the warning doesn't
- * exist in nucleus-phone yet either. See bead description for context.
+ * Multi-in_progress dial-block (bead nucleus-phone-02k6):
+ *   Block triggers when row.phone_in_progress_count > 1. Modal-half +
+ *   staleness analysis: bead nucleus-phone-u3al. 48h lockout risk via
+ *   PHONE_RECONCILIATION_HOURS: bead nucleus-phone-5ic1.
  */
 
 const TIER_STYLES = {
@@ -100,6 +99,14 @@ function PracticeCard({ row, onCall }) {
   const dialTarget = row.owner_phone || row.practice_phone;
   const tierStyle = TIER_STYLES[row.intent_tier] || { border: 'border-gray-500' };
 
+  // Defense against future serialization drift. 0 is the safe-fail
+  // direction (don't block dialing when we can't read the count).
+  const inProgressCount = Number.isFinite(row.phone_in_progress_count)
+    ? row.phone_in_progress_count
+    : 0;
+  const multiInProgress = inProgressCount > 1;
+  const dialBlocked = !dialTarget || multiInProgress;
+
   return (
     <div
       className={`rounded-xl bg-aunshin-twilight-2 border-l-4 ${tierStyle.border} border border-aunshin-rule-d p-4 flex flex-col gap-3`}
@@ -148,6 +155,23 @@ function PracticeCard({ row, onCall }) {
         )}
       </div>
 
+      {/* Multi-in-progress dial block (bead nucleus-phone-02k6). Surfaces
+        * above the dial button when 2+ other phone attempts are already
+        * in_progress on this practice. Rendered as a distinct row so it
+        * sits between identity and dial target — the rep can't miss it
+        * on the way to the button. role="alert" implies aria-live="assertive"
+        * per ARIA spec — don't override with "polite," which conflicts on
+        * NVDA/JAWS. The glyph is aria-hidden so AT reads only the words. */}
+      {multiInProgress && (
+        <div
+          role="alert"
+          className="bg-aunshin-alert/15 border border-aunshin-alert/40 rounded-lg px-3 py-2 text-[12px] text-aunshin-alert font-medium"
+        >
+          <span aria-hidden="true">⚠ </span>
+          {inProgressCount} dialers active — coordinate before calling
+        </div>
+      )}
+
       {/* Owner identity + dial target — owner_phone is the most critical
         * field; it's the only piece Britt actually uses to dial. Make it
         * unmistakable: large, mono, sodium. */}
@@ -166,16 +190,20 @@ function PracticeCard({ row, onCall }) {
         </div>
         <button
           type="button"
-          onClick={() => dialTarget && onCall(dialTarget)}
-          disabled={!dialTarget}
+          onClick={() => onCall(dialTarget)}
+          disabled={dialBlocked}
           className={
-            dialTarget
-              ? 'bg-aunshin-sodium text-aunshin-twilight-2 px-4 py-2 rounded-lg font-mono text-lg font-semibold hover:opacity-90 transition-opacity'
-              : 'bg-gray-500/30 text-aunshin-quiet-d px-4 py-2 rounded-lg font-mono text-sm'
+            dialBlocked
+              ? 'bg-gray-500/30 text-aunshin-quiet-d px-4 py-2 rounded-lg font-mono text-sm cursor-not-allowed'
+              : 'bg-aunshin-sodium text-aunshin-twilight-2 px-4 py-2 rounded-lg font-mono text-lg font-semibold hover:opacity-90 transition-opacity'
           }
-          aria-label={dialTarget ? `Call ${ownerName || row.practice_name} at ${dialTarget}` : 'No phone number on file'}
+          aria-label={
+            multiInProgress
+              ? `Dial blocked — ${inProgressCount} other dialers currently working ${ownerName || row.practice_name}`
+              : (dialTarget ? `Call ${ownerName || row.practice_name} at ${dialTarget}` : 'No phone number on file')
+          }
         >
-          {dialTarget || 'no phone'}
+          {multiInProgress ? 'dial blocked' : (dialTarget || 'no phone')}
         </button>
       </div>
 

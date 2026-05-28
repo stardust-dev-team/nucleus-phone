@@ -12,10 +12,13 @@
  *     content area isn't blank)
  *   - touchpoint replied-at trumps sent-at visually
  *   - tier filter button toggle re-issues getQueue with the right param
+ *   - multi-in-progress dial-block (bead nucleus-phone-02k6) — warning
+ *     copy + hard dial-block on phone_in_progress_count > 1
  *
  * NOT covered here (out of scope for this bead):
- *   - Multi-in_progress-attempts warning (deferred to nucleus-tristar-40o
- *     + the not-yet-built disposition modal)
+ *   - Post-call disposition-modal warning (the modal itself is not yet
+ *     built; when it lands, that surface needs its own staleness/
+ *     refresh decision — see Queue.jsx header for the trade-off context)
  *   - End-to-end mode routing through api.js → mode-router (covered by
  *     api.test.js and mode-router.test.js — that's the contract this
  *     page consumes, not redefines)
@@ -87,6 +90,9 @@ function makePractice(overrides = {}) {
     last_email_replied_at: null,
     last_linkedin_dm_sent_at: null,
     last_linkedin_dm_replied_at: null,
+    // bead nucleus-phone-02k6 — backend ships COUNT(*)::int (0 on empty,
+    // never null). Default to 0 so existing tests don't trip the dial-block.
+    phone_in_progress_count: 0,
     ...overrides,
   };
 }
@@ -169,6 +175,107 @@ describe('Queue / TriStarQueueView', () => {
     fireEvent.click(callButton);
     // encodeURIComponent of "+15552223333" → "%2B15552223333"
     expect(mockNavigate).toHaveBeenCalledWith('/cockpit/%2B15552223333');
+  });
+
+  /**
+   * Multi-in-progress dial-block — bead nucleus-phone-02k6.
+   *
+   * Backend (nucleus-tristar bead 40o, shipped 0dfbe93) ships
+   * phone_in_progress_count per practice row. > 1 means at least two
+   * concurrent in_progress phone attempts already exist on this practice;
+   * a third dialer makes coordination nearly impossible.
+   *
+   * Fixture-driven: count of 0/1/2 → warning + dial-block only on 2.
+   * The 1-row case is the boundary check — one in_progress is the
+   * normal state during any active call, must NOT trigger the block.
+   */
+  describe('multi-in-progress dial-block (phone_in_progress_count)', () => {
+    it('does NOT show warning or block dial when phone_in_progress_count is 0', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({ phone_in_progress_count: 0 }),
+      ]));
+      render(<Queue />);
+
+      await screen.findByText('Sunnyvale Veterinary');
+      expect(screen.queryByText(/dialers active/i)).not.toBeInTheDocument();
+      const callButton = screen.getByRole('button', { name: /Call Jane Doe at \+15552223333/ });
+      expect(callButton).toBeEnabled();
+    });
+
+    it('does NOT show warning or block dial when phone_in_progress_count is 1 (boundary)', async () => {
+      // One in_progress is the normal state during any active call. The
+      // bead pins the threshold at > 1 — drifting to >= 1 would block
+      // every practice with a live call in flight.
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({ phone_in_progress_count: 1 }),
+      ]));
+      render(<Queue />);
+
+      await screen.findByText('Sunnyvale Veterinary');
+      expect(screen.queryByText(/dialers active/i)).not.toBeInTheDocument();
+      const callButton = screen.getByRole('button', { name: /Call Jane Doe at \+15552223333/ });
+      expect(callButton).toBeEnabled();
+    });
+
+    it('shows warning and blocks dial when phone_in_progress_count is 2', async () => {
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({ phone_in_progress_count: 2 }),
+      ]));
+      render(<Queue />);
+
+      // Warning copy uses the count + "dialers active" + "coordinate".
+      // Match the count and the coordination cue separately so a copy
+      // tweak that keeps the meaning doesn't cosmetically break the test.
+      expect(await screen.findByText(/2 dialers active/i)).toBeInTheDocument();
+      expect(screen.getByText(/coordinate/i)).toBeInTheDocument();
+      // Alert role for assistive-tech announcement (VoiceOver).
+      expect(screen.getByRole('alert')).toHaveTextContent(/2 dialers active/i);
+
+      // Dial button hard-disabled with a distinct aria-label so a screen
+      // reader doesn't repeat "Call Jane Doe" on a button that can't dial.
+      const blockedButton = screen.getByRole('button', {
+        name: /Dial blocked.*2 other dialers/i,
+      });
+      expect(blockedButton).toBeDisabled();
+      expect(blockedButton).toHaveTextContent(/dial blocked/i);
+    });
+
+    it('shows warning with higher count when phone_in_progress_count is 5', async () => {
+      // Just confirms the count is rendered verbatim, not hardcoded to "2".
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({ phone_in_progress_count: 5 }),
+      ]));
+      render(<Queue />);
+      expect(await screen.findByText(/5 dialers active/i)).toBeInTheDocument();
+    });
+
+    it('does NOT block dial when phone_in_progress_count is missing (legacy/defense)', async () => {
+      // Number.isFinite guard in PracticeCard: a server serialization drift
+      // (field missing, null, or stringified) must not silently block every
+      // dial. Defaults to 0 (= no block) under uncertainty.
+      mockGetQueue.mockResolvedValue(liveResponse([
+        makePractice({ phone_in_progress_count: undefined }),
+      ]));
+      render(<Queue />);
+
+      await screen.findByText('Sunnyvale Veterinary');
+      expect(screen.queryByText(/dialers active/i)).not.toBeInTheDocument();
+      const callButton = screen.getByRole('button', { name: /Call Jane Doe at \+15552223333/ });
+      expect(callButton).toBeEnabled();
+    });
+
+    // No "blocked button doesn't navigate" test here on purpose. The
+    // dial-block is enforced solely by the <button disabled> attribute;
+    // there is no runtime onClick guard to test. A fireEvent.click on a
+    // disabled button is a no-op in jsdom + @testing-library, so any
+    // such test would pass regardless of whether the disabled attribute
+    // is being applied correctly — false security. The `toBeDisabled`
+    // assertion in the count===2 test above is the real coverage.
+    //
+    // If the dial-block ever moves to a JS-side override (e.g., to
+    // permit a coordination-confirm dialog from follow-up
+    // nucleus-phone-5ic1), add the click-doesn't-navigate test then,
+    // and use @testing-library/user-event (which throws on disabled).
   });
 
   describe('attempt sequence label sanity gate', () => {
