@@ -53,14 +53,28 @@ jest.mock('../../lib/api', () => {
       this.path = path;
     }
   }
+  class ApiAuthError extends Error {
+    constructor(path, status, target, body) {
+      super(`Auth failed (${status}) on ${target}:${path}`);
+      this.name = 'ApiAuthError';
+      this.path = path;
+      this.status = status;
+      this.target = target;
+      this.body = body;
+    }
+  }
   return {
     getQueue: (...args) => mockGetQueue(...args),
     ApiDegradedError,
+    ApiAuthError,
   };
 });
 
 import Queue from '../Queue';
-import { ApiDegradedError as MockApiDegradedError } from '../../lib/api';
+import {
+  ApiDegradedError as MockApiDegradedError,
+  ApiAuthError as MockApiAuthError,
+} from '../../lib/api';
 
 function makePractice(overrides = {}) {
   return {
@@ -428,13 +442,17 @@ describe('Queue / TriStarQueueView', () => {
   });
 
   it('translates API 401 into a re-login CTA (rotated TRISTAR_API_KEY)', async () => {
-    mockGetQueue.mockRejectedValue(new Error('API 401: Unauthorized'));
+    mockGetQueue.mockRejectedValue(
+      new MockApiAuthError('/api/queue', 401, 'tristar', 'Unauthorized'),
+    );
     render(<Queue />);
     expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
   });
 
   it('translates API 403 into a re-login CTA', async () => {
-    mockGetQueue.mockRejectedValue(new Error('API 403: Forbidden'));
+    mockGetQueue.mockRejectedValue(
+      new MockApiAuthError('/api/queue', 403, 'tristar', 'Forbidden'),
+    );
     render(<Queue />);
     expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
   });
