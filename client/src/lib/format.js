@@ -75,6 +75,10 @@ export function formatRelativeTime(dateStr) {
 export function formatRelativeDay(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
+  // new Date('not a date') yields an Invalid Date; toLocaleDateString on
+  // it returns the literal 'Invalid Date' string. Guard before the days
+  // math so callers get a sentinel '—' instead of leaking garbage to UI.
+  if (isNaN(d.getTime())) return '—';
   const days = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (days < 0) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   if (days === 0) return 'Today';
