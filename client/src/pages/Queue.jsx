@@ -51,10 +51,26 @@ const TIER_STYLES = {
   },
 };
 
+// Module-level dedupe so re-renders don't spam the console on the same
+// unknown tier value. Cleared on full reload only (intentional — the goal
+// is "ops notices drift once," not "log every paint"). Do NOT move into
+// the component: useRef would persist across re-renders of the SAME
+// TierBadge but reset for each new instance. Two rows with the same
+// unknown tier would each warn once, defeating the dedupe. Module-level
+// Set survives both axes (re-render AND new instance).
+const _warnedTiers = new Set();
+
 function TierBadge({ tier }) {
-  const style = TIER_STYLES[tier] || { badge: 'bg-gray-500' };
+  const style = TIER_STYLES[tier];
+  if (!style && tier && !_warnedTiers.has(tier)) {
+    _warnedTiers.add(tier);
+    console.warn(
+      `[queue] unknown intent_tier '${tier}' — TIER_STYLES needs an entry; row will render as gray`,
+    );
+  }
+  const resolved = style || { badge: 'bg-gray-500' };
   return (
-    <span className={`${style.badge} text-white px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide`}>
+    <span className={`${resolved.badge} text-white px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide`}>
       {tier}
     </span>
   );
@@ -96,7 +112,19 @@ function Touchpoint({ label, sentAt, repliedAt }) {
 
 function PracticeCard({ row, onCall }) {
   const ownerName = [row.owner_first_name, row.owner_last_name].filter(Boolean).join(' ').trim();
-  const dialTarget = row.owner_phone || row.practice_phone;
+  const rawDialTarget = row.owner_phone || row.practice_phone;
+  // Normalize before validating. Server normalization is best-effort across
+  // HubSpot manual edits, NPPES backfill, and stale joins — common real-
+  // world shapes include '(602) 555-1234', '602-555-1234', '602.555.1234',
+  // '+1 602 555 1234'. Strip everything except digits + leading '+', then
+  // check E.164-ish length. Forwards the NORMALIZED form to /cockpit/:id
+  // so the URL is always clean regardless of upstream formatting drift.
+  //
+  // Junk values ('0', 'see notes', '(no phone listed)') still fail the
+  // length check and resolve to null, which flows through the existing
+  // `!dialTarget` disabled-state — no parallel rendering branch.
+  const normalizedDial = String(rawDialTarget || '').replace(/[^\d+]/g, '');
+  const dialTarget = /^\+?\d{10,15}$/.test(normalizedDial) ? normalizedDial : null;
   const tierStyle = TIER_STYLES[row.intent_tier] || { border: 'border-gray-500' };
 
   // Defense against future serialization drift. 0 is the safe-fail
@@ -300,8 +328,35 @@ export default function TriStarQueueView() {
         // runs with stale closures. Gate every write on signal.aborted to
         // close the stale-write race.
         if (signal.aborted) return;
+        const rawPractices = res.practices || [];
+        // Dedup by practice_id — duplicate keys make React reuse one row's
+        // DOM, which leaks stale touchpoints + the wrong dial target into
+        // the surviving row. A server-side LATERAL join misfire is the
+        // typical cause; warn loud so it gets noticed instead of silently
+        // dropping the second row.
+        const seen = new Set();
+        const practices = rawPractices.filter((row) => {
+          if (seen.has(row.practice_id)) return false;
+          seen.add(row.practice_id);
+          return true;
+        });
+        if (practices.length !== rawPractices.length) {
+          console.warn(
+            `[queue] dropped ${rawPractices.length - practices.length} duplicate practice_id row(s); server may have a LATERAL join misfire`,
+          );
+        }
+        // Virtualization trip-wire. The flat map below is fine through
+        // 200-300 rows on Britt's iPad. ~500 is the actual "do something"
+        // line — above that, scroll jank shows up; a react-window swap is
+        // the next move. Threshold matches the comment so a steady 350-row
+        // queue doesn't spam the console on every tier toggle / refresh.
+        if (practices.length > 500) {
+          console.warn(
+            `[queue] ${practices.length} rows rendered flat — past ~500 consider react-window virtualization`,
+          );
+        }
         setData({
-          practices: res.practices || [],
+          practices,
           sequencer_dry_run_state: res.sequencer_dry_run_state || null,
         });
       })
