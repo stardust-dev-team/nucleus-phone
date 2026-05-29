@@ -25,7 +25,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 const mockNavigate = jest.fn();
@@ -42,10 +42,11 @@ jest.mock('react-router-dom', () => ({
 // ../lib/api at module load — the mock has to be in place before that
 // import is resolved.
 //
-// Both error classes are mirrored here because Queue.jsx uses
-// `err instanceof <Class>` to branch (see Queue.jsx:365, 378). If the
-// mock omits a class, the consumer sees `undefined` and `instanceof`
-// throws TypeError — masking every error-handling test in the file.
+// Both error classes are mirrored here because Queue.jsx's
+// getQueue catch handler uses `err instanceof <Class>` to branch.
+// If the mock omits a class, the consumer sees `undefined` and
+// `instanceof` throws TypeError — masking every error-handling
+// test in the file.
 //
 // jest.mock factories are hoisted ABOVE top-level const/class declarations,
 // so the mock classes are defined inside the factory and re-exported for
@@ -449,34 +450,27 @@ describe('Queue / TriStarQueueView', () => {
 
   it('translates API 401 into a re-login CTA (rotated TRISTAR_API_KEY)', async () => {
     // Path matches the apiFetch shape — `/queue`, not `/api/queue`
-    // (apiFetch in lib/api.js does NOT prepend /api/).
+    // (apiFetch in lib/api.js does NOT prepend `/api/`).
     mockGetQueue.mockRejectedValue(
       new MockApiAuthError('/queue', 401, 'tristar', 'Unauthorized'),
     );
-    // Wrap render in act so React flushes the rejected-promise tail
-    // (catch → setError, finally → setLoading(false)) inside the
-    // act scope. Without this, those two state updates land outside
-    // any act() and React logs "not wrapped in act" warnings.
-    await act(async () => {
-      render(<Queue />);
-    });
-    expect(screen.getByText(/TriStar session has expired/)).toBeInTheDocument();
+    render(<Queue />);
+    expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
   });
 
   it('translates API 403 into a re-login CTA', async () => {
     mockGetQueue.mockRejectedValue(
       new MockApiAuthError('/queue', 403, 'tristar', 'Forbidden'),
     );
-    await act(async () => {
-      render(<Queue />);
-    });
-    expect(screen.getByText(/TriStar session has expired/)).toBeInTheDocument();
+    render(<Queue />);
+    expect(await screen.findByText(/TriStar session has expired/)).toBeInTheDocument();
   });
 
   it('translates API 5xx into a calm wait-and-retry message (deploy / restart scenario)', async () => {
-    // Bare Error('API 5xx') intentionally — Queue.jsx:386 routes 5xx via
-    // regex-on-message, not a typed class (api.js:232 throws bare Error
-    // for non-401/403 non-OK). Keep this in sync with that branch.
+    // Bare Error('API 5xx') intentionally — Queue.jsx's catch handler
+    // routes 5xx via regex-on-message, not a typed class (apiFetch in
+    // lib/api.js throws bare Error for non-401/403 non-OK). Keep this
+    // in sync with that branch.
     mockGetQueue.mockRejectedValue(new Error('API 503: Service Unavailable'));
     render(<Queue />);
     expect(await screen.findByText(/TriStar server is restarting/)).toBeInTheDocument();
@@ -503,9 +497,7 @@ describe('Queue / TriStarQueueView', () => {
     // output. The aria-pressed assertions above are synchronous
     // (driven by local setFilter state), but the fetch tail is not.
     await waitFor(() => expect(mockGetQueue).toHaveBeenCalledTimes(2));
-    await waitFor(() =>
-      expect(mockGetQueue.mock.calls[1][0].tier).toBe('hot'),
-    );
+    expect(mockGetQueue.mock.calls[1][0].tier).toBe('hot');
   });
 
   it('renders unknown sequencer_dry_run_state with a "drift" banner instead of silently miscategorising', async () => {
