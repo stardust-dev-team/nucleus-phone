@@ -194,6 +194,107 @@ describe('POST /api/voice/incoming/dial-complete — status/duration (bv33)', ()
   });
 });
 
+/* ─── (b.1b) dial-complete scoped to legacy iOS path only (pr5c) ─── */
+
+describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)', () => {
+  // The flag is the disambiguator between legacy-iOS and Phase-2-iOS (both
+  // carry the 'nucleus-inbound-ios-' prefix), so manage it explicitly here
+  // rather than relying on global state.
+  const flagSnap = process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+  afterEach(() => {
+    if (flagSnap === undefined) delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    else process.env.INBOUND_CONFERENCE_ARCHITECTURE = flagSnap;
+  });
+
+  test('Phase 2 iOS conference path (flag ON, -ios conf) → NO status UPDATE (call.js /status owns the row)', async () => {
+    process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'true';
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-conf1&from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'completed', DialCallDuration: '42' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeUndefined();
+  });
+
+  test('PSTN forward conference path (non -ios conf) → NO status UPDATE (call.js /status owns the row)', async () => {
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-pstn9&from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'completed', DialCallDuration: '42' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeUndefined();
+  });
+
+  test('legacy iOS path (flag OFF, -ios conf) → status UPDATE fires (only writer)', async () => {
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-legacy1&from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'completed', DialCallDuration: '17' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeDefined();
+    expect(updateCall[1]).toEqual(['completed', 17, 'nucleus-inbound-ios-legacy1']);
+  });
+
+  test('explicit flag=false on -ios conf is still treated as legacy → UPDATE fires', async () => {
+    process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'false';
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-legacy2&from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'no-answer' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeDefined();
+    expect(updateCall[1]).toEqual(['missed', 0, 'nucleus-inbound-ios-legacy2']);
+  });
+});
+
+/* ─── (b.1c) e2e missed→voicemail on the legacy iOS path (pr5c) ─── */
+
+describe('legacy iOS inbound: dial-complete(no-answer) → voicemail-complete (pr5c)', () => {
+  afterEach(() => { delete process.env.INBOUND_CONFERENCE_ARCHITECTURE; });
+
+  test('no-rep call stamps missed, then voicemail-complete overrides to voicemail', async () => {
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    const conf = 'nucleus-inbound-ios-e2e1';
+    const callerSid = 'CA-caller-e2e1';
+
+    // 1. Rep never answered → dial-complete fires with no-answer.
+    await request(app)
+      .post(`/api/voice/incoming/dial-complete?conf=${conf}&from=%2B14155551212`)
+      .type('form')
+      .send({ DialCallStatus: 'no-answer' })
+      .expect(200);
+
+    const dialUpdate = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(dialUpdate).toBeDefined();
+    // Guarded on 'connecting', keyed by conference_name → 'missed'.
+    expect(dialUpdate[0]).toMatch(/WHERE conference_name = \$3 AND status = 'connecting'/);
+    expect(dialUpdate[1]).toEqual(['missed', 0, conf]);
+
+    // 2. Caller leaves a message → voicemail-complete overrides missed→voicemail,
+    //    keyed by caller_call_sid (no status guard, so it wins over 'missed').
+    await request(app)
+      .post(`/api/voice/incoming/voicemail-complete?conf=${conf}&from=%2B14155551212`)
+      .type('form')
+      .send({ RecordingUrl: 'https://api.twilio.com/rec/RE123', RecordingDuration: '8', CallSid: callerSid })
+      .expect(204);
+
+    const vmUpdate = pool.query.mock.calls.find(([sql]) => /SET voicemail_url = \$1, status = 'voicemail'/.test(sql));
+    expect(vmUpdate).toBeDefined();
+    expect(vmUpdate[0]).toMatch(/WHERE caller_call_sid = \$2/);
+    expect(vmUpdate[1]).toEqual(['https://api.twilio.com/rec/RE123', callerSid]);
+  });
+});
+
 /* ─── (b.2) iOS route with INBOUND_CONFERENCE_ARCHITECTURE=true ─── */
 
 describe('POST /api/voice/incoming — iOS route, conference architecture flag ON', () => {

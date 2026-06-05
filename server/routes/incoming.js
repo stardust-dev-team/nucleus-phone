@@ -516,9 +516,9 @@ router.post('/dial-complete', makeTwilioWebhook(), (req, res) => {
 
   res.type('text/xml').send(twiml.toString());
 
-  // bv33: record the inbound call's final status + duration. The iOS
+  // bv33: record the inbound call's final status + duration. The legacy iOS
   // <Client> path attaches NO statusCallback to its <Dial> (unlike the
-  // conference path), so this <Dial> action callback is the only place the
+  // conference paths), so this <Dial> action callback is the only place the
   // row transitions off its initial 'connecting' — without it, every
   // answered inbound call stayed 'connecting' with a null duration in
   // nucleus_phone_calls (reporting/analytics were wrong for all inbound).
@@ -526,7 +526,27 @@ router.post('/dial-complete', makeTwilioWebhook(), (req, res) => {
   // `status = 'connecting'` guard makes it a one-shot transition; a later
   // /voicemail-complete (keyed by caller_call_sid, no guard) still overrides
   // 'missed' -> 'voicemail' if the caller leaves a message.
-  if (conferenceName) {
+  //
+  // pr5c: scope this write to the LEGACY iOS <Client> path ONLY. All three
+  // inbound branches use /dial-complete as their <Dial> action URL, but only
+  // the legacy iOS path lacks a conference statusCallback and needs it:
+  //   - legacy iOS <Client>  → conf 'nucleus-inbound-ios-*', flag OFF, no
+  //       Twilio conference → THIS write is the row's only writer (needed).
+  //   - Phase 2 iOS conf     → conf 'nucleus-inbound-ios-*', flag ON, real
+  //       conference → call.js /status (conference-end) owns the row.
+  //   - PSTN forward conf    → conf 'nucleus-inbound-*' (no -ios), real
+  //       conference → call.js /status owns the row.
+  // The -ios prefix alone can't separate legacy-iOS from Phase-2-iOS (both
+  // carry it, line ~153) — only INBOUND_CONFERENCE_ARCHITECTURE disambiguates
+  // them. Writing on either conference path double-writes the row call.js
+  // already owns and can mis-stamp status='completed' + caller hold-time on a
+  // no-rep voicemail (the caller's <Dial> leg completes normally even when no
+  // rep ever joined). MUST stay scoped before flipping the Phase 2 flag.
+  const isLegacyIosPath =
+    typeof conferenceName === 'string'
+    && conferenceName.startsWith('nucleus-inbound-ios-')
+    && process.env.INBOUND_CONFERENCE_ARCHITECTURE !== 'true';
+  if (isLegacyIosPath) {
     const answered = DialCallStatus === 'completed';
     const finalStatus = answered ? 'completed' : 'missed';
     const duration = Number.parseInt(DialCallDuration, 10) || 0;
