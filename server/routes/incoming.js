@@ -500,7 +500,7 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
 // ─── POST /dial-complete — <Dial> action URL (safety net) ───────────
 
 router.post('/dial-complete', makeTwilioWebhook(), (req, res) => {
-  const { DialCallStatus } = req.body;
+  const { DialCallStatus, DialCallDuration } = req.body;
   const conferenceName = req.query.conf;
   const callerPhone = req.query.from || 'unknown';
   const conf = conferenceName ? getConference(conferenceName) : null;
@@ -515,6 +515,28 @@ router.post('/dial-complete', makeTwilioWebhook(), (req, res) => {
   }
 
   res.type('text/xml').send(twiml.toString());
+
+  // bv33: record the inbound call's final status + duration. The iOS
+  // <Client> path attaches NO statusCallback to its <Dial> (unlike the
+  // conference path), so this <Dial> action callback is the only place the
+  // row transitions off its initial 'connecting' — without it, every
+  // answered inbound call stayed 'connecting' with a null duration in
+  // nucleus_phone_calls (reporting/analytics were wrong for all inbound).
+  // Done AFTER the TwiML response so it never delays the live call. The
+  // `status = 'connecting'` guard makes it a one-shot transition; a later
+  // /voicemail-complete (keyed by caller_call_sid, no guard) still overrides
+  // 'missed' -> 'voicemail' if the caller leaves a message.
+  if (conferenceName) {
+    const answered = DialCallStatus === 'completed';
+    const finalStatus = answered ? 'completed' : 'missed';
+    const duration = Number.parseInt(DialCallDuration, 10) || 0;
+    pool.query(
+      `UPDATE nucleus_phone_calls
+          SET status = $1, duration_seconds = $2
+        WHERE conference_name = $3 AND status = 'connecting'`,
+      [finalStatus, duration, conferenceName]
+    ).catch((err) => console.error('incoming: dial-complete status update failed:', err.message));
+  }
 });
 
 // ─── POST /rep-status — Rep's participant leg status changes ────────

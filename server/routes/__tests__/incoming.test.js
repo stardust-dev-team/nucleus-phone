@@ -163,6 +163,37 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
   });
 });
 
+/* ─── (b.1) dial-complete records final status + duration (bv33) ─── */
+
+describe('POST /api/voice/incoming/dial-complete — status/duration (bv33)', () => {
+  test('DialCallStatus=completed → UPDATE status=completed + duration, guarded on connecting', async () => {
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-abc&from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'completed', DialCallDuration: '42' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeDefined();
+    const [sql, params] = updateCall;
+    expect(sql).toMatch(/SET status = \$1, duration_seconds = \$2/);
+    expect(sql).toMatch(/WHERE conference_name = \$3 AND status = 'connecting'/);
+    expect(params).toEqual(['completed', 42, 'nucleus-inbound-ios-abc']);
+  });
+
+  test('DialCallStatus=no-answer → UPDATE status=missed + duration 0', async () => {
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-xyz&from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'no-answer' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeDefined();
+    expect(updateCall[1]).toEqual(['missed', 0, 'nucleus-inbound-ios-xyz']);
+  });
+});
+
 /* ─── (b.2) iOS route with INBOUND_CONFERENCE_ARCHITECTURE=true ─── */
 
 describe('POST /api/voice/incoming — iOS route, conference architecture flag ON', () => {
