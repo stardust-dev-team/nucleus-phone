@@ -12,6 +12,11 @@
  *   RUN_DB_TESTS=1 DATABASE_URL=postgres://localhost:5433/nucleus_test \
  *     ./node_modules/.bin/jest call-terminal-status.integration
  *
+ * Make sure NODE_ENV is NOT 'production' in that shell — the /status webhook's
+ * Twilio-signature validation is only bypassed off-production (see
+ * lib/twilio-webhook.js), so an inherited NODE_ENV=production would 403 the
+ * unsigned conference-end POSTs and fail every /status case.
+ *
  * Skipped (suite passes vacuously) without those env vars. SAFE against any
  * DB: every fixture row is scoped to a unique `gox1-itest-<ts>-` conference
  * name and deleted in afterAll — point DATABASE_URL at a throwaway/test DB,
@@ -150,6 +155,10 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
 
       const row = await rowOf(id);
       expect(row.status).toBe(status); // NOT clobbered to 'completed'
+      // The whole UPDATE must be skipped, not just status: the seed leaves
+      // these NULL, so a guard that matched the row would have stamped them.
+      expect(row.duration_seconds).toBeNull();
+      expect(row.conference_sid).toBeNull();
     });
 
     test("transitions a non-terminal 'connecting' row to 'completed'", async () => {
@@ -182,6 +191,9 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
 
       const row = await rowOf(id);
       expect(row.status).toBe(status);
+      // Whole UPDATE skipped — duration/conference_sid stay NULL (see above).
+      expect(row.duration_seconds).toBeNull();
+      expect(row.conference_sid).toBeNull();
     });
 
     test("transitions a non-terminal 'in-progress' row to 'completed'", async () => {
