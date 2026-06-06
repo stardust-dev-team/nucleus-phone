@@ -255,6 +255,24 @@ describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)',
     expect(updateCall).toBeDefined();
     expect(updateCall[1]).toEqual(['missed', 0, 'nucleus-inbound-ios-legacy2']);
   });
+
+  test('no ?conf= param → NO UPDATE and no crash (typeof conferenceName guard, gox1)', async () => {
+    // pr5c gap: the legacy-path predicate calls conferenceName.startsWith(...),
+    // which throws TypeError when conferenceName is undefined. The
+    // `typeof conferenceName === 'string'` guard is load-bearing — without it,
+    // a /dial-complete that arrives with no ?conf= query param (Twilio
+    // dropping it, or a misrouted callback) would 500 instead of 200. Flag
+    // OFF so the legacy predicate (the one with the startsWith) is what runs.
+    delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
+    await request(app)
+      .post('/api/voice/incoming/dial-complete?from=%2B14155551212')
+      .type('form')
+      .send({ DialCallStatus: 'no-answer' })
+      .expect(200);
+
+    const updateCall = pool.query.mock.calls.find(([sql]) => /UPDATE nucleus_phone_calls/.test(sql));
+    expect(updateCall).toBeUndefined();
+  });
 });
 
 /* ─── (b.1c) e2e missed→voicemail on the legacy iOS path (pr5c) ─── */

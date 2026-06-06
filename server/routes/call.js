@@ -38,6 +38,18 @@ const twilioWebhook = makeTwilioWebhook();
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 
+// gox1: statuses that are terminal for a nucleus_phone_calls row. A writer
+// that stamps 'completed' on conference end must NEVER overwrite one of
+// these — e.g. incoming.js /voicemail-complete sets 'voicemail', the
+// dial-complete fallback sets 'missed', poll-fallback (call.js ~132) sets
+// 'failed'. Defined once and interpolated into both conference-row writers
+// (POST /api/call/end and the conference-end webhook arm) so the two can
+// never drift to different guard sets. Values are static literals — no user
+// input reaches this string, so the interpolation carries no injection risk.
+const TERMINAL_CALL_STATUSES = ['completed', 'voicemail', 'missed', 'failed'];
+const TERMINAL_STATUS_GUARD =
+  `status NOT IN (${TERMINAL_CALL_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+
 // POST /api/call/initiate — start a new call
 router.post('/initiate', ...callerGuard, async (req, res) => {
   const { to, contactName, companyName, contactId, callerIdentity } = req.body;
@@ -349,7 +361,8 @@ router.post('/end', ...callerGuard, async (req, res) => {
     await pool.query(
       `UPDATE nucleus_phone_calls
        SET status = 'completed', duration_seconds = $1, conference_sid = $2
-       WHERE conference_name = $3 AND status != 'completed'`,
+       WHERE conference_name = $3
+         AND ${TERMINAL_STATUS_GUARD}`,
       [duration, sid, conferenceName]
     );
   } catch (err) {
@@ -462,8 +475,20 @@ router.post('/status', twilioWebhook, async (req, res) => {
   // Twilio webhook arrives 3-5s later, getConference returns undefined
   // for the already-removed conf and the `&& conf` short-circuit
   // prevents double-cleanup. If a future refactor removes that
-  // cleanup from /api/call/end, this arm must regain the SQL guard
-  // (`AND status != 'completed'`) and/or absorb the cleanup work.
+  // cleanup from /api/call/end, the SQL guard below still keeps the
+  // UPDATE idempotent.
+  //
+  // gox1: the UPDATE is guarded with TERMINAL_STATUS_GUARD (the same
+  // guard the /api/call/end UPDATE uses). The `&& conf` short-circuit
+  // only prevents double-CLEANUP from the /api/call/end double-fire; it
+  // does NOT protect `status` from being overwritten on a DIFFERENT
+  // path. On the Phase 2 inbound no-rep path, the rep never joins (so
+  // /api/call/end never fires and `conf` is still in memory here),
+  // incoming.js /voicemail-complete stamps status='voicemail' (keyed by
+  // caller_call_sid), and this conference-end arm fires afterward keyed
+  // by conference_name on the SAME row — without the guard it would
+  // clobber a terminal status ('voicemail'/'missed'/'failed') back to
+  // 'completed'. 'completed' is in the set too so the arm is idempotent.
   //
   // Sim conferences have their own end-of-call lifecycle (sim.js's Vapi
   // webhook handler ends the Twilio conference and clears the map). They
@@ -478,7 +503,8 @@ router.post('/status', twilioWebhook, async (req, res) => {
       await pool.query(
         `UPDATE nucleus_phone_calls
          SET status = 'completed', duration_seconds = $1, conference_sid = $2
-         WHERE conference_name = $3`,
+         WHERE conference_name = $3
+           AND ${TERMINAL_STATUS_GUARD}`,
         [duration, ConferenceSid, FriendlyName]
       );
     } catch (err) {
