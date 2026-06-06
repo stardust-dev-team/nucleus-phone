@@ -471,11 +471,12 @@ describe('POST /api/call/end', () => {
     // bd-sgc DB UPDATE shape — this assert is the contract the
     // synchronous cleanup converges on with the /status webhook's
     // conference-end arm. Both branches must produce the same row
-    // state; the `AND status != 'completed'` guard is what makes
-    // the second-to-arrive a no-op rather than re-stamping an
-    // already-completed call.
+    // state; the terminal-status guard (gox1) is what makes the
+    // second-to-arrive a no-op rather than re-stamping an
+    // already-terminal call. The set must match the conference-end
+    // arm's so the two writers can never drift.
     expect(pool.query).toHaveBeenCalledWith(
-      expect.stringMatching(/UPDATE nucleus_phone_calls[\s\S]+SET status = 'completed'[\s\S]+AND status != 'completed'/),
+      expect.stringMatching(/UPDATE nucleus_phone_calls[\s\S]+SET status = 'completed'[\s\S]+AND status NOT IN \('completed', 'voicemail', 'missed', 'failed'\)/),
       expect.arrayContaining([
         expect.any(Number),         // duration_seconds — Math.floor((now-startedAt)/1000)
         'CF999',                    // conference_sid
@@ -777,6 +778,41 @@ describe('POST /api/call/status', () => {
     expect(conference.removeConference).toHaveBeenCalledWith('nucleus-call-abc');
 
     Date.now.mockRestore();
+  });
+
+  // gox1: the conference-end UPDATE must carry a terminal-status guard so a
+  // prior 'voicemail' (or 'missed') set by incoming.js /voicemail-complete is
+  // never clobbered back to 'completed'. On the Phase 2 inbound no-rep path
+  // the rep never joins, so /api/call/end never fires and `conf` is still in
+  // memory when this arm runs — the `&& conf` short-circuit can't save us, the
+  // SQL WHERE clause has to. pool.query is mocked (no live row), so this is a
+  // guard-PRESENCE test on the emitted SQL, not a row-state assertion. The
+  // matching missed→voicemail row-flow is exercised in incoming.test.js.
+  test('conference-end UPDATE is guarded against clobbering a terminal status (gox1)', async () => {
+    conference.getConference.mockReturnValue({
+      startedAt: new Date(Date.now() - 5_000),
+      participants: [],
+    });
+    pool.query.mockResolvedValueOnce({ rowCount: 0 });
+
+    await send({
+      StatusCallbackEvent: 'conference-end',
+      FriendlyName: 'nucleus-inbound-ios-vm1',
+      ConferenceSid: 'CF200',
+    }).expect(204);
+
+    const dbCall = pool.query.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('UPDATE nucleus_phone_calls'),
+    );
+    expect(dbCall).toBeDefined();
+    // The WHERE clause must exclude every terminal status — 'voicemail' is
+    // the one the bug clobbered; 'missed', 'failed' and 'completed' are
+    // pinned too so the guard set can't silently shrink, and so it stays
+    // identical to the /api/call/end UPDATE's guard (both built from
+    // TERMINAL_CALL_STATUSES in call.js).
+    expect(dbCall[0]).toMatch(
+      /WHERE conference_name = \$3[\s\S]+AND status NOT IN \('completed', 'voicemail', 'missed', 'failed'\)/,
+    );
   });
 
   test('removes conference even when DB update fails', async () => {
