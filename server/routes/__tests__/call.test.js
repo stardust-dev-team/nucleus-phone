@@ -593,6 +593,82 @@ describe('POST /api/call/status', () => {
     });
   });
 
+  /* ── Per-rep outbound caller ID ── */
+
+  test('dials lead from the calling rep\'s OWN DID, not the global number', async () => {
+    const conf = {
+      conferenceSid: null,
+      callerIdentity: 'paul',
+      leadPhone: '+16025551234',
+      participants: [],
+    };
+    conference.getConference.mockReturnValue(conf);
+    conference.claimLeadDial.mockReturnValue(true);
+    const mockCreate = jest.fn().mockResolvedValue({});
+    client.conferences.mockReturnValue({ participants: { create: mockCreate } });
+
+    await send({
+      StatusCallbackEvent: 'conference-start',
+      FriendlyName: 'nucleus-call-paul',
+      ConferenceSid: 'CF200',
+    }).expect(204);
+
+    // Paul's lead leg presents Paul's own DID (team.json), NOT the global
+    // NUCLEUS_PHONE_NUMBER — so the called party sees Paul's line and a
+    // call-back routes back to Paul.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+16029050230', to: '+16025551234' })
+    );
+  });
+
+  test('falls back to NUCLEUS_PHONE_NUMBER for a rep with no DID (Britt)', async () => {
+    const conf = {
+      conferenceSid: null,
+      callerIdentity: 'britt', // inbound: null in team.json
+      leadPhone: '+16025551234',
+      participants: [],
+    };
+    conference.getConference.mockReturnValue(conf);
+    conference.claimLeadDial.mockReturnValue(true);
+    const mockCreate = jest.fn().mockResolvedValue({});
+    client.conferences.mockReturnValue({ participants: { create: mockCreate } });
+
+    await send({
+      StatusCallbackEvent: 'conference-start',
+      FriendlyName: 'nucleus-call-britt',
+      ConferenceSid: 'CF201',
+    }).expect(204);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+18005550000' })
+    );
+  });
+
+  test('inbound leg keeps NUCLEUS_PHONE_NUMBER (per-rep caller ID is outbound-only)', async () => {
+    const conf = {
+      conferenceSid: null,
+      callerIdentity: 'paul',
+      leadPhone: '+16025551234',
+      repSlackDm: '',
+      participants: [],
+    };
+    conference.getConference.mockReturnValue(conf);
+    conference.claimLeadDial.mockReturnValue(true);
+    const mockCreate = jest.fn().mockResolvedValue({});
+    client.conferences.mockReturnValue({ participants: { create: mockCreate } });
+
+    await send({
+      StatusCallbackEvent: 'conference-start',
+      FriendlyName: 'nucleus-inbound-xyz',
+      ConferenceSid: 'CF202',
+    }).expect(204);
+
+    // isInbound → shared number, even though callerIdentity resolves to a DID.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+18005550000' })
+    );
+  });
+
   /* ── Lead-dial on participant-join ── */
 
   test('dials lead on participant-join (races conference-start)', async () => {

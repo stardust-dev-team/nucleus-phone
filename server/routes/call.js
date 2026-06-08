@@ -15,6 +15,25 @@ const { sendSlackAlert, sendSystemAlert } = require('../lib/slack');
 const { createOutboundCall } = require('../lib/vapi');
 const { resolveAssistantId } = require('../lib/personas');
 const { pickGreeting } = require('../lib/sim-greetings');
+const { loadRegistryOrExit } = require('../lib/team-registry');
+
+const teamRegistry = loadRegistryOrExit('call.js');
+
+// Outbound caller ID for a rep's lead leg. Each rep dials out as their OWN
+// dedicated DID so the called party sees that rep's line and a call-back routes
+// straight back to them (forward-type DID → the rep's mobile, iosIdentity-type
+// DID → the rep's dialer) instead of a shared number that reaches the wrong
+// person. Before this, every rep's outbound leg stamped the single global
+// NUCLEUS_PHONE_NUMBER, so e.g. Paul's calls presented Ryann's DID
+// (+16026000188 == NUCLEUS_PHONE_NUMBER). Falls back to NUCLEUS_PHONE_NUMBER
+// for a rep with no DID (Britt, inbound: null) so an unconfigured rep can
+// still place calls. All team DIDs are verified account-owned Twilio numbers,
+// so they are valid <From> values (no Twilio 21210). Inbound legs are
+// intentionally left on NUCLEUS_PHONE_NUMBER (see status-callback dial).
+function outboundCallerId(callerIdentity) {
+  const rep = callerIdentity ? teamRegistry.getRepByIdentity(callerIdentity) : null;
+  return rep?.inbound?.did || process.env.NUCLEUS_PHONE_NUMBER;
+}
 
 const router = Router();
 
@@ -125,7 +144,7 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
       ).catch((err) => console.error('Failed to persist conference_sid:', err.message));
 
       await client.conferences(sid).participants.create({
-        from: process.env.NUCLEUS_PHONE_NUMBER,
+        from: outboundCallerId(conf.callerIdentity),
         to: leadPhone,
         earlyMedia: true,
         beep: false,
@@ -437,7 +456,10 @@ router.post('/status', twilioWebhook, async (req, res) => {
       const isInbound = FriendlyName.startsWith('nucleus-inbound-');
       try {
         const participantOpts = {
-          from: process.env.NUCLEUS_PHONE_NUMBER,
+          // Outbound legs present the calling rep's own DID; inbound legs
+          // (dormant: INBOUND_CONFERENCE_ARCHITECTURE=false) keep the shared
+          // number unchanged — per-rep caller ID is an outbound-only concern.
+          from: isInbound ? process.env.NUCLEUS_PHONE_NUMBER : outboundCallerId(conf.callerIdentity),
           to: conf.leadPhone,
           earlyMedia: true,
           beep: false,
