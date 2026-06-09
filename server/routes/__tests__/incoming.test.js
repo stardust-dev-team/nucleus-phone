@@ -19,7 +19,7 @@ jest.mock('../../lib/team-registry', () => {
     getRepByIdentity: () => null,
     getRepByDID: () => null,
     getAllInboundRoutes: () => ({
-      '+16026000188': { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
+      '+16234620197': { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
       '+16029050230': { iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
       '+16025550101': { forward: '+19995551111', iosIdentity: 'kate', slack: '', name: 'Kate' },
     }),
@@ -32,7 +32,7 @@ jest.mock('../../lib/team-registry', () => {
   };
 });
 
-const PSTN_NUMBER = '+16026000188';
+const PSTN_NUMBER = '+16234620197';
 const IOS_NUMBER = '+16029050230';
 const HYBRID_NUMBER = '+16025550101';
 

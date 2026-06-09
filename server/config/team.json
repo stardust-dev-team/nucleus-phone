@@ -9,7 +9,7 @@
       "pronouns": "he/him",
       "slackUserId": "U09QE6KDHNK",
       "mobile": "+16304416374",
-      "inbound": { "did": "+16234620197", "type": "iosIdentity", "iosIdentity": "tom" }
+      "inbound": { "did": "+16026000188", "type": "iosIdentity", "iosIdentity": "tom" }
     },
     {
       "name": "Paul",
@@ -49,7 +49,7 @@
       "pronouns": "she/her",
       "slackUserId": "U0ANRJR25QB",
       "mobile": "+14803630494",
-      "inbound": { "did": "+16026000188", "type": "forward" }
+      "inbound": { "did": "+16234620197", "type": "forward" }
     },
     {
       "name": "Alex",

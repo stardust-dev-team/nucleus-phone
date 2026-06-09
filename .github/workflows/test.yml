@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - name: Run Jest suite (incl. team-registry conformance + drift sentinels)
         # Drift sentinels in server/lib/__tests__/team-registry.conformance.test.js
-        # pin +16026000188 -> Ryann and +16234620197 -> Tom (iosIdentity).
+        # pin +16026000188 -> Tom (iosIdentity) and +16234620197 -> Ryann (forward).
         # Any future re-point in team.json without updating the sentinel
         # fails CI loudly rather than silently diverging from runbooks.
         #
