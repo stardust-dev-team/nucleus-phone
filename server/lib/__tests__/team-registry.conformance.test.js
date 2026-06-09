@@ -94,31 +94,32 @@ describe('team-registry drift sentinels (Linus #6 — consolidated registry)', (
     registry = loadRegistry();
   });
 
-  // 2026-05-19 drift sentinel #1: +16026000188 is Ryann's, not Tom's.
-  // History: env var on Render silently re-pointed this DID from Ryann
-  // to Tom around 2026-04-27 (IVR refactor collateral). 5 documented
-  // sources said Ryann; only the env var said Tom. Restored 2026-05-19.
-  // Drop the slack assertion (Linus #4) — Slack ID is metadata, not
-  // routing-load-bearing; pinning it would trip the sentinel for
-  // legitimate workspace migrations.
-  test('+16026000188 routes to Ryann via PSTN forward', () => {
+  // 2026-06-08 CORRECTION sentinel #1: +16026000188 is TOM's, routes to
+  // his iOS CallKit. The prior 2026-05-19 sentinel asserted this DID was
+  // Ryann's — citing "5 sources said Ryann; the env var saying Tom was the
+  // drift." Tom confirmed 2026-06-08 that was backwards: +16026000188 is
+  // HIS number (the env var saying Tom was correct all along), wrongly
+  // assigned to Ryann here. Tom + Ryann's DIDs are now swapped: Tom owns
+  // +16026000188 (iOS CallKit), Ryann owns +16234620197 (PSTN forward).
+  // Slack assertion dropped (Linus #4) — Slack ID is metadata, not
+  // routing-load-bearing.
+  test('+16026000188 routes to Tom via iOS CallKit', () => {
     const route = registry.getInboundRoute('+16026000188');
-    expect(route).not.toBeNull();
-    expect(route.name).toBe('Ryann');
-    expect(route.forward).toMatch(/^\+1\d{10}$/);
-    expect(route.iosIdentity).toBeUndefined();
-  });
-
-  // 2026-05-19 drift sentinel #2: +16234620197 is Tom's direct DID
-  // and routes to his iOS CallKit (not his mobile). Flipped from
-  // forward to iosIdentity 2026-05-19 once Phase H2 round-trip was
-  // verified end-to-end on production.
-  test('+16234620197 routes to Tom via iOS CallKit', () => {
-    const route = registry.getInboundRoute('+16234620197');
     expect(route).not.toBeNull();
     expect(route.name).toBe('Tom');
     expect(route.iosIdentity).toBe('tom');
     expect(route.forward).toBeUndefined();
+  });
+
+  // 2026-06-08 CORRECTION sentinel #2: +16234620197 is Ryann's, routes to
+  // her cell via PSTN forward. Reassigned from Tom 2026-06-08 (was Tom's
+  // iOS CallKit DID; swapped with +16026000188 — see sentinel #1).
+  test('+16234620197 routes to Ryann via PSTN forward', () => {
+    const route = registry.getInboundRoute('+16234620197');
+    expect(route).not.toBeNull();
+    expect(route.name).toBe('Ryann');
+    expect(route.forward).toMatch(/^\+1\d{10}$/);
+    expect(route.iosIdentity).toBeUndefined();
   });
 
   // Britt is outbound-only — she has a VoIP token registered in
