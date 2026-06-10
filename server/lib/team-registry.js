@@ -131,8 +131,16 @@ function loadRegistry() {
   cached = {
     /** All reps, in declaration order. */
     reps: team.members.map(m => byIdentity.get(m.identity)),
-    /** Lookup by string identity ("tom", "ryann", etc). Null if unknown. */
-    getRepByIdentity: (id) => byIdentity.get(id) || null,
+    /**
+     * Lookup by string identity ("tom", "ryann", etc). Null if unknown.
+     * Case-insensitive: team.json identities are canonical-lowercase, but
+     * callers may pass display-cased values — e.g. a client that sends
+     * caller_identity "Paul" instead of "paul". A miss here silently breaks
+     * every per-rep behavior (outbound caller ID fell back to the shared
+     * NUCLEUS_PHONE_NUMBER, sim scoring lost rep attribution), so normalize
+     * the key rather than trust upstream casing.
+     */
+    getRepByIdentity: (id) => (id ? byIdentity.get(String(id).toLowerCase()) : null) || null,
     /** Lookup by inbound DID E.164. Null if DID not in registry. */
     getRepByDID: (did) => byDID.get(did) || null,
     /** Inbound TwiML route for a DID. Returns { name, slack, forward? | iosIdentity? } or null. */
