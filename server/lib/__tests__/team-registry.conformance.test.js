@@ -130,4 +130,21 @@ describe('team-registry drift sentinels (Linus #6 — consolidated registry)', (
     expect(britt).not.toBeNull();
     expect(britt.inbound).toBeNull();
   });
+
+  // 2026-06-09: getRepByIdentity must be case-insensitive. Paul's client
+  // began sending caller_identity "Paul" (display-cased) instead of "paul";
+  // because Paul is admin, enforceOwnIdentity didn't reject the mismatch, so
+  // outboundCallerId('Paul') missed the lowercase-keyed registry and fell back
+  // to NUCLEUS_PHONE_NUMBER (+16026000188) — every Paul call presented Tom's
+  // DID. Pin the case-insensitive contract so a future exact-match regression
+  // reproduces the outage.
+  test('getRepByIdentity is case-insensitive (display-cased "Paul" → paul)', () => {
+    const lower = registry.getRepByIdentity('paul');
+    const upper = registry.getRepByIdentity('Paul');
+    expect(upper).not.toBeNull();
+    expect(upper.identity).toBe('paul');
+    expect(upper).toBe(lower);
+    // The whole point: the resolved rep must yield Paul's own DID, not a fallback.
+    expect(upper.inbound.did).toBe('+16029050230');
+  });
 });
