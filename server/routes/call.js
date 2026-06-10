@@ -47,7 +47,12 @@ const callerGuard = [bearerOrApiKeyOrSession, rbac('external_caller')];
 function enforceOwnIdentity(req, res, bodyIdentity) {
   if (!req.user) return false;
   if (hasMinRole(req.user.role, 'admin')) return true;
-  if (!bodyIdentity || bodyIdentity === req.user.identity) return true;
+  // Compare case-insensitively: the identity registry is canonically lowercase
+  // ('paul', not 'Paul'), but a client may echo a display-cased name. Initiate
+  // already lowercases the body value before calling this, so this guard is the
+  // belt to that suspenders (and protects any future caller that doesn't). (001z)
+  const own = (req.user.identity || '').toLowerCase();
+  if (!bodyIdentity || bodyIdentity.toLowerCase() === own) return true;
   res.status(403).json({ error: 'callerIdentity must match your own identity' });
   return false;
 }
@@ -71,7 +76,17 @@ const TERMINAL_STATUS_GUARD =
 
 // POST /api/call/initiate — start a new call
 router.post('/initiate', ...callerGuard, async (req, res) => {
-  const { to, contactName, companyName, contactId, callerIdentity } = req.body;
+  const { to, contactName, companyName, contactId } = req.body;
+
+  // Canonicalize identity to lowercase at the trust boundary so caller-ID
+  // resolution (outboundCallerId → getRepByIdentity), the ownership check, the
+  // stored nucleus_phone_calls row, and the in-memory conference all see one
+  // form. A client echoing a display name ('Paul') split Paul's caller-ID and
+  // stats from the canonical 'paul' (see commit 7774bac, beads 001z + t5xn).
+  const callerIdentity =
+    typeof req.body.callerIdentity === 'string'
+      ? req.body.callerIdentity.toLowerCase()
+      : req.body.callerIdentity;
 
   if (!to || !callerIdentity) {
     return res.status(400).json({ error: 'to and callerIdentity required' });
