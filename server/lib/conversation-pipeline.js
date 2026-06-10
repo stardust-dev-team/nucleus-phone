@@ -447,6 +447,13 @@ async function runAnalysis(callId, state, { sourceTag } = {}) {
   // passes DEFAULT_SOURCE_TAG for batched cycles and BYPASS_SOURCE_TAG for
   // question-fire. handleAnalysisResult absorbs the default at the end of
   // the chain if anything slips through.
+
+  // LOAD-BEARING concurrency guard (67m). This is the mutex: analysisInFlight is
+  // claimed below synchronously, before the first `await callHaiku`, so on the
+  // single-threaded loop no second runAnalysis for this call can pass this line
+  // until the in-flight cycle clears it. The matching check in
+  // processConversationChunk is an optimization layered on top, NOT the lock —
+  // a direct caller (tests, future trigger) is still protected by this one.
   if (state.analysisInFlight) return;
 
   // Evaluate window FIRST — a no-op early return must not reset the timer,
@@ -549,10 +556,13 @@ async function processConversationChunk(callId, text) {
   state.buffer.push(text);
   state.lastActivity = now;
 
-  // Short-circuit: if a cycle is already running, it will cover the same
-  // window content. Skip both the question-fire and batched paths — the
-  // guard is duplicated inside runAnalysis as defense-in-depth, but we
-  // make it explicit here so the two trigger paths share one check.
+  // OPTIMIZATION short-circuit (67m), not the lock. runAnalysis (450) holds the
+  // load-bearing analysisInFlight mutex; this early-out is a layer on top that,
+  // when a cycle is already running, skips the ENTIRE chunk — both the
+  // question-fire and batched runAnalysis calls AND their maybeEmitCoachWhisper
+  // follow-ups — instead of entering runAnalysis only to bounce off its guard.
+  // Dropping this check wouldn't risk concurrent Haiku calls (the mutex stops
+  // those) but WOULD let a whisper fire mid-cycle; keep it.
   if (state.analysisInFlight) return;
 
   // Tier 2: question-signal immediate fire. Side effect: runAnalysis resets
@@ -600,7 +610,18 @@ function cleanupConversation(callId) {
   callState.delete(callId);
   // Only record the first abort timestamp — repeated cleanup calls must NOT
   // extend the zombie-guard window past its original expiry.
-  if (!recentlyAborted.has(callId)) recentlyAborted.set(callId, Date.now());
+  if (!recentlyAborted.has(callId)) {
+    recentlyAborted.set(callId, Date.now());
+    // TTL-on-write (bs8): schedule self-eviction exactly STALE_THRESHOLD later
+    // instead of relying on the stale sweep, which only runs every
+    // SWEEP_INTERVAL (so an entry could linger up to STALE_THRESHOLD +
+    // SWEEP_INTERVAL). Under a dialer hammering through a list this bounds
+    // recentlyAborted to roughly one STALE_THRESHOLD window of live entries.
+    // .unref() so the timer never holds the process open; the sweep's eviction
+    // loop stays as an idempotent backstop. STALE_THRESHOLD is defined below
+    // but initialized long before any call reaches cleanup.
+    setTimeout(() => recentlyAborted.delete(callId), STALE_THRESHOLD).unref();
+  }
   // Drop the whisper-side state for the same callId. The whisper module
   // doesn't share state.aborted, so an in-flight whisper Haiku call will
   // still resolve and inspect `state.aborted` (we set it above) to no-op
@@ -657,14 +678,18 @@ module.exports = {
   processConversationChunk,
   cleanupConversation,
   getCallEventLog,
-  // Exposed for testing
-  _callState: callState,
-  _recentlyAborted: recentlyAborted,
-  _initState: initState,
-  _handleAnalysisResult: handleAnalysisResult,
-  _buildTranscriptWindow: buildTranscriptWindow,
-  _QUESTION_REGEX: QUESTION_REGEX,
-  _computeCallCost: computeCallCost,
-  _COST_PER_M: COST_PER_M,
-  _COST_ANOMALY_THRESHOLD_USD: COST_ANOMALY_THRESHOLD_USD,
+  // Internal seams exposed ONLY for unit tests, bundled under one key so the
+  // production surface stays the three functions above (9i0). Reach for these
+  // from tests via `require(...).__testHooks` — do not consume in app code.
+  __testHooks: {
+    callState,
+    recentlyAborted,
+    initState,
+    handleAnalysisResult,
+    buildTranscriptWindow,
+    QUESTION_REGEX,
+    computeCallCost,
+    COST_PER_M,
+    COST_ANOMALY_THRESHOLD_USD,
+  },
 };
