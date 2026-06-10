@@ -416,8 +416,23 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
 
   const row = rows[0];
 
+  // stopCallAndLog returns 'stopped' | 'already-ended' | 'failed'. A 'failed'
+  // means the Vapi call is (probably) still live and burning minutes while the
+  // user already saw "cancelled" — surface it. Escalate to the system-alert
+  // channel (mirrors the orphan-stop path at the INSERT site) and echo the
+  // outcome in the HTTP response so the client can warn the operator. (nja)
+  let stopOutcome = null;
   if (row.vapi_call_id) {
-    await stopCallAndLog(row.vapi_call_id);
+    stopOutcome = await stopCallAndLog(row.vapi_call_id);
+    if (stopOutcome === 'failed') {
+      sendSystemAlert(
+        `🔴 Practice Call Cancel — Vapi stop FAILED`,
+        [{
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*Cancel requested but the Vapi stop call failed — the practice call may still be live and burning minutes.*\n*Vapi Call ID:* \`${row.vapi_call_id}\`\n*Caller:* ${row.caller_identity}\n*Sim Call ID:* ${row.id}\n*Action:* End this call manually in the Vapi dashboard.` },
+        }]
+      ).catch(() => {});
+    }
   }
 
   // Fetch transcript from Vapi API — the call just ended so transcript
@@ -441,7 +456,7 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
   if (!transcript) {
     // No transcript available — mark as cancelled (call was too short)
     await pool.query("UPDATE sim_call_scores SET status = 'cancelled' WHERE id = $1", [row.id]);
-    res.json({ cancelled: true });
+    res.json({ cancelled: true, stopOutcome });
     return;
   }
 
@@ -450,7 +465,7 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
     `UPDATE sim_call_scores SET transcript = $2, recording_url = $3, status = 'scoring' WHERE id = $1`,
     [row.id, transcript, recording]
   );
-  res.json({ cancelled: false, scoring: true });
+  res.json({ cancelled: false, scoring: true, stopOutcome });
 
   // Capture navigator events then clean up conversation state
   const navEvents = getCallEventLog(`sim-${row.id}`);
