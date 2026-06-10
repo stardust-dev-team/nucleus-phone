@@ -170,6 +170,18 @@ router.get('/:callId/stream', async (req, res) => {
   const basicAuth = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
   const upstreamHeaders = { Authorization: basicAuth };
+  // We forward the client's Range upstream and forward Twilio's status +
+  // accept-ranges/content-range back verbatim (see the header loop below), so
+  // this proxy is fully transparent to range requests. HOWEVER: Twilio's
+  // api.twilio.com Recordings .mp3 endpoint does NOT honor Range — it answers
+  // 200 + `Accept-Ranges: none` and sends the whole body even when a Range is
+  // present (verified 2026-06-10 against a live recording with the production
+  // token: GET w/ `Range: bytes=0-1023` → 200, accept-ranges:none, full file).
+  // So clients never get a 206 here, and AVPlayer falls back to downloading the
+  // full mp3 before scrubbing. That's acceptable — recordings are small
+  // (~600KB / <1s on LTE) and on-device scrub works. This is a Twilio
+  // capability gap, NOT a bug in this proxy; do not chase a 206 here.
+  // (joruva-dialer-mac-04w.)
   if (req.headers.range) upstreamHeaders.Range = req.headers.range;
 
   const maxBytes = getMaxBytes();
