@@ -18,10 +18,13 @@ jest.mock('../../lib/team-registry', () => {
     reps: [],
     getRepByIdentity: () => null,
     getRepByDID: () => null,
+    // `identity` mirrors the real registry (route.identity = m.identity) — the canonical
+    // key the use_inhouse_stt gate joins on (nucleus-phone-rgja.7). display_name is NOT a
+    // join key (it drifts: team.json name 'Ryann' vs DB display_name 'Ryann Johnson').
     getAllInboundRoutes: () => ({
-      '+16026000188': { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
-      '+16029050230': { iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
-      '+16025550101': { forward: '+19995551111', iosIdentity: 'kate', slack: '', name: 'Kate' },
+      '+16026000188': { identity: 'ryann', forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
+      '+16029050230': { identity: 'paul', iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
+      '+16025550101': { identity: 'kate', forward: '+19995551111', iosIdentity: 'kate', slack: '', name: 'Kate' },
     }),
     getInboundRoute: () => null,
   };
@@ -96,6 +99,9 @@ describe('POST /api/voice/incoming — legacy forward route', () => {
       'inbound',
       'CA-pstn-1',
       '+14155551212',
+      // use_inhouse_stt gate lookup key (nucleus-phone-rgja.7): the rep's canonical
+      // identity (route.identity), present on forward routes too — NOT display_name.
+      'ryann',
     ]);
   });
 
@@ -144,6 +150,8 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
       'inbound',
       'CA-ios-1',
       '+14155551212',
+      // use_inhouse_stt gate lookup key (nucleus-phone-rgja.7): route.identity.
+      'paul',
     ]);
     expect(slack.sendSlackAlert).toHaveBeenCalled();
     expect(slack.sendSlackDM).toHaveBeenCalledWith('D-ios', expect.any(String));

@@ -251,10 +251,15 @@ async function initSchema() {
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS caller_call_sid VARCHAR(50);
       -- Which STT produced the persisted transcript ('twilio' | 'inhouse').
       -- Observability for the in-house STT swap (nucleus-phone-rgja); set once
-      -- per call by lib/transcript-ingest.js. The use_inhouse_stt gate columns
-      -- (users + calls) land with the ingest endpoint in a later stage (B4).
+      -- per call by lib/transcript-ingest.js.
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS transcript_source VARCHAR(16)
         CHECK (transcript_source IN ('twilio', 'inhouse'));
+      -- Per-call STT-source gate (nucleus-phone-rgja.7, Stage B4). Stamped FROM the
+      -- rep's nucleus_phone_users.use_inhouse_stt in the SAME INSERT that creates the
+      -- row (call.js / incoming.js) so a transcription-started event arriving first
+      -- can't read a NULL gate (plan review #2). Both ingest entry points read this
+      -- stable per-call decision; exactly one source feeds, the other shadow-logs.
+      ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS use_inhouse_stt BOOLEAN DEFAULT FALSE;
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_calls_caller_call_sid ON nucleus_phone_calls(caller_call_sid);
@@ -431,6 +436,14 @@ async function initSchema() {
     await client.query(`
       ALTER TABLE nucleus_phone_users ADD COLUMN IF NOT EXISTS oid UUID UNIQUE;
       CREATE INDEX IF NOT EXISTS idx_npu_oid ON nucleus_phone_users(oid) WHERE oid IS NOT NULL;
+    `);
+
+    // Per-rep in-house-STT rollout toggle (nucleus-phone-rgja.7, Stage B4). Source of
+    // truth for the dual-run flip: at call creation it's read for the rep and STAMPED
+    // onto nucleus_phone_calls.use_inhouse_stt (the per-call gate). Default FALSE keeps
+    // every rep on Twilio RT until explicitly flipped (later an admin-UI switch).
+    await client.query(`
+      ALTER TABLE nucleus_phone_users ADD COLUMN IF NOT EXISTS use_inhouse_stt BOOLEAN NOT NULL DEFAULT FALSE;
     `);
 
     // 007_voip_tokens: per-user VoIP push token registry for native iOS dialer
