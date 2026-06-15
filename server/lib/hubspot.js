@@ -3,6 +3,17 @@ const { throwHttpError } = require('./http-error');
 
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 const MAX_RETRIES = 3;
+// 5xx backoff (nucleus-phone-ju8): exponential, jittered, capped. 429 keeps its own
+// retry-after honoring path; this governs only the transient-5xx retries.
+const RETRY_BASE_MS = 500;
+const RETRY_CAP_MS = 8000;
+
+// Exponential backoff with jitter, capped — avoids a synchronized retry stampede when many
+// CRM writes hit the same LB bounce / pod restart at once.
+function backoffMs(attempt) {
+  const expo = Math.min(RETRY_CAP_MS, RETRY_BASE_MS * 2 ** attempt);
+  return expo + Math.floor(Math.random() * 250);
+}
 
 // CONTACT_PROPERTIES must remain a module-level constant — never user-supplied.
 const CONTACT_PROPERTIES = [
@@ -36,6 +47,20 @@ async function hubspotFetch(path, options = {}, _retries = 0) {
     }
     const retryAfter = Math.max(1, parseInt(resp.headers.get('retry-after') || '2', 10));
     await new Promise(r => setTimeout(r, retryAfter * 1000));
+    return hubspotFetch(path, options, _retries + 1);
+  }
+
+  // 5xx (502/503/504/…) are textbook transient failures — LB bounce, pod restart,
+  // Cloudflare hiccup — and failing a CRM write immediately loses deals. Retry with
+  // jittered exponential backoff, capped at MAX_RETRIES, then surface the structured
+  // error. 4xx (other than 429) fall through to the immediate throw below — those are
+  // client-side and won't fix themselves on retry (nucleus-phone-ju8).
+  if (resp.status >= 500) {
+    if (_retries >= MAX_RETRIES) {
+      const text = await resp.text().catch(() => '');
+      throwHttpError(resp, text, method, path, { service: 'HubSpot' });
+    }
+    await new Promise(r => setTimeout(r, backoffMs(_retries)));
     return hubspotFetch(path, options, _retries + 1);
   }
 
