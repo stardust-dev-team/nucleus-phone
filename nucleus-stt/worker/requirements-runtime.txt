@@ -1,0 +1,14 @@
+# PRODUCTION STT runtime deps (bead aunshin-phone-t9w) — the subset of requirements.txt the
+# Render image actually needs. MUST run under Python 3.13 (audioop removed in 3.13; μ-law is
+# handled in-repo via mulaw.py, never the stdlib).
+#
+# Excluded vs requirements.txt (eval/bake-off only, never shipped):
+#   faster-whisper, jiwer  — WER bake-off harness; not on any production path.
+#
+# Pins mirror requirements.txt exactly so prod matches the ADR's validated builds.
+
+useful-moonshine-onnx==20251121 # LIVE counterparty engine (onnxruntime backend; moonshine/base)
+pywhispercpp==1.5.0             # BATCH / post-call engine (whisper.cpp base.en); may build from
+                                # source on x86_64 if no manylinux wheel → see Dockerfile toolchain
+numpy==2.4.6
+scipy==1.17.1                  # in-memory 8k→16k resample (resample_poly)
