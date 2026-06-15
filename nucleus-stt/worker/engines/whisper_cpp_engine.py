@@ -15,11 +15,11 @@ import numpy as np
 
 from .base import STTEngine
 
-# base.en is the validated default (ADR 0001). AUNSHIN_WHISPER_MODEL lets the Render-cadence
-# gate (bead aunshin-phone-jch) sweep a smaller rung (tiny.en) WITHOUT a code edit if base.en
-# can't hold the coaching cadence on GPU-less x86 CPU. Production code does NOT read this —
-# it's a bake-off knob only; the shipped default lives in WhisperCppWorkerOptions / stt_worker.py.
-MODEL = os.environ.get("AUNSHIN_WHISPER_MODEL", "base.en")
+# base.en is the validated default (ADR 0001). NUCLEUS_WHISPER_MODEL lets a cadence
+# gate sweep a smaller rung (tiny.en) WITHOUT a code edit if base.en can't hold the
+# cadence on GPU-less x86 CPU. Production code does NOT read this — it's a tuning
+# knob only; the shipped default lives in WhisperCppWorkerOptions / stt_worker.py.
+MODEL = os.environ.get("NUCLEUS_WHISPER_MODEL", "base.en")
 
 
 class WhisperCppEngine(STTEngine):

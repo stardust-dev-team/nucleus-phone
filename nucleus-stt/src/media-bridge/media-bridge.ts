@@ -1,29 +1,30 @@
 /**
- * Media-bridge: Twilio Media Streams → counterparty transcript (bead: aunshin-phone-qid.8).
- * Plan §Security invariants #1, #7. Merge contract: docs/specs/transcript-merge-contract.md.
+ * Media-bridge: Twilio Media Streams → per-track transcript. Copy-forked from
+ * aunshin-phone (qid.8) for nucleus-phone (bead nucleus-phone-rgja.4).
  *
- * One {@link MediaStreamBridge} per call. It is a PURE message processor —
- * `handleMessage(frame)` consumes Twilio Media Streams JSON frames; the WS
- * transport is a thin wrapper around it (see {@link attachMediaStream}), so the
- * core is testable against a synthesized fixture with no socket.
+ * nucleus-phone runs TWO {@link MediaStreamBridge} instances per call on the same
+ * Media Streams socket — one `{counterpartyTrack:'outbound', speakerLabel:'agent'}`
+ * (the rep) and one `{counterpartyTrack:'inbound', speakerLabel:'customer'}` (the
+ * lead). Each is a PURE message processor: `handleMessage(frame)` consumes Twilio
+ * JSON frames; both bridges see EVERY frame and each decodes ONLY its configured
+ * track, dropping the other's (its sibling handles that one). The WS transport is a
+ * thin wrapper (see {@link attachMediaStream}), so the core is testable against a
+ * synthesized fixture with no socket.
  *
- * Pipeline per inbound (counterparty) media frame:
+ * Pipeline per matching media frame:
  *   base64 → μ-law bytes → decodeMulawToFloat32 (IN MEMORY) → SttAdapter →
- *   TranscriptChunk{ speaker:'counterparty', text, utt_start_ms, utt_end_ms }.
+ *   TranscriptChunk{ speaker: <speakerLabel>, text, utt_start_ms, utt_end_ms }.
  *
- * Compliance:
- *   - Counterparty AUDIO is decoded to a transient Float32Array and discarded; it
- *     is NEVER written to disk/DB/temp (invariant #1). This module imports no `fs`.
- *   - The OUTBOUND track (the user's own audio, echoed back by Twilio) is DROPPED:
- *     user audio never leaves the device / is never processed server-side
- *     (invariant #2). Only the configured counterparty track is decoded.
- *   - Logs use the internal aunshin calls.id UUID only — never the Twilio CallSid
- *     (which the `start` frame carries) and never transcript text (invariant #7).
+ * Handling:
+ *   - AUDIO is decoded to a transient Float32Array and discarded; it is NEVER
+ *     written to disk/DB/temp. This module imports no `fs`.
+ *   - Frames for any track other than this bridge's `counterpartyTrack` are dropped.
+ *   - Logs carry the nucleus-phone conference_name only — never the Twilio CallSid
+ *     (which the `start` frame carries) and never transcript text (the Logger guards both).
  *
- * Clock domain: counterparty offsets are stream-time ms (Twilio's per-frame
- * `media.timestamp`, ms since stream start) plus `streamStartOffsetMs` — the
- * offset from call start to stream start (0 when the stream opens at call start).
- * This is the single clock domain the merge buffer (qid.11) orders on.
+ * Clock domain: offsets are stream-time ms (Twilio's per-frame `media.timestamp`,
+ * ms since stream start) plus `streamStartOffsetMs` — the offset from call start to
+ * stream start (0 when the stream opens at call start).
  */
 import { decodeMulawToFloat32 } from '../audio/mulaw.js';
 import { Logger } from '../log/index.js';
