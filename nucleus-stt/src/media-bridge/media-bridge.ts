@@ -297,8 +297,10 @@ export function attachMediaStream(socket: RawMediaSocket, bridge: MediaStreamBri
   });
 }
 
-/** Decode a `ws` message payload (string | Buffer | Buffer[] | ArrayBuffer) to text. */
-function wsFrameToText(data: unknown): string {
+/** Decode a `ws` message payload (string | Buffer | Buffer[] | ArrayBuffer) to text.
+ *  Exported so the media-stream-server's connection glue shares the one decoder
+ *  (bead nucleus-phone-rgja.5) rather than carrying a second copy that could drift. */
+export function wsFrameToText(data: unknown): string {
   if (typeof data === 'string') return data;
   if (Buffer.isBuffer(data)) return data.toString('utf8');
   if (Array.isArray(data)) return Buffer.concat(data as Buffer[]).toString('utf8');

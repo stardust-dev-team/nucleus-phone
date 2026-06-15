@@ -15,7 +15,7 @@
  *
  * Tests swap SttWorkerAdapter → MockSttAdapter and drive handleMessage directly.
  */
-export { MediaStreamBridge, attachMediaStream } from './media-bridge.js';
+export { MediaStreamBridge, attachMediaStream, wsFrameToText } from './media-bridge.js';
 export type { MediaBridgeOptions, RawMediaSocket } from './media-bridge.js';
 export {
   MockSttAdapter,
