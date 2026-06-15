@@ -17,10 +17,13 @@ per-track moonshine workers (agent + customer), and POSTs each finalized chunk +
 
 ## Prerequisites
 
-- A local `docker build` to validate the image (bakes the moonshine/base ONNX model; first build
-  is slow — pywhispercpp may compile whisper.cpp from source). **NOTE: not yet run — Docker was
-  unavailable in the authoring session. Run `docker build -t nucleus-stt nucleus-stt/` from the
-  repo root before creating the Render service.**
+- Image build is validated in CI on every push touching `nucleus-stt/**` by
+  `.github/workflows/build-stt.yml` (`docker build` on an amd64 `ubuntu-latest` runner — the
+  Render target arch; a local build on an arm64 Mac would verify the wrong target). **VERIFIED
+  green 2026-06-15** (run 27578788259): the moonshine/base ONNX model bakes (`moonshine/base
+  baked`) and `pywhispercpp==1.5.0` resolves to a prebuilt amd64 wheel — no whisper.cpp source
+  compile occurs, so the build is fast (~40s). To validate locally instead, run `docker build -t
+  nucleus-stt nucleus-stt/` from the repo root.
 - The main `nucleus-phone` service already deployed (it is the ingest target).
 
 ## Create the service (gated — paid compute)
