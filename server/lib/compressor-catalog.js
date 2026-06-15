@@ -17,7 +17,10 @@ const RS_OPEN_FRAME = [
   { model: 'JRS-7.5E',  hp: 7.5,  cfm: 28,  psi: 150, price: 7495,  voltage: '230V/1ph or 3ph',   productLine: 'rs_open', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
   { model: 'JRS-10E',   hp: 10,   cfm: 38,  psi: 150, price: 9495,  voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
   { model: 'JRS-15E',   hp: 15,   cfm: 54,  psi: 150, price: 11995, voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'ecommerce', pricingStatus: 'confirmed' },
-  { model: 'JRS-20E',   hp: 20,   cfm: 78,  psi: 150, price: null,  voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'ecommerce', pricingStatus: 'pending' },
+  // JRS-20E is <=20 HP so web-eligible, but CAS hasn't provided an MSRP yet, so no
+  // joruva.com listing exists — sold 'direct' (phone) until then (nucleus-phone-oqv).
+  // When pricing confirms, flip back: price + pricingStatus:'confirmed' + salesChannel:'ecommerce'.
+  { model: 'JRS-20E',   hp: 20,   cfm: 78,  psi: 150, price: null,  voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'direct',    pricingStatus: 'pending' },
   { model: 'JRS-25E',   hp: 25,   cfm: 102, psi: 150, price: null,  voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'direct',    pricingStatus: 'pending' },
   { model: 'JRS-30',    hp: 30,   cfm: 125, psi: 150, price: 19500, voltage: '230/460V/3ph',      productLine: 'rs_open', salesChannel: 'direct',    pricingStatus: 'confirmed' },
   { model: 'JRS-40',    hp: 40,   cfm: 155, psi: 150, price: null,  voltage: '460V/3ph',          productLine: 'rs_open', salesChannel: 'direct',    pricingStatus: 'quote_required' },
@@ -237,6 +240,31 @@ function assertDirectSalesAbove20Hp(catalog) {
 }
 assertDirectSalesAbove20Hp(COMPRESSOR_CATALOG);
 
+// Module-init invariant: salesChannel:'ecommerce' implies a LIVE joruva.com
+// listing, which cannot exist without a real MSRP. So 'ecommerce' REQUIRES
+// pricingStatus:'confirmed' AND a non-null price. The contradictory state
+// (ecommerce + pending/null-price) means a web visitor is "routed" to a listing
+// that doesn't exist — the bug behind nucleus-phone-oqv (JRS-20E shipped as
+// ecommerce+pending). Encoded as a load-time throw + pure, unit-testable
+// predicate so the contradiction can't silently reappear (same idiom as
+// assertDirectSalesAbove20Hp). The fix for a pending-price web-eligible SKU is
+// salesChannel:'direct' until CAS confirms the MSRP, then flip back to
+// 'ecommerce' + 'confirmed' + price.
+function assertEcommerceImpliesConfirmedPrice(catalog) {
+  for (const m of catalog) {
+    if (m.salesChannel === 'ecommerce' && !(m.pricingStatus === 'confirmed' && m.price != null)) {
+      throw new Error(
+        `compressor-catalog: contradiction. ${m.model} has salesChannel='ecommerce' ` +
+        `but pricingStatus='${m.pricingStatus}' / price=${m.price}. An 'ecommerce' SKU ` +
+        `requires pricingStatus='confirmed' and a non-null price (no web listing can ` +
+        `exist without an MSRP). Set salesChannel='direct' while pricing is pending, ` +
+        `or supply price + pricingStatus='confirmed'.`
+      );
+    }
+  }
+}
+assertEcommerceImpliesConfirmedPrice(COMPRESSOR_CATALOG);
+
 module.exports = {
   COMPRESSOR_CATALOG,
   RS_OPEN_FRAME,
@@ -247,4 +275,5 @@ module.exports = {
   personaDefaultsFor,
   pricedModelAtOrAbove,
   assertDirectSalesAbove20Hp,
+  assertEcommerceImpliesConfirmedPrice,
 };
