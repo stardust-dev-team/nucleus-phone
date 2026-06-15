@@ -111,11 +111,23 @@ describe('hubspotFetch — 429 rate-limit retry', () => {
     expect(global.fetch).toHaveBeenCalledTimes(totalCalls);
   });
 
-  // TODO(nucleus-phone-ju8): 5xx are transient (LB bounce, pod restart) and
-  // should retry with jitter+cap, same as 429. This test pins current behavior;
-  // remove/flip when the retry policy is extended.
-  test('5xx does NOT retry — throws immediately (only 429 retries)', async () => {
-    mockFetchResponse('internal error', { status: 503 });
+  // nucleus-phone-ju8: 5xx are transient (LB bounce, pod restart, Cloudflare hiccup)
+  // and now retry with jittered backoff, capped at MAX_RETRIES — same resilience as 429.
+  test('5xx retries with backoff then succeeds (transient)', async () => {
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn) => { fn(); return 0; });
+    mockFetchResponse('bad gateway', { status: 502 }); // first attempt fails
+    mockFetchResponse({ results: [], total: 0 });       // retry succeeds
+    const result = await searchContacts('acme');
+    expect(result).toEqual({ results: [], total: 0 });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('5xx throws structured error after MAX_RETRIES exhausted', async () => {
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn) => { fn(); return 0; });
+    const totalCalls = MAX_RETRIES + 1; // initial + MAX_RETRIES retries
+    for (let i = 0; i < totalCalls; i++) {
+      mockFetchResponse('internal error', { status: 503 });
+    }
     let caught;
     try { await searchContacts('acme'); } catch (e) { caught = e; }
     expect(caught.status).toBe(503);
@@ -123,7 +135,15 @@ describe('hubspotFetch — 429 rate-limit retry', () => {
     expect(caught.endpoint).toBe('/crm/v3/objects/contacts/search');
     expect(caught.body).toContain('internal error');
     expect(caught.message).toMatch(/HubSpot POST \/crm\/v3\/objects\/contacts\/search \(503\)/);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(totalCalls);
+  });
+
+  test('4xx (non-429) still throws immediately — no retry', async () => {
+    mockFetchResponse('bad request', { status: 400 });
+    let caught;
+    try { await searchContacts('acme'); } catch (e) { caught = e; }
+    expect(caught.status).toBe(400);
+    expect(global.fetch).toHaveBeenCalledTimes(1); // client error — not retried
   });
 });
 
