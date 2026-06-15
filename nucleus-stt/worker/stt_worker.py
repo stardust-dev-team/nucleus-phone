@@ -233,8 +233,8 @@ def main() -> int:
     # step-ms is moot for batch one-shot decode; for the LIVE moonshine path it is the
     # partial-emit cadence. Default = the Render-confirmed-safe 1250 ms (moonshine's +549 ms
     # headroom there; was the never-shipped 500). window 10 s bounds the re-decode cost.
-    ap.add_argument("--step-ms", type=int, default=int(os.environ.get("AUNSHIN_STT_STEP_MS", "1250")))
-    ap.add_argument("--window-ms", type=int, default=int(os.environ.get("AUNSHIN_STT_WINDOW_MS", "10000")))
+    ap.add_argument("--step-ms", type=int, default=int(os.environ.get("NUCLEUS_STT_STEP_MS", "1250")))
+    ap.add_argument("--window-ms", type=int, default=int(os.environ.get("NUCLEUS_STT_WINDOW_MS", "10000")))
     ap.add_argument("--model-info", action="store_true",
                     help="print the engine/model id and exit (no model load) — lets the "
                          "binding/integration test probe availability cheaply")
