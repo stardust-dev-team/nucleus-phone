@@ -1,0 +1,11 @@
+# Keep the build context lean + reproducible (bead nucleus-phone-rgja.6). The image builds its
+# OWN venv + node_modules; never copy local ones, stale pyc, or tests into it.
+node_modules/
+worker/.venv/
+**/__pycache__/
+*.pyc
+**/*.test.ts
+**/__fixtures__/
+.gitignore
+DEPLOY.md
+render.yaml
