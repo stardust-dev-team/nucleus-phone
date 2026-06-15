@@ -1,0 +1,39 @@
+# nucleus-stt Render service spec (bead nucleus-phone-rgja.6, Stage B3) — PREPARE-ONLY.
+#
+# This is the INTENDED shape of the separate nucleus-stt Render service. It is NOT yet created:
+# the service involves paid compute, so creation is a gated, explicit step Tom performs (see
+# DEPLOY.md). `autoDeploy: false` so a push to the branch never builds/ships it on its own.
+#
+# nucleus-stt lives in a SUBDIR of the nucleus-phone repo, so rootDir scopes the build to it.
+# Create from the Render dashboard (or `render blueprint launch`) pointing at this file.
+services:
+  - type: web
+    name: nucleus-stt
+    runtime: image
+    # Binding constraint is vCPU (continuous moonshine decode), so size on CPU. Pro Plus
+    # (8 GB / 4 vCPU) for ~2–3 concurrent now; scale to 2× Pro Plus + autoscaling (~10
+    # concurrent) only when measured (plan §Hosting). Standard/Pro starve the decoders.
+    plan: pro plus
+    rootDir: nucleus-stt
+    dockerfilePath: ./Dockerfile
+    # /healthz returns 200 the moment the port binds (no auth, no PII) — the Render probe.
+    healthCheckPath: /healthz
+    # Push-to-deploy OFF: this is paid compute; deploys are manual + gated until the dual-run
+    # validation (Stage D) is ready.
+    autoDeploy: false
+    region: oregon
+    envVars:
+      # Service-to-service bearer the main service's stt-ingest endpoint checks. Generate one
+      # and set the SAME value here AND as STT_INGEST_SECRET on the main nucleus-phone service.
+      - key: STT_INGEST_SECRET
+        sync: false
+      # Base URL of the main nucleus-phone service (no trailing slash) — chunks POST to
+      # ${MAIN_INGEST_URL}/api/stt-ingest.
+      - key: MAIN_INGEST_URL
+        sync: false
+      # Render injects PORT; the server reads it (defaults 8080 locally).
+      - key: PORT
+        value: "8080"
+      # NUCLEUS_STT_PYTHON / NUCLEUS_STT_WORKER / NUCLEUS_STT_STEP_MS / NUCLEUS_STT_WINDOW_MS /
+      # HF_HOME / HF_HUB_OFFLINE are baked into the image ENV (Dockerfile) — listed in DEPLOY.md
+      # for reference; they do NOT need to be set on the service.
