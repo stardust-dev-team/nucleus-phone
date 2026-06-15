@@ -1,0 +1,20 @@
+{
+  "name": "nucleus-stt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Twilio Media Streams -> STT service for nucleus-phone. Copy-forked from aunshin-phone (bead nucleus-phone-rgja). Two per-track bridges per call drive moonshine (live) / whisper.cpp (batch) Python workers; transcript chunks POST to nucleus-phone /api/stt-ingest. Deployed as its own Render service (Stage B3).",
+  "scripts": {
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
