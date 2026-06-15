@@ -25,6 +25,7 @@ const { logEvent } = require('../lib/debug-log');
 const { touch } = require('../lib/health-tracker');
 const {
   ingestTranscriptChunk,
+  shadowLogChunk,
   resolveCallByCallSid,
   finalizeByCallSid,
 } = require('../lib/transcript-ingest');
@@ -68,11 +69,24 @@ router.post('/', twilioWebhook, async (req, res) => {
 
   // Twilio sends transcription-stopped when all chunks are delivered —
   // trigger post-call summarization here instead of racing in recording.js.
+  // Dual-run gate (nucleus-phone-rgja.7): if this call runs in-house STT, the
+  // Media-Streams finalize (finalizeByConference) owns the summary — skip the
+  // Twilio finalize. On a lookup error, fall through and finalize anyway: the
+  // summarize tail is idempotent (AND ai_summarized IS NOT TRUE), so at worst the
+  // two paths race to the SAME single summary, never a double one.
   if (TranscriptionEvent === 'transcription-stopped' && CallSid) {
     track(
-      finalizeByCallSid(CallSid).catch(err => {
-        console.error('transcription: post-call summary failed:', err.message);
-      })
+      (async () => {
+        try {
+          const call = await resolveCallByCallSid(CallSid);
+          if (call && call.use_inhouse_stt) return; // in-house path owns finalize
+        } catch (err) {
+          console.error('transcription: finalize gate lookup failed:', err.message);
+        }
+        return finalizeByCallSid(CallSid).catch(err => {
+          console.error('transcription: post-call summary failed:', err.message);
+        });
+      })()
     );
     return;
   }
@@ -89,6 +103,19 @@ router.post('/', twilioWebhook, async (req, res) => {
 
   if (!call) {
     console.warn(`transcription: no call found for CallSid ${CallSid}`);
+    return;
+  }
+
+  // Dual-run gate (nucleus-phone-rgja.7): when this call is flagged for in-house
+  // STT, the Media-Streams path is the driver and Twilio RT only shadow-logs —
+  // never writes/broadcasts, so exactly one source feeds the call.
+  if (call.use_inhouse_stt) {
+    shadowLogChunk({
+      source: 'twilio',
+      conferenceName: call.conference_name,
+      text: transcriptText,
+      speaker: mapSpeaker(Track),
+    });
     return;
   }
 

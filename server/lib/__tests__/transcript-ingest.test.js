@@ -183,6 +183,17 @@ describe('finalize — two explicit lookups, shared summarize tail', () => {
     expect(summarizeCall).toHaveBeenCalledTimes(1);
   });
 
+  test('idempotency: both finalize SELECTs exclude already-summarized calls', async () => {
+    // The AND ai_summarized IS NOT TRUE guard is what makes a duplicate finalize a no-op
+    // (Twilio resend / dual-run double-fire) — no second paid summary, no overwrite.
+    pool.query.mockResolvedValue({ rows: [] }); // already-summarized → guard excludes it
+    await finalizeByCallSid('CA1');
+    await finalizeByConference('nucleus-call-xyz');
+    expect(pool.query.mock.calls[0][0]).toContain('ai_summarized IS NOT TRUE');
+    expect(pool.query.mock.calls[1][0]).toContain('ai_summarized IS NOT TRUE');
+    expect(summarizeCall).not.toHaveBeenCalled(); // no row → no summary
+  });
+
   test('no call row → skip (no summarize, no write)', async () => {
     pool.query.mockResolvedValueOnce({ rows: [] });
     await finalizeByCallSid('CA-missing');

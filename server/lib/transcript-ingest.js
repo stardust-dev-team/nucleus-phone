@@ -31,7 +31,9 @@ const { capturePhones } = require('./phone-extractor');
 
 // The pinned callRow shape every resolver returns and ingestTranscriptChunk
 // expects. `lead_phone` MUST stay selected — capturePhones no-ops without it.
-const CALL_ROW_COLUMNS = 'id, conference_name, lead_phone';
+// `use_inhouse_stt` is the per-call gate (nucleus-phone-rgja.7): both ingest entry
+// points read it to decide drive-vs-shadow, so BOTH resolvers must select it.
+const CALL_ROW_COLUMNS = 'id, conference_name, lead_phone, use_inhouse_stt';
 
 async function resolveCallByCallSid(callSid) {
   const { rows } = await pool.query(
@@ -97,14 +99,38 @@ async function ingestTranscriptChunk({ callRow, text, speaker, source = 'twilio'
   });
 }
 
+/**
+ * Shadow-log a chunk from the NON-driving source during dual-run. Records only
+ * what WER/latency comparison needs (conference, speaker, text length) — never
+ * writes the transcript, never broadcasts, never runs a pipeline. Exactly one
+ * source feeds a call (the use_inhouse_stt gate); the other lands here so we can
+ * compare in-house vs Twilio before the flip (plan §rollout).
+ *
+ * @param {Object} args
+ * @param {'twilio'|'inhouse'} args.source  the shadow (non-driving) source
+ * @param {string} args.conferenceName
+ * @param {string} args.text
+ * @param {string} args.speaker
+ */
+function shadowLogChunk({ source, conferenceName, text, speaker }) {
+  console.log(
+    `shadow-stt[${source}]: conference=${conferenceName} speaker=${speaker} len=${(text || '').length}`
+  );
+}
+
 // --- Post-call summary --------------------------------------------------
 // Two explicit entry points sharing one summarize-and-write tail. Splitting
 // (rather than an OR query) keeps each lookup obvious and avoids the
 // caller_call_sid inbound/outbound asymmetry leaking into the in-house path.
 
+// `AND ai_summarized IS NOT TRUE` makes finalize IDEMPOTENT: a second finalize for the
+// same call (Twilio resending transcription-stopped, or a dual-run double-fire) finds no
+// row and skips — no second paid Claude summarization, no overwrite (nucleus-phone-rgja.7
+// Linus review). IS NOT TRUE (not `= FALSE`) so a NULL ai_summarized still summarizes once.
+
 function finalizeByCallSid(callSid) {
   return summarizeByKey(
-    'SELECT id, transcript FROM nucleus_phone_calls WHERE caller_call_sid = $1',
+    'SELECT id, transcript FROM nucleus_phone_calls WHERE caller_call_sid = $1 AND ai_summarized IS NOT TRUE',
     callSid,
     `CallSid ${callSid}`
   );
@@ -112,7 +138,7 @@ function finalizeByCallSid(callSid) {
 
 function finalizeByConference(conferenceName) {
   return summarizeByKey(
-    'SELECT id, transcript FROM nucleus_phone_calls WHERE conference_name = $1',
+    'SELECT id, transcript FROM nucleus_phone_calls WHERE conference_name = $1 AND ai_summarized IS NOT TRUE',
     conferenceName,
     `conference ${conferenceName}`
   );
@@ -159,6 +185,7 @@ async function summarizeByKey(selectSql, keyValue, label) {
 
 module.exports = {
   ingestTranscriptChunk,
+  shadowLogChunk,
   resolveCallByCallSid,
   resolveCallByConference,
   finalizeByCallSid,

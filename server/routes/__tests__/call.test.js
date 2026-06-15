@@ -119,6 +119,13 @@ describe('POST /api/call/initiate', () => {
       [res.body.conferenceName, 'tom', '+16025551234', 'Jane Doe', 'Acme Corp', '101']
     );
 
+    // The use_inhouse_stt gate is stamped IN the creating INSERT (nucleus-phone-rgja.7,
+    // plan review #2), looked up from the rep's nucleus_phone_users row by callerIdentity
+    // ($2) — NOT a later UPDATE that a transcription-started event could beat.
+    const insertSql = pool.query.mock.calls.find((c) => /INSERT INTO nucleus_phone_calls/.test(c[0]))[0];
+    expect(insertSql).toContain('use_inhouse_stt');
+    expect(insertSql).toMatch(/SELECT use_inhouse_stt FROM nucleus_phone_users WHERE identity = \$2/);
+
     // In-memory conference created
     expect(conference.createConference).toHaveBeenCalledWith(
       res.body.conferenceName,

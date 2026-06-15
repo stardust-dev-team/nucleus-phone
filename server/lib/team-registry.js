@@ -108,7 +108,11 @@ function loadRegistry() {
         throw new Error(`team-registry: duplicate inbound DID "${did}"`);
       }
 
-      const route = { name: m.name, slack: m.slackUserId || '' };
+      // `identity` is the rep's canonical, UNIQUE nucleus_phone_users key — carried on
+      // the route so consumers can join to the users table without a second registry
+      // lookup. Used by incoming.js to stamp the use_inhouse_stt gate (nucleus-phone-rgja.7);
+      // do NOT join on `name`/display_name, which are cosmetic and drift.
+      const route = { identity: m.identity, name: m.name, slack: m.slackUserId || '' };
       if (type === 'iosIdentity') {
         route.iosIdentity = m.inbound.iosIdentity || m.identity;
       } else if (type === 'forward') {

@@ -87,6 +87,7 @@ app.use('/api/fireflies-sync', require('./routes/fireflies-sync'));
 app.use('/api/scoreboard', require('./routes/scoreboard'));
 app.use('/api/sim', require('./routes/sim'));
 app.use('/api/transcription', require('./routes/transcription'));
+app.use('/api/stt-ingest', require('./routes/stt-ingest'));
 app.use('/api/equipment', apiKeyAuth, rbac('admin'), require('./routes/equipment'));
 app.use('/api/curation', apiKeyAuth, rbac('admin'), require('./routes/curation'));
 app.use('/api/quote-request', sessionAuth, rbac('external_caller'), require('./routes/quote-request'));

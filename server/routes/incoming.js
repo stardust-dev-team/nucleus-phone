@@ -30,6 +30,7 @@ const { pool } = require('../db');
 const { createConference, getConference } = require('../lib/conference');
 const { sendSlackAlert, sendSlackDM } = require('../lib/slack');
 const { loadRegistryOrExit } = require('../lib/team-registry');
+const { attachSttVerbs } = require('../lib/stt-twiml');
 
 const router = Router();
 
@@ -125,11 +126,17 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   let dbRowId;
   try {
     const result = await pool.query(
+      // Stamp the per-call in-house-STT gate in the SAME INSERT (plan review #2). The
+      // caller_identity is the literal 'inbound', so the rep's toggle is looked up by the
+      // RESOLVED rep's canonical identity (route.identity — UNIQUE, present on BOTH iOS and
+      // forward routes), NOT display_name (which is cosmetic and drifts from team.json's
+      // `name`, silently no-op'ing the flag for full-name reps). No user row → COALESCE → FALSE.
       `INSERT INTO nucleus_phone_calls
-        (conference_name, caller_identity, caller_call_sid, lead_phone, direction)
-       VALUES ($1, $2, $3, $4, 'inbound')
+        (conference_name, caller_identity, caller_call_sid, lead_phone, direction, use_inhouse_stt)
+       VALUES ($1, $2, $3, $4, 'inbound',
+         COALESCE((SELECT use_inhouse_stt FROM nucleus_phone_users WHERE identity = $5), FALSE))
        RETURNING id`,
-      [conferenceName, 'inbound', callerCallSid, callerPhone]
+      [conferenceName, 'inbound', callerCallSid, callerPhone, route.identity]
     );
     dbRowId = result.rows[0].id;
   } catch (err) {
@@ -196,23 +203,13 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     voice: 'Polly.Joanna',
   }, 'Thank you for calling Joruva Industrial. Please hold while we connect you.');
 
-  // Enable RT transcription (same as outbound voice.js)
-  const start = twiml.start();
-  const txOpts = {
-    statusCallbackUrl: `${baseUrl}/api/transcription`,
-    statusCallbackMethod: 'POST',
-    track: 'both_tracks',
-    languageCode: 'en-US',
-    // partialResults:false (was true) so inbound emits one finalized chunk per
-    // utterance, matching outbound (voice.js) AND the in-house finalized-per-
-    // FINISH cadence the conversation pipeline's MIN_BUFFER_CHUNKS sees once
-    // the STT swap lands. nucleus-phone-rgja.2 / review #8.
-    partialResults: false,
-  };
-  if (process.env.TWILIO_INTELLIGENCE_SERVICE_SID) {
-    txOpts.intelligenceService = process.env.TWILIO_INTELLIGENCE_SERVICE_SID;
-  }
-  start.transcription(txOpts);
+  // Attach the STT <Start> verbs (nucleus-phone-rgja.7) — same as outbound voice.js:
+  // Twilio RT <Transcription> (gated on STT_FALLBACK_TWILIO, default on) + the in-house
+  // <Stream both_tracks> + conference_name <Parameter> (only when STT_WS_URL is set).
+  // partialResults:false rationale + dual-run gating live in lib/stt-twiml.js.
+  // NOTE: this is the PSTN/conference path ONLY. The iOS-inbound <Dial><Client> path
+  // above gets NO <Stream> yet — that's gated on the B0 track-mapping spike (rgja.3/.8).
+  attachSttVerbs(twiml, { conferenceName, baseUrl });
 
   // Put the inbound caller into a conference with recording.
   // startConferenceOnEnter=true → conference starts immediately.

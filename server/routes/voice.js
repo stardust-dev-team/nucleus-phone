@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const { logEvent } = require('../lib/debug-log');
 const { touch } = require('../lib/health-tracker');
 const { sendSystemAlert } = require('../lib/slack');
+const { attachSttVerbs } = require('../lib/stt-twiml');
 
 const router = Router();
 
@@ -55,37 +56,13 @@ router.post('/', twilioWebhook, async (req, res) => {
       console.warn(`voice: caller_call_sid UPDATE matched 0 rows for conference ${ConferenceName}`);
     }
 
-    // Enable Twilio Real-Time Transcription (only in initiator's TwiML, not
-    // join participants — one transcription stream per conference is sufficient).
-    // If RT Transcription isn't enabled on the account, this verb is silently ignored.
-    //
-    // joruva-dialer-mac-djy: `partialResults: false`. Twilio's RT
-    // Transcription with partial results enabled emits the running
-    // transcription as it builds up — one utterance becomes 5+
-    // webhooks ("A." → "A lot." → "A lot of." → …). The server
-    // broadcasts every chunk to subscribers; iOS appends each to the
-    // live transcript box, rendering the same utterance multiple
-    // times with progressive expansion. End-state UX: transcript is
-    // unreadable after 30s of conversation. With `partialResults:
-    // false`, Twilio buffers until utterance is complete (~500ms-1s
-    // latency tradeoff) and emits one webhook per finalized utterance
-    // per speaker leg. Acceptable latency for the live cockpit's
-    // read-by-rep use case.
-    //
-    // `track: 'both_tracks'` is preserved — that's per-speaker
-    // diarization, not the dedup problem. The "both tracks doubling
-    // when devices are co-located" subset of the original bd-djy
-    // symptom is out of scope (separate bead if it ever materially
-    // affects UX).
-    const start = twiml.start();
-    start.transcription({
-      statusCallbackUrl: `${baseUrl}/api/transcription`,
-      statusCallbackMethod: 'POST',
-      track: 'both_tracks',
-      languageCode: 'en-US',
-      partialResults: false,
-      intelligenceService: process.env.TWILIO_INTELLIGENCE_SERVICE_SID || undefined,
-    });
+    // Attach the STT <Start> verbs (nucleus-phone-rgja.7): Twilio RT <Transcription>
+    // (gated on STT_FALLBACK_TWILIO, default on) + the in-house <Stream both_tracks>
+    // with the conference_name <Parameter> (emitted only when STT_WS_URL is set). One
+    // transcription/stream per conference is sufficient — emit on the initiator's TwiML
+    // only, not join participants. See lib/stt-twiml.js for the full dual-run rationale
+    // (incl. the joruva-dialer-mac-djy partialResults:false fix).
+    attachSttVerbs(twiml, { conferenceName: ConferenceName, baseUrl });
 
     const dial = twiml.dial({ callerId: process.env.NUCLEUS_PHONE_NUMBER });
     dial.conference({

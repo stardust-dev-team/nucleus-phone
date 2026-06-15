@@ -58,8 +58,9 @@ router.post('/initiate', ...callerGuard, async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO nucleus_phone_calls
-        (conference_name, caller_identity, lead_phone, lead_name, lead_company, hubspot_contact_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+        (conference_name, caller_identity, lead_phone, lead_name, lead_company, hubspot_contact_id, use_inhouse_stt)
+       VALUES ($1, $2, $3, $4, $5, $6,
+         COALESCE((SELECT use_inhouse_stt FROM nucleus_phone_users WHERE identity = $2), FALSE))
        RETURNING id`,
       [conferenceName, callerIdentity, to, contactName || null, companyName || null, contactId || null]
     );
