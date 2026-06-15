@@ -480,13 +480,19 @@ describe('CnC shop sizing scenarios', () => {
     expect(rec.compressor.cfm).toBe(102);
   });
 
-  it('ecommerce system boundary: JRS-20E (78 CFM) + JRD-80 → all ecommerce', () => {
-    // JRS-20E (78 CFM, ecommerce) pairs with JRD-80 (80 CFM, ecommerce) = full ecommerce system
+  it('JRS-20E (78 CFM) routes direct while its MSRP is pending (oqv)', () => {
+    // JRS-20E is <=20 HP and web-eligible, but CAS hasn't priced it yet, so it
+    // is salesChannel:'direct' until the MSRP confirms (nucleus-phone-oqv). Even
+    // though the paired JRD-80 dryer is ecommerce, deriveSalesChannel routes the
+    // whole system direct — any direct component forces phone-sales. (Previously
+    // this asserted 'ecommerce', recommending a null-priced compressor as
+    // web-buyable: the exact contradiction oqv resolves.)
     // Demand: 60 * 1.25 = 75 → JRS-20E (78 CFM)
     const { rec } = sizeShop([{ cfm_typical: 60, duty_cycle_pct: 100, count: 1 }]);
     expect(rec.compressor.model).toBe('JRS-20E');
+    expect(rec.compressor.salesChannel).toBe('direct');
     expect(rec.dryer.model).toBe('JRD-80');
-    expect(rec.salesChannel).toBe('ecommerce');
+    expect(rec.salesChannel).toBe('direct');
   });
 
   it('JRS-25E compressor + dryer both direct (above ecommerce boundary)', () => {
