@@ -8,11 +8,13 @@ const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 500;
 const RETRY_CAP_MS = 8000;
 
-// Exponential backoff with jitter, capped — avoids a synchronized retry stampede when many
-// CRM writes hit the same LB bounce / pod restart at once.
+// Full-jitter capped exponential backoff — the AWS-recommended anti-stampede: a uniform
+// pick in [0, min(cap, base·2^attempt)] FULLY decorrelates retries across many CRM writes
+// that hit the same LB bounce / pod restart at once (additive-only jitter would still
+// synchronize the exponential component).
 function backoffMs(attempt) {
   const expo = Math.min(RETRY_CAP_MS, RETRY_BASE_MS * 2 ** attempt);
-  return expo + Math.floor(Math.random() * 250);
+  return Math.floor(Math.random() * expo);
 }
 
 // CONTACT_PROPERTIES must remain a module-level constant — never user-supplied.

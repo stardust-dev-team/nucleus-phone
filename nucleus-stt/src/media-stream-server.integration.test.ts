@@ -101,10 +101,10 @@ function mediaFrame(track: string, ts: number) {
 
 const STOP = JSON.stringify({ event: 'stop', sequenceNumber: '99', streamSid: 'MZ-replay', stop: { accountSid: 'AC-replay', callSid: 'CA-replay' } });
 
-async function waitFor(pred: () => boolean, timeoutMs = 8000): Promise<void> {
+async function waitFor(pred: () => boolean, label = 'condition', timeoutMs = 8000): Promise<void> {
   const start = Date.now();
   while (!pred()) {
-    if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out');
+    if (Date.now() - start > timeoutMs) throw new Error(`waitFor timed out: ${label}`);
     await new Promise((r) => setTimeout(r, 25));
   }
 }
@@ -140,9 +140,12 @@ test('replay: both-track frames → per-speaker chunks + conference-tagged POSTs
   }
   ws.send(STOP);
 
+  // First prove chunks flowed at all — distinguishes a worker-spawn failure ("no ingest
+  // POSTs") from a drain failure ("chunks but no finalize") instead of one opaque timeout.
+  await waitFor(() => stub.posts.length > 0, 'no ingest POSTs (worker spawn / WS wiring?)');
   // The stub fake worker emits a final segment on FINISH (drain), so each bridge POSTs one
   // finalized chunk at stop; then the server POSTs the finalize. Wait for the finalize to land.
-  await waitFor(() => stub.posts.some((p) => p.event === 'finalize'));
+  await waitFor(() => stub.posts.some((p) => p.event === 'finalize'), 'no finalize POST');
   ws.close();
 
   const chunks = stub.posts.filter((p) => p.event !== 'finalize');
