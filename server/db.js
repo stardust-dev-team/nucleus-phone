@@ -249,6 +249,12 @@ async function initSchema() {
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS ai_disposition_suggestion VARCHAR(30);
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS ai_summarized BOOLEAN DEFAULT FALSE;
       ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS caller_call_sid VARCHAR(50);
+      -- Which STT produced the persisted transcript ('twilio' | 'inhouse').
+      -- Observability for the in-house STT swap (nucleus-phone-rgja); set once
+      -- per call by lib/transcript-ingest.js. The use_inhouse_stt gate columns
+      -- (users + calls) land with the ingest endpoint in a later stage (B4).
+      ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS transcript_source VARCHAR(16)
+        CHECK (transcript_source IN ('twilio', 'inhouse'));
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_calls_caller_call_sid ON nucleus_phone_calls(caller_call_sid);

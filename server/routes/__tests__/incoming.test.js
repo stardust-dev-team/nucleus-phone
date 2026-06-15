@@ -98,6 +98,20 @@ describe('POST /api/voice/incoming — legacy forward route', () => {
       '+14155551212',
     ]);
   });
+
+  test('RT transcription uses partialResults=false (nucleus-phone-rgja.2 / review #8)', async () => {
+    // Normalized with voice.js (outbound is already false) so inbound buffers
+    // until utterance-complete instead of streaming partials — matches the
+    // in-house finalized-per-FINISH cadence the STT swap will produce.
+    const res = await request(app)
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: PSTN_NUMBER, From: '+14155551212', CallSid: 'CA-pstn-pr' })
+      .expect(200);
+
+    expect(res.text).toMatch(/partialResults="false"/);
+    expect(res.text).not.toMatch(/partialResults="true"/);
+  });
 });
 
 /* ─── (b) iOS-only route — <Client> TwiML, no conference ─── */
