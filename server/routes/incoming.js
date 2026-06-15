@@ -203,7 +203,11 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     statusCallbackMethod: 'POST',
     track: 'both_tracks',
     languageCode: 'en-US',
-    partialResults: true,
+    // partialResults:false (was true) so inbound emits one finalized chunk per
+    // utterance, matching outbound (voice.js) AND the in-house finalized-per-
+    // FINISH cadence the conversation pipeline's MIN_BUFFER_CHUNKS sees once
+    // the STT swap lands. nucleus-phone-rgja.2 / review #8.
+    partialResults: false,
   };
   if (process.env.TWILIO_INTELLIGENCE_SERVICE_SID) {
     txOpts.intelligenceService = process.env.TWILIO_INTELLIGENCE_SERVICE_SID;
