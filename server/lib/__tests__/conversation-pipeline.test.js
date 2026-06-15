@@ -1059,3 +1059,46 @@ describe('cost monitoring', () => {
     else process.env.ANTHROPIC_API_KEY = originalKey;
   });
 });
+
+// nucleus-phone-ccj: belt-and-suspenders for the prediction dedupe. The existing
+// dedupe tests call handleAnalysisResult directly; this drives TWO full
+// processConversationChunk cycles end-to-end through mocked fetch (real callHaiku →
+// real runAnalysis → real handleAnalysisResult), each Haiku reply carrying the SAME
+// predicted_next.pattern, and proves the WHOLE pipeline broadcasts prediction_loaded
+// only ONCE — not just the leaf broadcastPrediction.
+describe('full-flow prediction dedupe (processConversationChunk path)', () => {
+  let originalKey;
+  beforeEach(() => {
+    originalKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    // Same pattern on EVERY cycle — mockResolvedValue (not Once) covers both fetches.
+    global.fetch = jest.fn().mockResolvedValue(
+      mockHaikuResponse({
+        predicted_next: { pattern: 'cost comparison', suggestion: { text: 'Mention ROI', trigger: 'question' } },
+      })
+    );
+  });
+  afterEach(() => {
+    delete global.fetch;
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
+  });
+
+  it('fires two analysis cycles but broadcasts prediction_loaded only once (same pattern)', async () => {
+    const callId = 'ccj-fullflow';
+    // Declarative chunks (no '?', no leading who/what/when/where/why/how) so each goes
+    // the batched path, not the Tier-2 question bypass. 3 chunks → MIN_BUFFER_CHUNKS → cycle.
+    const cycle1 = ['the lead runs three plants', 'their air compressors are aging', 'budget approval is the holdup'];
+    const cycle2 = ['they want a quote next week', 'the maintenance team is small', 'downtime costs them daily'];
+    for (const c of cycle1) await processConversationChunk(callId, c);
+    for (const c of cycle2) await processConversationChunk(callId, c);
+
+    // Both cycles actually ran (fetch is only called by callHaiku; coach-whisper is mocked).
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    // ...yet the unchanged pattern is broadcast exactly once across the two cycles.
+    const predCalls = mockBroadcast.mock.calls.filter((c) => c[1].type === 'prediction_loaded');
+    expect(predCalls).toHaveLength(1);
+    expect(predCalls[0][1].data.pattern).toBe('cost comparison');
+  });
+});
