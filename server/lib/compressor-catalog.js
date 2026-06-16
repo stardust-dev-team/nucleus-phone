@@ -246,19 +246,27 @@ assertDirectSalesAbove20Hp(COMPRESSOR_CATALOG);
 // (ecommerce + pending/null-price) means a web visitor is "routed" to a listing
 // that doesn't exist — the bug behind nucleus-phone-oqv (JRS-20E shipped as
 // ecommerce+pending). Encoded as a load-time throw + pure, unit-testable
-// predicate so the contradiction can't silently reappear (same idiom as
-// assertDirectSalesAbove20Hp). The fix for a pending-price web-eligible SKU is
-// salesChannel:'direct' until CAS confirms the MSRP, then flip back to
-// 'ecommerce' + 'confirmed' + price.
+// predicate so the contradiction can't silently reappear. The fix for a
+// pending-price web-eligible SKU is salesChannel:'direct' until CAS confirms the
+// MSRP, then flip back to 'ecommerce' + 'confirmed' + price.
+//
+// Predicate is deny-by-default (`!== 'direct'`), NOT `=== 'ecommerce'`, for the
+// same reason assertDirectSalesAbove20Hp is: 'direct' (phone sales, human-priced)
+// is the ONLY channel exempt from needing a confirmed price. Anything else —
+// 'ecommerce', a typo like 'Ecommerce', or a future 'web'/'partner' value —
+// implies a published listing and must carry a real price, or it's a phantom
+// listing waiting to ship. A new non-direct channel that legitimately allows
+// pending pricing must update this guard deliberately rather than slip past it.
 function assertEcommerceImpliesConfirmedPrice(catalog) {
   for (const m of catalog) {
-    if (m.salesChannel === 'ecommerce' && !(m.pricingStatus === 'confirmed' && m.price != null)) {
+    if (m.salesChannel !== 'direct' && !(m.pricingStatus === 'confirmed' && m.price != null)) {
       throw new Error(
-        `compressor-catalog: contradiction. ${m.model} has salesChannel='ecommerce' ` +
-        `but pricingStatus='${m.pricingStatus}' / price=${m.price}. An 'ecommerce' SKU ` +
-        `requires pricingStatus='confirmed' and a non-null price (no web listing can ` +
-        `exist without an MSRP). Set salesChannel='direct' while pricing is pending, ` +
-        `or supply price + pricingStatus='confirmed'.`
+        `compressor-catalog: contradiction. ${m.model} has salesChannel='${m.salesChannel}' ` +
+        `(a non-'direct'/published channel) but pricingStatus='${m.pricingStatus}' / ` +
+        `price=${m.price}. Any non-'direct' channel implies a live listing and requires ` +
+        `pricingStatus='confirmed' AND a non-null price (no web listing can exist without ` +
+        `an MSRP). Set salesChannel='direct' while pricing is pending, or supply price + ` +
+        `pricingStatus='confirmed'.`
       );
     }
   }

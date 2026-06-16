@@ -117,4 +117,27 @@ describe('assertEcommerceImpliesConfirmedPrice', () => {
       { model: 'JRS-X', salesChannel: 'ecommerce', pricingStatus: 'confirmed', price: null },
     ])).toThrow(/contradiction/);
   });
+
+  it('throws on a typo or unknown non-direct channel lacking a confirmed price', () => {
+    // Deny-by-default (predicate is `!== 'direct'`, not `=== 'ecommerce'`): a
+    // typo ('Ecommerce') or a new channel ('web', 'partner') that lacks a real
+    // price is just as much a phantom listing as 'ecommerce' would be. Without
+    // this, such a SKU at <=20 HP slips past BOTH catalog invariants (the >20 HP
+    // guard only fires above 20 HP). Mirrors assertDirectSalesAbove20Hp's
+    // typo/unknown-channel coverage.
+    expect(() => assertEcommerceImpliesConfirmedPrice([
+      { model: 'JRS-typo', hp: 15, salesChannel: 'Ecommerce', pricingStatus: 'confirmed', price: null },
+    ])).toThrow(/contradiction/);
+    expect(() => assertEcommerceImpliesConfirmedPrice([
+      { model: 'JRS-web', hp: 15, salesChannel: 'web', pricingStatus: 'pending', price: null },
+    ])).toThrow(/contradiction/);
+  });
+
+  it('allows a non-direct channel when it carries a confirmed, non-null price', () => {
+    // The guard targets phantom listings (no price), not the channel string
+    // itself — a priced non-direct channel is not the contradiction this catches.
+    expect(() => assertEcommerceImpliesConfirmedPrice([
+      { model: 'JRS-web', salesChannel: 'web', pricingStatus: 'confirmed', price: 5000 },
+    ])).not.toThrow();
+  });
 });
