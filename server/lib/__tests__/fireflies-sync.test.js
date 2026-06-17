@@ -213,6 +213,29 @@ describe('3-layer dedup', () => {
     expect(result.skipped).toBe(1);
     expect(result.processed).toBe(0);
   });
+
+  test('Layer 0: skips when transcript matches an is_internal call (bm2p)', async () => {
+    pool.query.mockImplementation((sql, params) => {
+      if (sql.includes('ucil_sync_state') && sql.includes('SELECT')) {
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes('ucil_sync_state')) {
+        return { rows: [], rowCount: 1 };
+      }
+      // The internal-call guard: phone_suffix7 of '+16305551234' = '5551234'.
+      if (sql.includes('is_internal IS TRUE') && params?.[0] === '5551234') {
+        return { rows: [{ id: 7 }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    mockFetchResponse({ data: { transcripts: [makeTranscript()] } });
+    const result = await sync();
+    expect(result.skipped).toBe(1);
+    expect(result.processed).toBe(0);
+    // Must NOT re-create the internal call as a ff_ customer_interaction.
+    expect(interactionSync.syncInteraction).not.toHaveBeenCalled();
+  });
 });
 
 describe('analysis fallback', () => {
