@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import * as Tabs from '@radix-ui/react-tabs';
 import { motion, AnimatePresence } from 'framer-motion';
 import useActivity from '../hooks/useActivity';
-import { getCallDetail, getActivityTimeline, saveDisposition } from '../lib/api';
+import { getCallDetail, getActivityTimeline, saveDisposition, setCallInternal } from '../lib/api';
 import {
   formatDuration,
   dateBucket,
@@ -435,7 +435,7 @@ function TimelineTab({ callId }) {
   );
 }
 
-function DetailModal({ detail, loading, emailReady, onClose, onUpdated }) {
+function DetailModal({ detail, loading, emailReady, role, onClose, onUpdated }) {
   // Wrap the conditional inside AnimatePresence so exit animations play on close.
   return (
     <AnimatePresence>
@@ -460,7 +460,7 @@ function DetailModal({ detail, loading, emailReady, onClose, onUpdated }) {
                 <p className="text-aunshin-quiet-d">Loading...</p>
               </div>
             ) : detail ? (
-              <DetailContent detail={detail} emailReady={emailReady} onClose={onClose} onUpdated={onUpdated} />
+              <DetailContent detail={detail} emailReady={emailReady} role={role} onClose={onClose} onUpdated={onUpdated} />
             ) : null}
           </motion.div>
         </motion.div>
@@ -469,8 +469,26 @@ function DetailModal({ detail, loading, emailReady, onClose, onUpdated }) {
   );
 }
 
-function DetailContent({ detail, emailReady, onClose, onUpdated }) {
+function DetailContent({ detail, emailReady, role, onClose, onUpdated }) {
   const navigate = useNavigate();
+  const isAdmin = role === 'admin';
+  const [isInternal, setIsInternal] = useState(detail.is_internal === true);
+  const [internalSaving, setInternalSaving] = useState(false);
+
+  const toggleInternal = useCallback(async () => {
+    const next = !isInternal;
+    setInternalSaving(true);
+    try {
+      await setCallInternal(detail.id, next);
+      setIsInternal(next);
+      onUpdated?.();
+    } catch (err) {
+      console.error('Failed to update is_internal:', err);
+    } finally {
+      setInternalSaving(false);
+    }
+  }, [detail.id, isInternal, onUpdated]);
+
   const summary = detail.ai_summary || detail.ci_summary || detail.notes || 'No summary available';
   const actionItems = detail.ai_action_items;
   const products = detail.products_discussed || detail.ci_products || [];
@@ -516,6 +534,24 @@ function DetailContent({ detail, emailReady, onClose, onUpdated }) {
               {humanizeDisposition(detail.disposition)}
             </span>
           </>
+        )}
+        {isInternal && (
+          <>
+            <span>·</span>
+            <span className="px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400" title="Excluded from sales metrics, dedup, and CRM sync">
+              Internal
+            </span>
+          </>
+        )}
+        {isAdmin && (
+          <button
+            onClick={toggleInternal}
+            disabled={internalSaving}
+            className="ml-auto text-xs px-2 py-0.5 rounded-full bg-aunshin-twilight-1 text-aunshin-quiet-d hover:text-white transition-colors disabled:opacity-50 whitespace-nowrap"
+            title="Internal calls are excluded from sales metrics, dedup, and CRM sync"
+          >
+            {isInternal ? 'Mark as sales call' : 'Mark internal'}
+          </button>
         )}
       </div>
 
@@ -786,6 +822,7 @@ export default function Activity({ identity, role, emailReady }) {
         detail={detail}
         loading={detailLoading && !detail}
         emailReady={emailReady}
+        role={role}
         onClose={handleClose}
         onUpdated={handleUpdated}
       />

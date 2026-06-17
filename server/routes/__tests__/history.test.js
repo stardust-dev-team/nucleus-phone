@@ -1208,3 +1208,70 @@ describe('POST /api/history/:id/disposition', () => {
     );
   });
 });
+
+/* ───────────── PATCH /api/history/:id (gkjz) ───────────── */
+
+describe('PATCH /api/history/:id is_internal', () => {
+  test('returns 401 without auth', async () => {
+    await request(app).patch('/api/history/1').send({ is_internal: true }).expect(401);
+  });
+
+  test('non-admin is rejected (403)', async () => {
+    mockSession('ryann', 'caller');
+    await request(app)
+      .patch('/api/history/1')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({ is_internal: true })
+      .expect(403);
+  });
+
+  test('400 when is_internal is not a boolean', async () => {
+    mockSession('tom', 'admin');
+    await request(app)
+      .patch('/api/history/1')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({ is_internal: 'yes' })
+      .expect(400);
+  });
+
+  test('400 for non-numeric id', async () => {
+    mockSession('tom', 'admin');
+    await request(app)
+      .patch('/api/history/abc')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({ is_internal: true })
+      .expect(400);
+  });
+
+  test('404 when call not found', async () => {
+    mockSession('tom', 'admin');
+    pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await request(app)
+      .patch('/api/history/999')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({ is_internal: true })
+      .expect(404);
+  });
+
+  test('admin sets is_internal with NO sync fan-out', async () => {
+    mockSession('tom', 'admin');
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 1, is_internal: true }], rowCount: 1 });
+
+    const res = await request(app)
+      .patch('/api/history/1')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .set('X-Requested-With', 'fetch')
+      .send({ is_internal: true })
+      .expect(200);
+
+    expect(res.body).toEqual({ id: 1, is_internal: true });
+    // Exactly one query (the UPDATE) — no syncInteraction propagation.
+    const updateSql = pool.query.mock.calls[0][0];
+    expect(updateSql).toMatch(/UPDATE nucleus_phone_calls SET is_internal/);
+    expect(syncInteraction).not.toHaveBeenCalled();
+  });
+});

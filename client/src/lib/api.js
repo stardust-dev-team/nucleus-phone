@@ -126,6 +126,15 @@ export function saveDisposition(callId, data) {
   });
 }
 
+// Admin-only: flag/unflag a call as internal (personal/demo/test). No sync
+// fan-out server-side — see PATCH /history/:id (gkjz).
+export function setCallInternal(callId, isInternal) {
+  return apiFetch(`/history/${callId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_internal: isInternal }),
+  });
+}
+
 export function getCockpit(identifier, signal, { difficulty } = {}) {
   const params = difficulty ? `?difficulty=${difficulty}` : '';
   return apiFetch(`/cockpit/${encodeURIComponent(identifier)}${params}`, { signal });
