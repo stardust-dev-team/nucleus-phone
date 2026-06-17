@@ -460,7 +460,7 @@ function DetailModal({ detail, loading, emailReady, role, onClose, onUpdated }) 
                 <p className="text-aunshin-quiet-d">Loading...</p>
               </div>
             ) : detail ? (
-              <DetailContent detail={detail} emailReady={emailReady} role={role} onClose={onClose} onUpdated={onUpdated} />
+              <DetailContent key={detail.id} detail={detail} emailReady={emailReady} role={role} onClose={onClose} onUpdated={onUpdated} />
             ) : null}
           </motion.div>
         </motion.div>
@@ -479,9 +479,11 @@ function DetailContent({ detail, emailReady, role, onClose, onUpdated }) {
     const next = !isInternal;
     setInternalSaving(true);
     try {
-      await setCallInternal(detail.id, next);
-      setIsInternal(next);
-      onUpdated?.();
+      const updated = await setCallInternal(detail.id, next);
+      // PATCH returns { id, is_internal } — forward it so the list row badge
+      // updates via mergeRow (passing undefined here throws in mergeRow).
+      setIsInternal(updated?.is_internal ?? next);
+      onUpdated?.(updated);
     } catch (err) {
       console.error('Failed to update is_internal:', err);
     } finally {
