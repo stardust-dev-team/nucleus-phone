@@ -9,3 +9,6 @@ client/dist/
 ~$*
 server/config/team-phones.json
 .env.phase0
+
+# Local agent/session config
+.claude/
