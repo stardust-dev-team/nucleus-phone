@@ -211,7 +211,7 @@ describe('POST /api/sim/call/ios', () => {
     expect(res.body.error).toMatch(/live call/);
   });
 
-  test('409 when caller has a duplicate sim within 10 minutes', async () => {
+  test('409 when caller has a duplicate sim within the 3-minute guard window (n8z)', async () => {
     mockBearerUser('kate');
     pool.query
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })          // live: none
@@ -222,6 +222,8 @@ describe('POST /api/sim/call/ios', () => {
       .send({ personaId: 'mike-garza', difficulty: 'easy' })
       .expect(409);
     expect(res.body.error).toMatch(/Practice call already in progress/);
+    // The duplicate-sim guard is the 2nd query; its window must be 3 min (n8z).
+    expect(pool.query.mock.calls[1][0]).toMatch(/INTERVAL '3 minutes'/);
   });
 
   describe('SIM_DAILY_LIMIT_PER_REP', () => {

@@ -187,11 +187,13 @@ router.post('/call', sessionAuth, async (req, res) => {
     return res.status(409).json({ error: "You're on a live call — finish it before starting practice" });
   }
 
-  // Guard: duplicate practice call
+  // Guard: duplicate practice call. 3-min window (n8z): a stuck row only blocks
+  // a retry for 3 min, not 10 — combined with stale-sweep this caps rep lockout
+  // at ~3 min instead of ~15 (incident 2026-04-14).
   const { rows: activeSim } = await pool.query(
     `SELECT id FROM sim_call_scores
      WHERE caller_identity = $1 AND status = 'in-progress'
-       AND created_at > NOW() - INTERVAL '10 minutes'
+       AND created_at > NOW() - INTERVAL '3 minutes'
      LIMIT 1`,
     [identity]
   );
@@ -847,7 +849,7 @@ async function simCallIos(req, res) {
     ({ rows: activeSim } = await pool.query(
       `SELECT id FROM sim_call_scores
        WHERE caller_identity = $1 AND status = 'in-progress'
-         AND created_at > NOW() - INTERVAL '10 minutes'
+         AND created_at > NOW() - INTERVAL '3 minutes'
        LIMIT 1`,
       [identity]
     ));
