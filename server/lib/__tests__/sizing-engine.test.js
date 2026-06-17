@@ -306,6 +306,28 @@ describe('deriveSalesChannel', () => {
     expect(rec.ows.model).toBe('OWS75');
     expect(rec.ows.salesChannel).toBe('ecommerce');
   });
+
+  it('derives pending when a component is pending and none is quote_required (lxdn)', () => {
+    const rec = {
+      compressor: { pricingStatus: 'pending' },
+      dryer: { pricingStatus: 'confirmed' },
+      filters: [{ pricingStatus: 'confirmed' }],
+      ows: { pricingStatus: 'confirmed' },
+    };
+    deriveSalesChannel(rec);
+    expect(rec.pricingStatus).toBe('pending');
+  });
+
+  it('quote_required takes precedence over pending (lxdn)', () => {
+    const rec = {
+      compressor: { pricingStatus: 'pending' },
+      dryer: { pricingStatus: 'quote_required' },
+      filters: [],
+      ows: null,
+    };
+    deriveSalesChannel(rec);
+    expect(rec.pricingStatus).toBe('quote_required');
+  });
 });
 
 describe('SAFETY_FACTOR', () => {
