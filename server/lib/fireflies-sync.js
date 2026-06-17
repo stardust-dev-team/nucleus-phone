@@ -89,6 +89,34 @@ async function updateSyncTime(timestamp) {
  *   { skip: false, enrichId: number } — NPC upload, enrich existing row with AI data
  */
 async function checkDedup(transcript) {
+  // Layer 0 (bm2p/a3vs): never sync an internal/personal/demo call as a customer
+  // interaction. Match the transcript to a nucleus_phone_calls row flagged
+  // is_internal within the dedup window, by last-7 phone digits for precision.
+  // This is a LATENT guard: if an internal call's npc_ customer_interactions row
+  // is later deleted (see dewe), a transcript arriving afterwards must not slip
+  // past Layers 1-3 and re-create it as a fresh ff_ row. Phone-scoped so we don't
+  // over-suppress unrelated Fireflies meetings that merely overlap the window;
+  // skipped entirely when no phone is extractable.
+  const internalPhone = extractPhoneFromParticipants(transcript.participants);
+  if (internalPhone) {
+    const suffix7 = internalPhone.replace(/\D/g, '').slice(-7);
+    if (suffix7.length === 7) {
+      const txDate = new Date(transcript.date);
+      const { rows: internalRows } = await pool.query(`
+        SELECT id FROM nucleus_phone_calls
+        WHERE is_internal IS TRUE
+          AND phone_suffix7 = $1
+          AND created_at BETWEEN $2 AND $3
+        LIMIT 1
+      `, [
+        suffix7,
+        new Date(txDate.getTime() - DEDUP_WINDOW_MINUTES * 60000),
+        new Date(txDate.getTime() + DEDUP_WINDOW_MINUTES * 60000),
+      ]);
+      if (internalRows.length) return { skip: true };
+    }
+  }
+
   // Layer 1: Title matches nucleus-phone upload pattern → enrich existing row
   if (NPC_TITLE_PATTERN.test(transcript.title)) {
     const tDate = new Date(transcript.date);
