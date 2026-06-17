@@ -125,6 +125,12 @@ describe('GET /api/contacts', () => {
     });
     expect(res.body.contacts[1].callHistory).toBeNull();
     expect(res.body.paging).toEqual({ next: { after: 'cursor2' } });
+
+    // The call-history aggregate must only count completed, non-internal calls
+    // so in-progress/failed/personal rows don't inflate call_count (w8fj + a3vs).
+    const aggSql = pool.query.mock.calls[pool.query.mock.calls.length - 1][0];
+    expect(aggSql).toMatch(/status = 'completed'/);
+    expect(aggSql).toMatch(/is_internal IS NOT TRUE/);
   });
 
   test('api key auth: call history does NOT expose lastSummary', async () => {

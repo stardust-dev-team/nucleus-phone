@@ -141,7 +141,7 @@ router.get('/', async (req, res) => {
                   (array_agg(disposition ORDER BY created_at DESC))[1] as last_disposition,
                   (array_agg(COALESCE(ai_summary, '') ORDER BY created_at DESC))[1] as last_summary
            FROM nucleus_phone_calls
-           WHERE (lead_phone = ANY($1) OR hubspot_contact_id = ANY($2)) AND is_internal IS NOT TRUE
+           WHERE (lead_phone = ANY($1) OR hubspot_contact_id = ANY($2)) AND is_internal IS NOT TRUE AND status = 'completed'
            GROUP BY lead_phone, hubspot_contact_id`,
           [phones, contactIds.map(String)]
         );
@@ -239,7 +239,7 @@ router.get('/:id', async (req, res) => {
       `SELECT id, created_at, caller_identity, duration_seconds, disposition,
               qualification, notes, products_discussed
        FROM nucleus_phone_calls
-       WHERE (hubspot_contact_id = $1 OR lead_phone = $2) AND is_internal IS NOT TRUE
+       WHERE (hubspot_contact_id = $1 OR lead_phone = $2) AND is_internal IS NOT TRUE AND status = 'completed'
        ORDER BY created_at DESC LIMIT 20`,
       [id, contact.properties.phone || '']
     );
