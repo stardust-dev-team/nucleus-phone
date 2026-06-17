@@ -445,4 +445,35 @@ router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller')
   }
 });
 
+// PATCH /:id — admin-only flag flip for is_internal (gkjz). Sets ONLY
+// is_internal with NO syncInteraction / Slack / HubSpot fan-out, so marking a
+// personal/demo/test call internal never propagates it to customer_interactions
+// (the very thing the disposition route does unconditionally). Replaces the
+// psql touch that dewe needed for one-off cleanup. bearerOrSession (web + iOS),
+// admin only — internal-flagging is an ops decision, not a rep action.
+router.patch('/:id', bearerOrSession, rbac('admin'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'id must be an integer' });
+  }
+  if (typeof req.body.is_internal !== 'boolean') {
+    return res.status(400).json({ error: 'is_internal (boolean) required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE nucleus_phone_calls SET is_internal = $1 WHERE id = $2
+       RETURNING id, is_internal`,
+      [req.body.is_internal, id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Call not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('is_internal update failed:', err.message);
+    res.status(500).json({ error: 'Failed to update is_internal' });
+  }
+});
+
 module.exports = router;
