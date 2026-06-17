@@ -9,7 +9,7 @@ const DISPOSITION_STYLE = {
   qualified_warm:     { label: 'Warm',       bar: 'var(--cockpit-amber-600)',  pillBg: 'var(--cockpit-amber-50)', pillText: 'var(--cockpit-amber-900)' },
   callback_requested: { label: 'Callback',   bar: 'var(--cockpit-amber-600)',  pillBg: 'var(--cockpit-amber-50)', pillText: 'var(--cockpit-amber-900)' },
   interested:         { label: 'Interested', bar: 'var(--cockpit-green-500)',  pillBg: 'var(--cockpit-green-50)', pillText: 'var(--cockpit-green-500)' },
-  connected:          { label: 'Connected',  bar: 'var(--cockpit-blue-500)',   pillBg: 'var(--cockpit-blue-50)',  pillText: 'var(--cockpit-blue-900)' },
+  connected:          { label: 'Connected',  bar: 'var(--cockpit-green-500)',  pillBg: 'var(--cockpit-green-50)', pillText: 'var(--cockpit-green-500)' },
   not_interested:     { label: 'Pass',       bar: 'var(--cockpit-red-text)',   pillBg: 'var(--cockpit-red-bg)',   pillText: 'var(--cockpit-red-text)' },
   no_answer:          { label: 'No answer',  bar: 'var(--cockpit-card-border)', pillBg: 'var(--cockpit-card)',    pillText: 'var(--cockpit-text-muted)' },
   voicemail:          { label: 'Voicemail',  bar: 'var(--cockpit-card-border)', pillBg: 'var(--cockpit-card)',    pillText: 'var(--cockpit-text-muted)' },
