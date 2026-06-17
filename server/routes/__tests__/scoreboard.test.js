@@ -67,6 +67,20 @@ describe('GET /api/scoreboard', () => {
     expect(entry.callsMade).toBe(15);
     expect(entry.daily).toHaveLength(1);
   });
+
+  test('excludes internal calls from leaderboard + daily queries (a3vs)', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await request(app).get('/api/scoreboard').set('x-api-key', API_KEY).expect(200);
+
+    const sqls = pool.query.mock.calls.map((c) => c[0]);
+    expect(sqls).toHaveLength(2);
+    for (const sql of sqls) {
+      expect(sql).toMatch(/is_internal IS NOT TRUE/);
+    }
+  });
 });
 
 describe('POST /api/scoreboard/aggregate', () => {
@@ -84,6 +98,8 @@ describe('POST /api/scoreboard/aggregate', () => {
       .expect(200);
 
     expect(res.body.aggregated).toBe(3);
+    // The materialization INSERT...SELECT must also exclude internal calls (a3vs).
+    expect(pool.query.mock.calls[0][0]).toMatch(/is_internal IS NOT TRUE/);
   });
 
   test('triggers milestone check (fire-and-forget)', async () => {

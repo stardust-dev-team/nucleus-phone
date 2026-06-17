@@ -22,7 +22,7 @@ const LIST_COLUMNS = `npc.id, npc.created_at, npc.conference_name, npc.caller_id
   npc.direction, npc.status, npc.duration_seconds, npc.disposition, npc.qualification,
   npc.products_discussed, npc.notes, npc.recording_url, npc.recording_duration,
   npc.fireflies_uploaded, npc.lead_email, npc.follow_up_email_sent,
-  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items`;
+  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.is_internal`;
 
 // DETAIL_COLUMNS — used by GET /:id (detail view). Explicit list (no npc.*)
 // so new secret columns don't silently leak to the client.
@@ -31,7 +31,7 @@ const DETAIL_COLUMNS = `npc.id, npc.created_at, npc.conference_name, npc.caller_
   npc.direction, npc.status, npc.duration_seconds, npc.disposition, npc.qualification,
   npc.products_discussed, npc.notes, npc.recording_url, npc.recording_duration,
   npc.fireflies_uploaded, npc.lead_email, npc.follow_up_email_sent,
-  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.transcript`;
+  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.transcript, npc.is_internal`;
 
 // CALL_COLUMNS — used by POST /:id/disposition UPDATE RETURNING (no JOIN).
 const CALL_COLUMNS = `id, created_at, conference_name, caller_identity, lead_phone,
@@ -91,6 +91,13 @@ router.get('/', bearerOrSession, rbac('external_caller'), async (req, res) => {
   const where = [`npc.status = 'completed'`];
   const params = [];
   let idx = 1;
+
+  // Exclude internal/personal/demo calls (a3vs) unless an admin explicitly opts in.
+  // Null-safe: matches the BOOLEAN DEFAULT FALSE column and any transient NULL.
+  const includeInternal = req.query.includeInternal === 'true' && req.user.role === 'admin';
+  if (!includeInternal) {
+    where.push(`npc.is_internal IS NOT TRUE`);
+  }
 
   if (callerFilter) {
     where.push(`npc.caller_identity = $${idx++}`);
