@@ -24,7 +24,7 @@ router.get('/', bearerOrApiKeyOrSession, rbac('external_caller'), async (req, re
         COUNT(*) FILTER (WHERE disposition = 'callback_requested') AS callbacks,
         AVG(duration_seconds)::int AS avg_duration
       FROM nucleus_phone_calls
-      WHERE created_at > NOW() - INTERVAL '7 days' AND status = 'completed'
+      WHERE created_at > NOW() - INTERVAL '7 days' AND status = 'completed' AND is_internal IS NOT TRUE
       GROUP BY caller_identity
       ORDER BY leads_qualified DESC, calls_made DESC
     `);
@@ -35,7 +35,7 @@ router.get('/', bearerOrApiKeyOrSession, rbac('external_caller'), async (req, re
         created_at::date AS day,
         COUNT(*) AS calls
       FROM nucleus_phone_calls
-      WHERE created_at > NOW() - INTERVAL '7 days' AND status = 'completed'
+      WHERE created_at > NOW() - INTERVAL '7 days' AND status = 'completed' AND is_internal IS NOT TRUE
       GROUP BY caller_identity, created_at::date
       ORDER BY created_at::date
     `);
@@ -81,6 +81,7 @@ router.post('/aggregate', bearerOrApiKeyOrSession, rbac('admin'), async (req, re
         AVG(duration_seconds)::int
       FROM nucleus_phone_calls
       WHERE status = 'completed'
+        AND is_internal IS NOT TRUE
         AND created_at::date >= CURRENT_DATE - INTERVAL '7 days'
       GROUP BY caller_identity, created_at::date
       ON CONFLICT (agent_name, stat_date) DO UPDATE SET

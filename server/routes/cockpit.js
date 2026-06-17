@@ -91,6 +91,7 @@ router.get('/next-uncalled', bearerOrApiKeyOrSession, rbac('external_caller'), a
          AND NOT EXISTS (
            SELECT 1 FROM nucleus_phone_calls npc
            WHERE npc.status = 'completed'
+             AND npc.is_internal IS NOT TRUE
              AND npc.phone_suffix7 = pb.phone_suffix7
          )
        ORDER BY sm.signal_score DESC NULLS LAST
@@ -171,7 +172,7 @@ router.get('/:identifier', bearerOrApiKeyOrSession, rbac('external_caller'), asy
                   notes, duration_seconds, products_discussed,
                   ai_summary, ai_action_items
            FROM nucleus_phone_calls
-           WHERE (${clauses.join(' OR ')}) AND status = 'completed'
+           WHERE (${clauses.join(' OR ')}) AND status = 'completed' AND is_internal IS NOT TRUE
            ORDER BY created_at DESC LIMIT 20`,
           params
         ).then(r => r.rows), []);

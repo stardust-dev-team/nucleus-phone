@@ -165,6 +165,7 @@ async function getSignalContacts({
        FROM nucleus_phone_calls
        WHERE lead_name = ANY($1)
          AND (lead_company = ANY($2) OR lead_company IS NULL)
+         AND is_internal IS NOT TRUE
        GROUP BY lead_name, lead_company`,
       [contactNames, contactCompanies],
     );
@@ -299,6 +300,7 @@ async function getContactsForDomain(domain, { includeSummary = false } = {}) {
        FROM nucleus_phone_calls
        WHERE lead_name = ANY($1)
          AND (lead_company = $2 OR lead_company IS NULL)
+         AND is_internal IS NOT TRUE
        GROUP BY lead_name`,
       [names, company.company_name],
     );

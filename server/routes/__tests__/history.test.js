@@ -189,6 +189,50 @@ describe('GET /api/history', () => {
     expect(pool.query.mock.calls[0][1]).toContain('ryann');
   });
 
+  test('excludes internal calls by default (a3vs)', async () => {
+    mockSession('tom', 'admin');
+    pool.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
+
+    await request(app)
+      .get('/api/history')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .expect(200);
+
+    // Both the data and count queries share the whereClause → both must filter.
+    expect(pool.query.mock.calls[0][0]).toMatch(/npc\.is_internal IS NOT TRUE/);
+    expect(pool.query.mock.calls[1][0]).toMatch(/npc\.is_internal IS NOT TRUE/);
+  });
+
+  test('admin includeInternal=true drops the internal filter (a3vs)', async () => {
+    mockSession('tom', 'admin');
+    pool.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
+
+    await request(app)
+      .get('/api/history?includeInternal=true')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .expect(200);
+
+    expect(pool.query.mock.calls[0][0]).not.toMatch(/is_internal IS NOT TRUE/);
+  });
+
+  test('non-admin includeInternal=true is ignored — filter stays (a3vs)', async () => {
+    mockSession('ryann');
+    pool.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
+
+    await request(app)
+      .get('/api/history?includeInternal=true')
+      .set('Cookie', 'nucleus_session=fake-token')
+      .expect(200);
+
+    expect(pool.query.mock.calls[0][0]).toMatch(/npc\.is_internal IS NOT TRUE/);
+  });
+
   test('FTS search with q param triggers tsvector query', async () => {
     mockSession('ryann');
     pool.query

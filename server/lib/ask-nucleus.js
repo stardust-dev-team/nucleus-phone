@@ -179,6 +179,7 @@ async function executeSearchMyCalls(input, identity, role) {
   const daysBack = Math.min(Math.max(parseInt(days_back, 10) || 30, 1), 365);
   const where = [
     'npc.status = \'completed\'',
+    'npc.is_internal IS NOT TRUE',
     `npc.caller_identity = $1`,
     `npc.created_at > NOW() - $2::int * INTERVAL '1 day'`,
   ];
