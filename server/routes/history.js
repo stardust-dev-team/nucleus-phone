@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { bearerOrSession, bearerOrApiKeyOrSession } = require('../middleware/auth');
+const { bearerOrSession, bearerOrApiKeyOrSession, rejectTristarCockpitWrite } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { sendSlackAlert, formatCallAlert } = require('../lib/slack');
@@ -233,7 +233,7 @@ router.get('/:id', bearerOrSession, rbac('external_caller'), async (req, res) =>
 // Three-way auth (bearer || api-key || session) so iOS dialer, web, and automation
 // can all save dispositions. Ownership check applies when req.user.identity is set
 // (bearer + session paths); api-key callers bypass via the synthetic admin principal.
-router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller'), async (req, res) => {
+router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller'), rejectTristarCockpitWrite, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     return res.status(400).json({ error: 'id must be an integer' });

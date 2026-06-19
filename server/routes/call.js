@@ -2,7 +2,7 @@ const { Router } = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const { client } = require('../lib/twilio');
-const { bearerOrApiKeyOrSession } = require('../middleware/auth');
+const { bearerOrApiKeyOrSession, rejectTristarCockpitWrite } = require('../middleware/auth');
 const { rbac, hasMinRole } = require('../middleware/rbac');
 const {
   createConference, getConference, updateConference,
@@ -39,7 +39,7 @@ const twilioWebhook = makeTwilioWebhook();
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 
 // POST /api/call/initiate — start a new call
-router.post('/initiate', ...callerGuard, async (req, res) => {
+router.post('/initiate', ...callerGuard, rejectTristarCockpitWrite, async (req, res) => {
   const { to, contactName, companyName, contactId, callerIdentity } = req.body;
 
   if (!to || !callerIdentity) {
