@@ -2,7 +2,7 @@ const { Router } = require('express');
 const msal = require('@azure/msal-node');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const { sessionAuth, SESSION_TTL_SECONDS } = require('../middleware/auth');
+const { sessionAuth, SESSION_TTL_SECONDS, isTristarAllowed } = require('../middleware/auth');
 const { pool } = require('../db');
 const { encrypt } = require('../lib/crypto');
 const { verifyEntraIdToken } = require('../lib/entra-token');
@@ -183,44 +183,34 @@ router.get('/callback', async (req, res) => {
 });
 
 // GET /api/auth/me — return current user from session cookie + TriStar
-// config block (bead nucleus-phone-gxt2 / stardust-tristar [coc.1.b]).
+// config block (bead nucleus-phone-gxt2; reworked by nucleus-phone-stet P1).
 //
 // The tristar block is null for users not on TRISTAR_ALLOWED_IDENTITIES.
-// For allowlisted users, it returns {baseUrl, apiKey} read from server
-// env — the API key NEVER appears in the static client bundle, only in
-// the per-session /me response over the authenticated cookie session.
-// (Still extractable from the browser's JS heap by anyone with dev tools
-// on the user's own machine — that's the v1 trust model; bead
-// nucleus-phone-stet (P1) proxies through this server to eliminate
-// client-side key exposure entirely.)
+// For allowlisted users it returns ONLY `{ configured: boolean }` — the
+// shared TRISTAR_API_KEY NEVER leaves the server. As of stet, the cockpit
+// calls the same-origin /api/tristar/* proxy (server/routes/tristar-proxy.js),
+// which injects the key; the browser never receives it (not in the static
+// bundle, not in /me, not in the JS heap).
 //
-// If allowlisted but env is missing, baseUrl/apiKey come back null and
-// the cockpit's configureApi resolves to TARGETS.DEGRADED — the
-// DegradedBanner fires so ops sees the misconfig immediately.
+// `configured` tells the cockpit whether the server has both
+// TRISTAR_API_BASE_URL and TRISTAR_API_KEY set. allowlisted-but-not-configured
+// is a server misconfig the cockpit surfaces via DegradedBanner (App.jsx
+// dispatches the degraded event) — and it stays in JORUVA mode so no routed
+// call is issued against a dead proxy.
 function buildTristarConfig(user) {
-  // HARD LOCK: do not expand TRISTAR_ALLOWED_IDENTITIES on Render without
-  // first verifying nucleus-phone-stet (v2 server-side TRISTAR_API_KEY
-  // proxy) has shipped. Until stet lands, the shared TRISTAR_API_KEY is
-  // delivered to allowlisted users via /me and lives in their browser's
-  // JS heap for the duration of the session — extractable by anyone with
-  // dev tools on that user's own device. Adding an identity here means
-  // trusting THAT PERSON with extractable creds. v1 allowlist: Britt,
-  // Blake, Tom. See client/src/lib/mode-router.js:27-41 for the trust
-  // model docstring and bead nucleus-phone-e91e (HARD LOCK section) for
-  // the requirement origin.
-  const allowedRaw = process.env.TRISTAR_ALLOWED_IDENTITIES || '';
-  const allowed = allowedRaw.split(',').map((s) => s.trim()).filter(Boolean);
-  if (!user || typeof user.identity !== 'string') return null;
-  if (!allowed.includes(user.identity)) return null;
+  // HARD LOCK history: pre-stet, expanding TRISTAR_ALLOWED_IDENTITIES meant
+  // trusting that person with an extractable shared key (it was delivered via
+  // /me). stet removed the client-side key, so this is now only an
+  // authorization gate, not a credential-exposure decision. v1 allowlist:
+  // Britt, Blake, Tom. See client/src/lib/mode-router.js for the mode model.
+  if (!isTristarAllowed(user?.identity)) return null;
   // Trim env reads: Render env vars routinely pick up leading/trailing
-  // whitespace from paste. Without trim, a stray space makes the client's
-  // normalizeTristarBaseUrl reject the URL and the user sees DEGRADED
-  // with no clear cause — env LOOKS set, system behaves broken. Linus
-  // pass-1 P1-2 fix.
-  return {
-    baseUrl: (process.env.TRISTAR_API_BASE_URL || '').trim() || null,
-    apiKey: (process.env.TRISTAR_API_KEY || '').trim() || null,
-  };
+  // whitespace from paste. Both vars must be present for the proxy to work.
+  const configured = Boolean(
+    (process.env.TRISTAR_API_BASE_URL || '').trim()
+    && (process.env.TRISTAR_API_KEY || '').trim()
+  );
+  return { configured };
 }
 
 router.get('/me', sessionAuth, (req, res) => {

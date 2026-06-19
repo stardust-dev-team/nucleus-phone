@@ -59,44 +59,41 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [emailReady, setEmailReady] = useState(null); // null = loading, true = tokens exist, false = re-login needed
 
-  // Check session on mount. If the /me response carries a tristar block
-  // (server gates by TRISTAR_ALLOWED_IDENTITIES — see server/routes/auth.js),
-  // flip api.js into TriStar mode. configureApi MUST run before any other
-  // hook fires an API call; that's why it's inside this effect's .then,
-  // not a separate effect with [user] dep — hooks like useTwilioDevice
-  // read from api.js the moment user is non-null.
+  // Check session on mount. The /me response carries a tristar block iff the
+  // user is on TRISTAR_ALLOWED_IDENTITIES (server/routes/auth.js). Post-stet
+  // that block is just { configured }: the API key never reaches the browser
+  // (the /api/tristar/* server proxy injects it). We enter TriStar mode only
+  // when configured === true; allowlisted-but-not-configured stays in Joruva
+  // mode and raises the DegradedBanner so the server misconfig is visible.
   //
-  // We also mirror the mode into React state so Shell and App can gate
-  // the TriStar-only UI (queue menu link, /queue route). The api.js
-  // module-level config remains authoritative for what FETCH does; the
-  // React mirror is purely for rendering. Drift between the two is
-  // impossible by construction — both are set in the same callback from
-  // the same source of truth.
+  // configureApi MUST run before any other hook fires an API call; that's why
+  // it's inside this effect's .then, not a separate [user]-dep effect — hooks
+  // like useTwilioDevice read from api.js the moment user is non-null. We also
+  // mirror the mode into React state to gate TriStar-only UI; the api.js
+  // module config stays authoritative for FETCH, and both are set from the
+  // same callback so they cannot drift.
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data) return;
         const { tristar, ...userFields } = data;
-        if (tristar) {
-          configureApi({
-            mode: MODES.TRISTAR,
-            tristarBaseUrl: tristar.baseUrl,
-            tristarApiKey: tristar.apiKey,
-          });
+        if (tristar && tristar.configured) {
+          configureApi({ mode: MODES.TRISTAR });
           setMode(MODES.TRISTAR);
         } else {
-          // Belt-and-suspenders: NULL out tristarBaseUrl/tristarApiKey on
-          // the Joruva path. configureApi uses object spread (api.js:49)
-          // so omitting these would leave any prior TriStar-session key
-          // resident in module memory. Critical on a shared iPad where
-          // Britt logs out and Tom logs in.
-          configureApi({
-            mode: MODES.JORUVA,
-            tristarBaseUrl: null,
-            tristarApiKey: null,
-          });
+          // Joruva mode. No key is ever held client-side post-stet, so there's
+          // nothing to scrub here — the shared-iPad credential-bleed concern
+          // that motivated the old NULL-out is gone with the key.
+          configureApi({ mode: MODES.JORUVA });
           setMode(MODES.JORUVA);
+          // Allowlisted but the server lacks TRISTAR_API_BASE_URL/KEY: surface
+          // the misconfig so it's not silently swallowed (the proxy would 503).
+          if (tristar && !tristar.configured && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('api:degraded', {
+              detail: { reason: 'tristar-unconfigured', timestamp: Date.now() },
+            }));
+          }
         }
         setUser(userFields);
       })
@@ -120,16 +117,10 @@ function AppContent() {
   const callState = useCallState(twilioHook);
 
   function handleLogout() {
-    // Clear TriStar credentials from module-level config BEFORE the
-    // network round-trip — protects against state-bleed if the next user
-    // logs in fast and the second /me response races the first. Without
-    // this, a JORUVA-mode next-user could have a prior session's
-    // TRISTAR_API_KEY in module memory until their /me result lands.
-    configureApi({
-      mode: MODES.JORUVA,
-      tristarBaseUrl: null,
-      tristarApiKey: null,
-    });
+    // Reset to Joruva mode before the network round-trip so a fast next-login
+    // can't briefly inherit TriStar mode. Post-stet there's no client-side key
+    // to scrub — mode is the only state.
+    configureApi({ mode: MODES.JORUVA });
     setMode(MODES.JORUVA);
     // .finally — if the /logout POST rejects (flaky network), creds are
     // already wiped client-side; we still need to drop the UI to Login

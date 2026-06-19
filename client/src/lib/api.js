@@ -4,46 +4,33 @@
  * Mode routing — bead nucleus-phone-gxt2 / stardust-tristar [coc.1.b]:
  *
  * apiFetch routes through mode-router.resolveRoute so the cockpit can run
- * against nucleus-tristar's deployment for the three routed paths
- * (/queue, /call/initiate, /call/:id/disposition) while the rest of the
+ * against nucleus-tristar's deployment for the routed paths (/queue,
+ * /call/initiate, /call/:id/disposition, /token) while the rest of the
  * surface continues to hit nucleus-phone's local /api/. Module-level
  * config (configureApi) is set once at App.jsx boot after /api/auth/me
  * resolves — every existing caller of the exported functions below is
  * UNCHANGED. Consumers don't know the mode-router exists.
  *
- * DEGRADED resolutions (mode=TRISTAR but env missing) throw
- * ApiDegradedError WITHOUT firing fetch. A 'api:degraded' window event
- * is dispatched so DegradedBanner.jsx can surface the failure in the UI.
- * This is the no-local-writes contract enforced at the call site — the
- * anti-pattern test in __tests__/tristar-mode-no-local-writes.test.js
- * (line ~453) documents what NOT to do; this implementation refuses to
- * do it.
- *
- * v2 path (bead nucleus-phone-stet, P1): server-side proxy will replace
- * the cross-origin call. When that ships, configureApi's tristarBaseUrl
- * changes to a local prefix and tristarApiKey goes away — no consumer
- * surface change required. Don't bake cross-origin assumptions into
- * what consumers see.
+ * v2 server-side proxy (bead nucleus-phone-stet, P1): TriStar routed paths
+ * resolve to the SAME-ORIGIN proxy /api/tristar/<path>, which injects
+ * TRISTAR_API_KEY server-side. The browser never holds the key, so there is
+ * no client-side env to be "missing" — the old DEGRADED/ApiDegradedError
+ * path is gone. configureApi now carries only `mode`; the cockpit enters
+ * TriStar mode iff /me reported tristar.configured === true. All requests
+ * are same-origin, so credentials are always sent.
  */
 
 import { resolveRoute, TARGETS, MODES } from './mode-router.js';
 
 let _modeConfig = {
   mode: MODES.JORUVA,
-  tristarBaseUrl: null,
-  tristarApiKey: null,
 };
 
 /**
  * Configure the mode-router for subsequent api.js calls. Call once at
- * App.jsx boot after the user session resolves. Idempotent — merges into
- * existing config so a partial update doesn't reset other fields.
- *
- * Inputs are taken on trust; mode-router itself validates the shape
- * (normalizeTristarBaseUrl rejects non-https, missing host, etc.) and
- * falls through to DEGRADED on bad config rather than throwing here. We
- * want misconfig to surface at request time, where the banner can fire,
- * not at boot where it would white-screen the cockpit.
+ * App.jsx boot after the user session resolves, and on login/logout to flip
+ * mode. Idempotent — merges into existing config so a partial update doesn't
+ * reset other fields. Post-stet the only field is `mode`.
  */
 export function configureApi(next) {
   _modeConfig = { ..._modeConfig, ...next };
@@ -55,20 +42,6 @@ export function configureApi(next) {
  */
 export function getModeConfig() {
   return { ..._modeConfig };
-}
-
-/**
- * Thrown by apiFetch when mode-router resolves to TARGETS.DEGRADED. The
- * fetch is NEVER issued in this case — that's the no-local-writes
- * contract. Callers can test via instanceof; the class identity is the
- * stable surface (not the message string).
- */
-export class ApiDegradedError extends Error {
-  constructor(path) {
-    super(`TriStar mode active but config missing — refusing to fetch ${path}`);
-    this.name = 'ApiDegradedError';
-    this.path = path;
-  }
 }
 
 /**
@@ -93,19 +66,6 @@ export class ApiAuthError extends Error {
     this.target = target;
     this.body = body;
   }
-}
-
-/**
- * Dispatch the degraded event on window so DegradedBanner.jsx (or any
- * other listener) can surface ops failure without prop-drilling through
- * every component. Guarded against SSR / non-browser environments where
- * window may be undefined.
- */
-function notifyDegraded(path) {
-  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
-  window.dispatchEvent(new CustomEvent('api:degraded', {
-    detail: { path, timestamp: Date.now() },
-  }));
 }
 
 /**
@@ -173,11 +133,6 @@ export async function apiFetch(path, options = {}) {
   const route = resolveRoute(pathOnly, snapshot);
   const finalUrl = queryString ? `${route.url}${queryString}` : route.url;
 
-  if (route.target === TARGETS.DEGRADED) {
-    notifyDegraded(path);
-    throw new ApiDegradedError(path);
-  }
-
   // X-Cockpit-Mode is sent on EVERY request when the requested mode is
   // TriStar, not only routed ones. This is a latent capability for bead
   // nucleus-phone-kvje (P2) — when the server-side guard lands, it just
@@ -186,11 +141,11 @@ export async function apiFetch(path, options = {}) {
     ? { 'X-Cockpit-Mode': 'tristar' }
     : {};
 
-  // TriStar target is cross-origin; cookies don't apply and including
-  // them triggers a CORS preflight that nucleus-tristar does not handle.
-  // Local target uses session cookies via 'include'. DEGRADED can't
-  // reach here (thrown above).
-  const credentials = route.target === TARGETS.TRISTAR ? 'omit' : 'include';
+  // Post-stet every target is same-origin (local /api/* or the proxy
+  // /api/tristar/*), both authenticated by the nucleus_session cookie — so
+  // credentials are always included. The old cross-origin 'omit' path for
+  // TriStar is gone (the proxy, not the browser, talks to nucleus-tristar).
+  const credentials = 'include';
 
   // Header merge order matters. Inside `extra`:
   //   1. Content-Type / X-Requested-With — defaults, callable can override

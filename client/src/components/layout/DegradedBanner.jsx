@@ -1,48 +1,42 @@
 import { useEffect, useState } from 'react';
 
 /**
- * DegradedBanner — bead nucleus-phone-gxt2 / stardust-tristar [coc.1.b].
+ * DegradedBanner — bead nucleus-phone-gxt2 / stardust-tristar [coc.1.b];
+ * reworked by nucleus-phone-stet (P1).
  *
- * Surfaces api.js's TARGETS.DEGRADED state AND 401/403 auth failures from
- * TriStar-target routes to the operator. Listens for three window events
- * dispatched by client/src/lib/api.js:
+ * Surfaces TriStar misconfig + auth failures to the operator. Listens for three
+ * window events:
  *
- *   'api:degraded'      — api.js refused to fire a routed call because
- *                         mode === TRISTAR but tristarBaseUrl/Key are
- *                         missing. Banner shows "config missing" variant
- *                         with the failing path.
- *   'api:auth-failed'   — A TARGETS.TRISTAR fetch returned 401/403. Most
- *                         common cause: TRISTAR_API_KEY rotated on the
- *                         nucleus-tristar service since the cockpit
- *                         booted (configureApi captured the old key at
- *                         /me time). Banner shows "session expired"
- *                         variant. Added per Linus-review-#2 of bead
- *                         nucleus-phone-ln18.
- *   'api:tristar-ok'    — A TARGETS.TRISTAR fetch returned ok, proving
- *                         config + key are good. Banner clears
- *                         (auto-clear, per gxt2 design choice). User
- *                         can also dismiss.
+ *   'api:degraded'      — dispatched by App.jsx when /me reports the user is
+ *                         allowlisted for TriStar but the SERVER is missing its
+ *                         TRISTAR_API_BASE_URL/KEY (tristar.configured ===
+ *                         false). The cockpit stays in Joruva mode; the banner
+ *                         tells the operator the server needs fixing. Post-stet
+ *                         this is a server-config signal, not a refused fetch —
+ *                         there is no client-side key to be missing.
+ *   'api:auth-failed'   — dispatched by api.js when a TARGETS.TRISTAR request
+ *                         (through the /api/tristar/* proxy) returns 401/403.
+ *                         Most common cause: TRISTAR_API_KEY rotated on the
+ *                         nucleus-tristar service. Banner shows "auth" variant.
+ *   'api:tristar-ok'    — a TARGETS.TRISTAR request returned ok. Banner clears
+ *                         (auto-clear). User can also dismiss.
  *
- * Why two variants instead of one: the action the operator should take
- * is different. Config-missing means "ask Tom" — env var on Render
- * needs fixing. Auth-failed means "rotate the TRISTAR_API_KEY env on
- * nucleus-tristar AND redeploy nucleus-phone with the new key baked
- * into the bundle" — different ops procedure. Conflating them into a
- * single "TriStar broke somehow" message wastes Britt's time and Tom's.
+ * Why two variants: the operator action differs. Config-missing means "set the
+ * TriStar env on the nucleus-phone server." Auth-failed means "the shared key
+ * was rotated on nucleus-tristar — update TRISTAR_API_KEY on nucleus-phone."
+ * Both are "ask Tom," but the fix is different.
  *
- * Auto-clear is conservative: only a clean ok (not a 500 from TriStar)
- * counts as recovery. Dismiss is per-session; reload resets state. The
- * banner is mounted at App level (App.jsx), not Shell, so the Cockpit
- * route (which renders without Shell) also sees it — the cockpit is
- * where the routed paths fire from.
+ * Auto-clear is conservative: only a clean ok counts as recovery. Dismiss is
+ * per-session; reload resets state. Mounted at App level (App.jsx), not Shell,
+ * so the Cockpit route (which renders without Shell) sees it too.
  */
 export default function DegradedBanner() {
   const [state, setState] = useState({ visible: false, variant: null, path: null, status: null, at: null });
 
   useEffect(() => {
     function onDegraded(e) {
-      const { path, timestamp } = e.detail || {};
-      setState({ visible: true, variant: 'degraded', path: path || '(unknown)', status: null, at: timestamp || Date.now() });
+      const { timestamp } = e.detail || {};
+      setState({ visible: true, variant: 'degraded', path: null, status: null, at: timestamp || Date.now() });
     }
 
     function onAuthFailed(e) {
@@ -82,7 +76,7 @@ export default function DegradedBanner() {
         label: 'TriStar mode',
         body: (
           <>
-            config missing — call to <code className="font-mono">{state.path}</code> was blocked. Ask Tom.
+            enabled for your account but the server is missing its TriStar configuration. Ask Tom.
           </>
         ),
         dismissLabel: 'Dismiss TriStar config banner',

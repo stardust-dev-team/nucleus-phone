@@ -20,7 +20,7 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const { initSchema } = require('./db');
 const { errorHandler } = require('./middleware/error');
-const { apiKeyAuth, sessionAuth, bearerOrApiKeyOrSession } = require('./middleware/auth');
+const { apiKeyAuth, sessionAuth, bearerOrApiKeyOrSession, tristarGate } = require('./middleware/auth');
 const { rbac } = require('./middleware/rbac');
 const { startSweep } = require('./lib/stale-sweep');
 const { attachWebSocket } = require('./lib/live-analysis');
@@ -61,6 +61,11 @@ app.get('/api/health', (req, res) => {
 
 // Auth routes (no auth middleware — handles its own)
 app.use('/api/auth', require('./routes/auth'));
+
+// TriStar server-side proxy (bead nucleus-phone-stet, P1). Injects
+// TRISTAR_API_KEY server-side so it never reaches the browser. sessionAuth
+// authenticates the principal; tristarGate enforces TRISTAR_ALLOWED_IDENTITIES.
+app.use('/api/tristar', sessionAuth, tristarGate, require('./routes/tristar-proxy'));
 
 // Routes
 //

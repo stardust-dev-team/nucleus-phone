@@ -38,16 +38,17 @@ describe.skip('DegradedBanner — variant rendering (UNSKIP once nucleus-phone-8
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  test('api:degraded → renders TriStar mode / config-missing copy with path', () => {
+  test('api:degraded → renders TriStar mode / server-not-configured copy (post-stet: no path)', () => {
     render(<DegradedBanner />);
-    fire('api:degraded', { path: '/queue', timestamp: 1700000000000 });
+    // Post-stet the degraded event is a server-config signal dispatched by
+    // App.jsx (allowlisted but TRISTAR env missing) — it carries no path.
+    fire('api:degraded', { reason: 'tristar-unconfigured', timestamp: 1700000000000 });
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByText(/TriStar mode/i)).toBeInTheDocument();
-    expect(screen.getByText(/config missing/i)).toBeInTheDocument();
-    expect(screen.getByText('/queue')).toBeInTheDocument();
+    expect(screen.getByText(/missing its TriStar configuration/i)).toBeInTheDocument();
     // Auth-failed copy must NOT appear in the degraded variant.
     expect(screen.queryByText(/session expired/i)).toBeNull();
-    expect(screen.queryByText(/rotate/i)).toBeNull();
+    expect(screen.queryByText(/rotated/i)).toBeNull();
   });
 
   test('api:auth-failed → renders TriStar auth / key-rotation copy with status', () => {

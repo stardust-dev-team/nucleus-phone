@@ -223,6 +223,33 @@ function isInteractiveCaller(req) {
   return req.user?.authSource === 'session' || req.user?.authSource === 'bearer';
 }
 
+// TriStar allowlist (bead nucleus-phone-stet). Parses TRISTAR_ALLOWED_IDENTITIES
+// (csv) and tests an identity against it. Single source of truth shared by the
+// /api/tristar/* proxy gate (below) and the /me configured-flag builder
+// (routes/auth.js) so the two cannot drift. Read at call time, not module load,
+// so a Render env change takes effect on the next request without a restart.
+function isTristarAllowed(identity) {
+  if (typeof identity !== 'string' || identity.length === 0) return false;
+  const allowed = (process.env.TRISTAR_ALLOWED_IDENTITIES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return allowed.includes(identity);
+}
+
+// Gate for the /api/tristar/* proxy (bead nucleus-phone-stet, P1). MUST be
+// composed AFTER sessionAuth so req.user is populated. Only an authenticated
+// principal whose identity is on TRISTAR_ALLOWED_IDENTITIES may reach the
+// proxy — the same allowlist that gated v1's /me key delivery, now enforced
+// server-side at the routing boundary instead of relying on the client to
+// only call the proxy when allowlisted.
+function tristarGate(req, res, next) {
+  if (!isTristarAllowed(req.user?.identity)) {
+    return res.status(403).json({ error: 'TriStar mode not enabled for this user' });
+  }
+  next();
+}
+
 // Test helper — writes a user directly to the in-memory cache so integration
 // tests can mock jwt.verify to return `{userId}` and skip the DB round-trip
 // on sessionAuth. NOT intended for production code paths.
@@ -237,6 +264,8 @@ module.exports = {
   bearerOrSession,
   bearerOrApiKeyOrSession,
   isInteractiveCaller,
+  isTristarAllowed,
+  tristarGate,
   loadUserById,
   invalidateUser,
   SESSION_TTL_SECONDS,
