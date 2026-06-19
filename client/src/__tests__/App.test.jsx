@@ -45,13 +45,9 @@ function LocationProbe() {
 
 const mockConfigureApi = jest.fn();
 jest.mock('../lib/api', () => {
-  class ApiDegradedError extends Error {
-    constructor(path) { super(`degraded: ${path}`); this.name = 'ApiDegradedError'; this.path = path; }
-  }
   return {
     configureApi: (...args) => mockConfigureApi(...args),
-    getModeConfig: () => ({ mode: 'joruva', tristarBaseUrl: null, tristarApiKey: null }),
-    ApiDegradedError,
+    getModeConfig: () => ({ mode: 'joruva' }),
     apiFetch: jest.fn(() => Promise.resolve({})),
     getToken: jest.fn(),
     getQueue: jest.fn(() => Promise.resolve({ practices: [], sequencer_dry_run_state: 'live', count: 0, tiers: [], limit: 50 })),
@@ -181,7 +177,7 @@ describe('App route gates', () => {
       identity: 'britt',
       role: 'caller',
       email: 'britt@joruva.com',
-      tristar: { baseUrl: 'https://nucleus-tristar.onrender.com', apiKey: 'test-key' },
+      tristar: { configured: true },
     });
 
     render(

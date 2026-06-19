@@ -1,37 +1,27 @@
 /**
- * App credential-bleed contract — bead nucleus-phone-e91e (Linus pass-3 P1).
+ * App credential-bleed contract — bead nucleus-phone-e91e; reworked by
+ * nucleus-phone-stet (P1).
  *
- * Pins the client-side defense against the shared-iPad credential-bleed bug
- * that pass-3 found and 19c76de fixed.
+ * Pre-stet this pinned a discipline-based defense: App.jsx had to pass explicit
+ * null tristarBaseUrl/tristarApiKey on the Joruva + logout paths so a prior
+ * TriStar session's key wouldn't linger in the api.js module singleton on a
+ * shared iPad.
  *
- * Background: `client/src/lib/api.js` keeps a module-level `_modeConfig`
- * singleton that `configureApi(next)` mutates via `{..._modeConfig, ...next}`.
- * If the JORUVA-mode call site OMITS `tristarBaseUrl`/`tristarApiKey` (e.g.,
- * `configureApi({mode: JORUVA})`), the spread leaves a prior TriStar
- * session's credentials resident in module memory. On a shared iPad: Britt
- * logs out, Tom logs in as JORUVA, his React tree could read Britt's
- * tristarApiKey via `getModeConfig()`.
+ * Post-stet that whole failure mode is DESIGNED OUT: the TRISTAR_API_KEY never
+ * reaches the browser. /me returns only `tristar: { configured }`, App.jsx
+ * configures api.js with `mode` alone, and the same-origin /api/tristar/* proxy
+ * injects the key server-side. So the contract this test now pins is the
+ * stronger one: App.jsx NEVER passes a TriStar key/base-url into configureApi —
+ * there is no credential to bleed.
  *
- * This test asserts the THREE write sites in App.jsx (Joruva /me path,
- * handleLogout, TriStar /me path) all pass the FULL field set. A refactor
- * that drops the explicit nulls (or stops setting them in handleLogout
- * BEFORE the network round-trip) will fail this test loudly — closing the
- * call-site discipline gap that the singleton pattern leaves wide open.
+ * Asserts the three configureApi write sites in App.jsx (Joruva /me, TriStar
+ * /me, handleLogout) and that none of them carries a key/base-url field.
  *
- * Test location: client/src/__tests__/ (alongside the code it exercises).
- * Initially placed at the project root __tests__/, but react-router-dom is
- * installed under client/node_modules and not resolvable from the root —
- * jest.mock requires the module to resolve to a real path. The mock factory
- * itself doesn't need the real module; jest's resolver does. Lives here so
- * the resolver finds the package.
+ * Test location: client/src/__tests__/ (react-router-dom resolves under
+ * client/node_modules; jest.mock needs the package to resolve from here).
  *
- * NOT covered here:
- *   - The server-side /me response shape (covered by server/__tests__/
- *     auth.test.js and the TRISTAR_ALLOWED_IDENTITIES env contract).
- *   - The api.js apiFetch routing behavior (covered by api.test.js and
- *     mode-router.test.js).
- *   - The structural fix (resetApi() helper or React-context migration)
- *     that would replace the discipline-based defense — tracked separately.
+ * NOT covered here: the server /me response shape (server proxy tests) and the
+ * api.js routing behavior (api.test.js + tristar-mode-no-local-writes).
  */
 
 import React from 'react';
@@ -43,15 +33,11 @@ import '@testing-library/jest-dom';
 // component code that does instanceof checks; we only care about the
 // configureApi call args here.
 const mockConfigureApi = jest.fn();
-const mockGetModeConfig = jest.fn(() => ({ mode: 'joruva', tristarBaseUrl: null, tristarApiKey: null }));
+const mockGetModeConfig = jest.fn(() => ({ mode: 'joruva' }));
 jest.mock('../lib/api', () => {
-  class ApiDegradedError extends Error {
-    constructor(path) { super(`degraded: ${path}`); this.name = 'ApiDegradedError'; this.path = path; }
-  }
   return {
     configureApi: (...args) => mockConfigureApi(...args),
     getModeConfig: (...args) => mockGetModeConfig(...args),
-    ApiDegradedError,
     apiFetch: jest.fn(() => Promise.resolve({})),
     // The page components mocked below don't actually call these, but jest
     // requires every named export the importer uses to be present in the
@@ -163,76 +149,80 @@ function mockMe(payload) {
 describe('App credential-bleed contract', () => {
   beforeEach(() => {
     mockConfigureApi.mockReset();
-    mockGetModeConfig.mockReset().mockReturnValue({ mode: 'joruva', tristarBaseUrl: null, tristarApiKey: null });
+    mockGetModeConfig.mockReset().mockReturnValue({ mode: 'joruva' });
   });
 
   afterEach(() => {
     delete global.fetch;
   });
 
-  it('JORUVA-mode /me MUST call configureApi with explicit nulls for tristarBaseUrl + tristarApiKey', async () => {
+  // The post-stet invariant: configureApi must NEVER be handed a TriStar key or
+  // base URL — the browser holds neither. Any object carrying these fields is a
+  // regression toward the old client-side-key model.
+  function expectNoCredFields(call) {
+    const arg = call[0] || {};
+    expect(arg).not.toHaveProperty('tristarApiKey');
+    expect(arg).not.toHaveProperty('tristarBaseUrl');
+    expect(arg).not.toHaveProperty('apiKey');
+  }
+
+  it('JORUVA-mode /me configures api.js with mode only (no key/base-url fields)', async () => {
     mockMe({ identity: 'tom', role: 'admin', email: 'tom@joruva.com' });
 
     render(<App />);
 
     await waitFor(() => expect(mockConfigureApi).toHaveBeenCalled());
 
-    // The defensive contract: a Joruva-mode /me payload (no tristar block)
-    // MUST overwrite tristarBaseUrl + tristarApiKey with null, not omit
-    // them. Omission would leave a prior TriStar session's creds in
-    // module memory under the spread semantics of api.js:configureApi.
-    expect(mockConfigureApi).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: 'joruva',
-        tristarBaseUrl: null,
-        tristarApiKey: null,
-      })
-    );
+    expect(mockConfigureApi).toHaveBeenCalledWith({ mode: 'joruva' });
+    mockConfigureApi.mock.calls.forEach(expectNoCredFields);
   });
 
-  it('TriStar-mode /me MUST call configureApi with the credential triple from the response', async () => {
+  it('TriStar-mode /me (configured:true) configures api.js with mode only — NO key reaches the client', async () => {
     mockMe({
       identity: 'britt',
       role: 'caller',
       email: 'britt@joruva.com',
-      tristar: {
-        baseUrl: 'https://nucleus-tristar.onrender.com',
-        apiKey: 'test-api-key-britt',
-      },
+      tristar: { configured: true },
     });
 
     render(<App />);
 
     await waitFor(() => expect(mockConfigureApi).toHaveBeenCalled());
 
-    expect(mockConfigureApi).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: 'tristar',
-        tristarBaseUrl: 'https://nucleus-tristar.onrender.com',
-        tristarApiKey: 'test-api-key-britt',
-      })
-    );
+    expect(mockConfigureApi).toHaveBeenCalledWith({ mode: 'tristar' });
+    mockConfigureApi.mock.calls.forEach(expectNoCredFields);
   });
 
-  it('handleLogout MUST clear TriStar creds via configureApi BEFORE the /logout network round-trip', async () => {
-    // Start as TriStar so handleLogout has something to clear.
+  it('allowlisted-but-not-configured /me stays in Joruva mode (no key, proxy 503 would surface)', async () => {
     mockMe({
       identity: 'britt',
       role: 'caller',
       email: 'britt@joruva.com',
-      tristar: { baseUrl: 'https://nucleus-tristar.onrender.com', apiKey: 'test-api-key-britt' },
+      tristar: { configured: false },
     });
 
     render(<App />);
 
-    // Wait for the boot configureApi to land so we can isolate the
-    // logout-driven call.
+    await waitFor(() => expect(mockConfigureApi).toHaveBeenCalled());
+
+    expect(mockConfigureApi).toHaveBeenCalledWith({ mode: 'joruva' });
+    mockConfigureApi.mock.calls.forEach(expectNoCredFields);
+  });
+
+  it('handleLogout resets to Joruva mode BEFORE the /logout round-trip (no creds to clear)', async () => {
+    mockMe({
+      identity: 'britt',
+      role: 'caller',
+      email: 'britt@joruva.com',
+      tristar: { configured: true },
+    });
+
+    render(<App />);
+
     await waitFor(() => expect(mockConfigureApi).toHaveBeenCalledTimes(1));
 
-    // Capture the logout-fetch invocation order vs the configureApi call.
-    // The contract is: configureApi(null creds) runs BEFORE fetch fires.
-    // A regression that swapped them would let a fast next-user /me race
-    // see Britt's creds in the singleton during the logout window.
+    // Ordering still matters: mode must flip to Joruva before the network call
+    // so a fast next-login can't briefly inherit TriStar mode.
     const fetchCallTimestamps = [];
     const apiCallTimestamps = [];
     let tick = 0;
@@ -252,18 +242,10 @@ describe('App credential-bleed contract', () => {
       const logoutFetch = fetchCallTimestamps.find((f) => f.url === '/api/auth/logout');
       expect(logoutFetch).toBeDefined();
       expect(apiCallTimestamps.length).toBeGreaterThanOrEqual(1);
-      // The clearing configureApi must have ticked BEFORE the logout fetch.
       expect(apiCallTimestamps[0]).toBeLessThan(logoutFetch.t);
     });
 
-    // The clearing call must pass explicit nulls — not just the mode flip.
-    expect(mockConfigureApi).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: 'joruva',
-        tristarBaseUrl: null,
-        tristarApiKey: null,
-      })
-    );
+    expect(mockConfigureApi).toHaveBeenCalledWith({ mode: 'joruva' });
   });
 
   it('null /me response does NOT call configureApi (no boot, no clear)', async () => {

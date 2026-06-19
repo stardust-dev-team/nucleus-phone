@@ -1,84 +1,60 @@
 /**
- * mode-router.js — bead nucleus-phone-bboo / stardust-tristar-cit [coc.1.a].
+ * mode-router.js — bead nucleus-phone-gxt2 / stardust-tristar [coc.1.a];
+ * reworked by nucleus-phone-stet (P1) for the server-side proxy.
  *
- * Routes a small surface of API paths to nucleus-tristar's deployment when
- * the cockpit is in "TriStar mode," and to nucleus-phone's local /api/
- * surface otherwise. The three routed paths are exactly the ones that
- * would write to nucleus-phone's local nucleus_phone_calls table via the
- * cockpit's outbound flow:
+ * Routes a small surface of API paths to nucleus-tristar when the cockpit is
+ * in "TriStar mode," and to nucleus-phone's local /api/ surface otherwise. The
+ * routed paths are exactly the ones that would write to nucleus-phone's local
+ * nucleus_phone_calls table via the cockpit's outbound flow:
  *
  *   - /queue                  — TriStar-only endpoint (no local equivalent)
- *   - /call/initiate          — local INSERT lives at server/routes/call.js:60
+ *   - /call/initiate          — local INSERT lives at server/routes/call.js
  *   - /call/:id/disposition   — local UPDATEs live at server/routes/history.js
- *                                (nucleus-phone exposes this at
- *                                 /api/history/:id/disposition; TriStar
- *                                 exposes it at /api/call/:id/disposition —
- *                                 mode-router routes the TriStar-flavored
- *                                 path. Cockpit code in bead e91e is what
- *                                 picks which flavor to call per mode.)
+ *                                (nucleus-phone exposes /api/history/:id/...;
+ *                                 TriStar exposes /api/call/:id/disposition)
+ *   - /token                  — Twilio Voice SDK JWT must come from TriStar's
+ *                                Twilio account in TriStar mode
+ *
+ * --- v2 server-side proxy (bead stet) ---
+ *
+ * The shared TRISTAR_API_KEY no longer touches the browser. In TriStar mode a
+ * routed path resolves to the SAME-ORIGIN proxy prefix /api/tristar/<path>
+ * (server/routes/tristar-proxy.js), which injects the key server-side and
+ * forwards to nucleus-tristar. This module therefore needs NO TriStar base URL
+ * or API key — only the current mode. The browser cannot leak a key it never
+ * receives.
  *
  * The single contract this module guarantees: when the resolved target is
- * TARGETS.TRISTAR, the returned URL never points at the local /api/
- * surface. By corollary, in resolved-TriStar mode no fetch hits
- * nucleus-phone's Express handlers for those paths, so no INSERT/UPDATE
- * to nucleus_phone_calls is possible via those routes. The write-site
- * audit lives in __tests__/tristar-mode-no-local-writes.test.js.
+ * TARGETS.TRISTAR, the returned URL points at /api/tristar/<path>, never at the
+ * local /api/<path> surface. So in resolved-TriStar mode no fetch hits
+ * nucleus-phone's Express handlers for those paths, and no INSERT/UPDATE to
+ * nucleus_phone_calls is possible via them. The write-site audit lives in
+ * __tests__/tristar-mode-no-local-writes.test.js.
  *
- * --- v1 trust model + v2 follow-up ---
+ * --- no DEGRADED state client-side ---
  *
- * nucleus-tristar/src/middleware/api-key.js:7 documents that
- * TRISTAR_API_KEY is "a single shared" deployment secret. For v1, the
- * cockpit holds it client-side via Vite build-time env (caller supplies
- * tristarApiKey to resolveRoute / getApiConfig). That key is therefore
- * extractable from the browser bundle by anyone with dev tools — an
- * intentional trade-off for the Britt/Blake/Tom v1 rollout.
- *
- * v2 follow-up (bead nucleus-phone-stet, P1): proxy through nucleus-phone's
- * server (route prefix like /api/tristar/*) and keep the key in
- * nucleus-phone's env. A second sibling bead nucleus-phone-kvje (P2)
- * adds a server-side X-Cockpit-Mode guard as defense-in-depth. Until
- * stet lands, do NOT enable TriStar mode for external_caller principals
- * you don't trust with the shared key.
- *
- * --- misconfig posture (TARGETS.DEGRADED) ---
- *
- * If mode === TRISTAR but tristarBaseUrl/tristarApiKey are missing or
- * empty, resolveRoute returns TARGETS.DEGRADED — a third resolved-target
- * value distinct from both LOCAL (intentional Joruva mode) and TRISTAR.
- * The URL still resolves to the local /api/ surface (cockpit stays
- * functional), but the target carries the "this was supposed to be
- * TriStar" signal to the caller. The caller MUST surface this in ops
- * (banner, console.warn, Slack alert) — see canonicalize-degrade.test.
- *
- * Why DEGRADED is a distinct state instead of a flag on LOCAL: a request
- * that LOOKS like local but came from "user wanted TriStar" is a bug
- * signal, not a normal Joruva-mode dial. Conflating them hides the bug.
- * The no-local-writes contract is scoped to TARGETS.TRISTAR specifically:
- * a degraded request DOES touch nucleus_phone_calls (it's a local
- * write), but the caller is responsible for either suppressing the call
- * or warning the user before issuing it.
+ * Pre-stet, a third target (DEGRADED) signalled "TriStar requested but the
+ * client-injected env was missing." With the key/base-url gone from the client,
+ * the client can no longer observe a missing env — that is now a server concern.
+ * The cockpit only enters TriStar mode when /api/auth/me reports
+ * tristar.configured === true (App.jsx), and a server that loses its env
+ * mid-session returns 503 from the proxy (surfaced as an ApiAuthError-adjacent
+ * ops error, not a silent local write). So TARGETS is just {LOCAL, TRISTAR}.
  *
  * --- header-merge contract ---
  *
- * resolveRoute / getApiConfig return an `applyHeaders(extra)` function
- * rather than a plain `headers` object. The function controls merge
- * order: caller-supplied headers go in first, mode-router auth headers
- * (X-API-Key) go in last and always win. This makes the spread-collision
- * footgun (nucleus-tristar/src/routes/queue.js:204-209, the qm0 lesson)
- * impossible to reintroduce at the call site:
- *
- *   // CORRECT — function controls order:
- *   fetch(r.url, { headers: r.applyHeaders({ 'Content-Type': 'application/json' }) })
- *
- *   // No way to write the wrong thing — there's no `r.headers` to spread
- *   // and `applyHeaders` always puts auth last.
+ * resolveRoute / getApiConfig return an `applyHeaders(extra)` function rather
+ * than a plain `headers` object. Post-stet the proxy injects auth server-side,
+ * so applyHeaders is the identity merge (returns a fresh copy of `extra`). The
+ * function shape is preserved so api.js's call sites and its X-Cockpit-Mode
+ * merge order are unchanged, and so a future per-request header need has a
+ * single chokepoint.
  *
  * --- pure, injectable ---
  *
- * No process.env / import.meta.env reads here. All config is injected by
- * the caller. This keeps tests trivially deterministic and lets the
- * server (jest server config) exercise the same code as the browser
- * without a Vite shim.
+ * No process.env / import.meta.env reads here. Mode is injected by the caller
+ * (api.js, from /me). Keeps tests deterministic and lets the server jest config
+ * exercise the same code as the browser without a Vite shim.
  */
 
 export const MODES = Object.freeze({
@@ -87,34 +63,23 @@ export const MODES = Object.freeze({
 });
 
 /**
- * Resolved-target enum. Distinct from MODES because a request that was
- * REQUESTED in TRISTAR mode can RESOLVE to TARGETS.DEGRADED (config
- * missing) — that's an observable, distinct outcome the caller must
- * branch on, not a flavor of LOCAL.
+ * Resolved-target enum. {LOCAL, TRISTAR} only — see the "no DEGRADED" note
+ * above. LOCAL → nucleus-phone /api/<path>; TRISTAR → same-origin proxy
+ * /api/tristar/<path>.
  */
 export const TARGETS = Object.freeze({
   LOCAL: 'local',
   TRISTAR: 'tristar',
-  DEGRADED: 'degraded',
 });
 
+/** Same-origin prefix the server-side proxy is mounted at (server/index.js). */
+export const TRISTAR_PROXY_PREFIX = '/api/tristar';
+
 /**
- * Paths that, in TriStar mode, leave the local /api/ surface.
- * Frozen so a mutation throws in strict mode (ES modules are implicit
- * strict mode, so push() throws in normal use). Mutating this set would
- * silently widen / narrow the routed surface and relax the no-local-writes
- * contract — the freeze converts that footgun into a runtime error.
- *
- * Downstream code must not depend on order.
- *
- * /token (added per bead nucleus-phone-ln18): the cockpit's Twilio Voice
- * SDK device must register against TriStar's Twilio account when the
- * cockpit is in TriStar mode. Without routing /token, the device fetches
- * a Joruva-account JWT and cannot join TriStar's conferences — the lead
- * dial in nucleus-tristar/src/routes/call.js never reaches the rep.
- * nucleus-tristar exposes GET /api/token?identity=… (verb-matched to
- * nucleus-phone's local /api/token so getToken() doesn't need a special
- * case). Authentication via X-API-Key is injected by applyHeaders.
+ * Paths that, in TriStar mode, route through the proxy instead of the local
+ * /api/ surface. Frozen so a mutation throws — widening/narrowing this set
+ * silently would relax the no-local-writes contract. Downstream code must not
+ * depend on order.
  */
 export const ROUTED_PATHS = Object.freeze([
   '/queue',
@@ -124,9 +89,8 @@ export const ROUTED_PATHS = Object.freeze([
 ]);
 
 /**
- * Escape regex metacharacters in a literal string. Standard recipe.
- * Used so a future ROUTED_PATHS entry containing '.', '+', '?', etc.
- * does not silently become a regex wildcard.
+ * Escape regex metacharacters in a literal string. Standard recipe, so a future
+ * ROUTED_PATHS entry containing '.', '+', '?', etc. does not become a wildcard.
  */
 function escapeRegexLiteral(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -134,16 +98,9 @@ function escapeRegexLiteral(s) {
 
 /**
  * Compile a path template (with :param segments) to an anchored regex.
- *
- *   - Split the template on :name boundaries (param-name = [A-Za-z_]\w*).
- *   - Escape each literal segment.
- *   - Replace each :name with [^/]+ (single segment, no slashes).
- *   - Anchor both ends so '/queue' does not match '/queue/extra' and
- *     '/call/initiate.json' does not match '/call/initiate'.
- *
- * Hyphens-in-param-names (':user-id') are NOT supported by the param
- * regex; if a future ROUTED_PATHS entry needs that, extend the param
- * regex deliberately rather than papering over it at the call site.
+ * Each :name becomes [^/]+ (single segment); both ends anchored so '/queue'
+ * does not match '/queue/extra' and '/call/initiate.json' does not match
+ * '/call/initiate'.
  */
 function compilePathTemplate(template) {
   const PARAM = /:[A-Za-z_]\w*/g;
@@ -159,17 +116,15 @@ function compilePathTemplate(template) {
   return new RegExp(`^${pattern}$`);
 }
 
-// Derived from ROUTED_PATHS at module load. Safe to keep separate
-// because ROUTED_PATHS is frozen — no mutation can drift the two arrays
-// apart at runtime. Tests pin this property.
+// Derived from ROUTED_PATHS at module load. Safe to keep separate because
+// ROUTED_PATHS is frozen — no mutation can drift the two apart at runtime.
 const ROUTED_PATH_REGEXES = ROUTED_PATHS.map(compilePathTemplate);
 
 /**
  * True iff the path matches one of the routed-path templates.
  *
  * @param {string} path — request path WITHOUT the /api prefix (e.g.,
- *   '/queue', '/call/initiate', '/call/abc-123/disposition'). Caller is
- *   responsible for stripping any leading /api/.
+ *   '/queue', '/call/initiate', '/call/abc-123/disposition').
  */
 export function isPathRouted(path) {
   if (typeof path !== 'string' || path.length === 0) return false;
@@ -177,13 +132,15 @@ export function isPathRouted(path) {
 }
 
 /**
- * True iff the user is permitted to flip into TriStar mode. The bead
- * spec gates v1 to Britt/Blake/Tom; the caller supplies the allowlist
- * (typically from a server-driven config so the gate can be changed
- * without a redeploy). This module does not hardcode identities.
- *
- * Returns false defensively on missing user, empty identity, empty
+ * True iff the user is permitted to flip into TriStar mode. The bead spec gates
+ * v1 to Britt/Blake/Tom; the caller supplies the allowlist (from server-driven
+ * config so the gate changes without a redeploy). This module does not hardcode
+ * identities. Returns false defensively on missing user, empty identity, empty
  * allowlist, or shape mismatch — TriStar mode stays opt-in.
+ *
+ * Note: this is a UI affordance gate only. The authoritative server-side gate
+ * is tristarGate on /api/tristar/* (server/middleware/auth.js) — a forged
+ * client cannot reach TriStar's API by lying here.
  */
 export function canUseTriStarMode(user, allowedIdentities) {
   if (!user || typeof user.identity !== 'string' || user.identity.length === 0) return false;
@@ -192,148 +149,70 @@ export function canUseTriStarMode(user, allowedIdentities) {
 }
 
 /**
- * tristarBaseUrl must be a fully-qualified https:// URL. We REJECT any
- * other shape — javascript:, file:, data:, scheme-less hosts, or even
- * http:// — because the resolved URL may be passed to fetch (fine) OR
- * to `<a href>` / `window.location` / similar by future call sites. A
- * permissive base URL is an XSS / data-exfil vector waiting for a
- * cockpit refactor to find it.
- *
- * Trailing slash is stripped so concatenation with the path (which
- * always leads with /) doesn't produce double slashes.
+ * True iff opts requests TriStar mode. Tolerates null/undefined opts.
  */
-function normalizeTristarBaseUrl(raw) {
-  if (typeof raw !== 'string' || raw.length === 0) return null;
-  // Require at least one host character after the scheme so 'https://' alone
-  // doesn't survive normalization and produce a hostless URL on concat.
-  if (!/^https:\/\/[^/]/.test(raw)) return null;
-  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+function wantsTristar(opts) {
+  return Boolean(opts && typeof opts === 'object' && opts.mode === MODES.TRISTAR);
 }
 
 /**
- * Resolve TriStar config from opts. Returns null if mode is not TRISTAR
- * or env is missing/invalid. Shared by resolveRoute + getApiConfig.
- *
- * Tolerates null/undefined opts (returns null) so resolveRoute(path) and
- * resolveRoute(path, null) behave symmetrically — null is a normal way
- * to say "no config" in JS and shouldn't TypeError on destructure.
+ * Build the applyHeaders function. Post-stet the proxy injects auth
+ * server-side, so this is the identity merge — returns a FRESH object on every
+ * invocation (safe under concurrent in-flight fetches; mutating the result
+ * affects only that caller).
  */
-function resolveTristarConfig(opts) {
-  if (!opts || typeof opts !== 'object') return null;
-  const { mode, tristarBaseUrl, tristarApiKey } = opts;
-  if (mode !== MODES.TRISTAR) return null;
-  const baseUrl = normalizeTristarBaseUrl(tristarBaseUrl);
-  if (!baseUrl) return null;
-  if (typeof tristarApiKey !== 'string' || tristarApiKey.length === 0) return null;
-  return { baseUrl, apiKey: tristarApiKey };
-}
-
-/**
- * Build the applyHeaders function for a given resolved config. Caller
- * passes `extra` (its own headers like Content-Type, Accept) and the
- * function returns a merged object with mode-router auth headers spread
- * LAST so they always win. Footgun-proof by construction.
- *
- * Concurrency contract:
- *   - Returns a FRESH object on every invocation. Safe to call concurrently
- *     across many in-flight fetches; mutating the returned object affects
- *     only that caller, never future calls or other in-flight ones.
- *   - Captures `tristarConfig.apiKey` by value at resolve time (via the
- *     enclosing closure). The headers reflect the config-as-of-resolveRoute,
- *     NOT config-as-of-applyHeaders-call. A future refactor that reads
- *     apiKey lazily would introduce a TOCTOU between resolve and fetch —
- *     don't do that without revisiting the rotate-without-restart story.
- */
-function makeApplyHeaders(tristarConfig) {
-  if (tristarConfig) {
-    const apiKey = tristarConfig.apiKey;
-    return (extra = {}) => ({ ...extra, 'X-API-Key': apiKey });
-  }
+function makeApplyHeaders() {
   return (extra = {}) => ({ ...extra });
 }
 
 /**
- * Resolve a request path to a fully-qualified URL, target, and a header
- * merger, given the current mode and TriStar config.
+ * Resolve a request path to a fully-qualified-relative URL, target, and header
+ * merger, given the current mode.
  *
- * Returns:
  *   {
- *     url: string,
- *     target: 'local' | 'tristar' | 'degraded',
+ *     url: string,                       // '/api/tristar/queue' | '/api/queue'
+ *     target: 'local' | 'tristar',
  *     applyHeaders: (extra) => mergedHeaders,
  *   }
  *
  * Behavior matrix:
- *   mode=JORUVA, any path (env present or absent): → LOCAL (tristar config ignored)
- *   mode=TRISTAR, path routed, env present:        → TRISTAR
- *   mode=TRISTAR, path NOT routed:                 → LOCAL
- *   mode=TRISTAR, path routed, env missing/invalid:→ DEGRADED (still local URL)
- *   mode=TRISTAR, path NOT routed, env missing:    → LOCAL
- *
- * DEGRADED only fires when the caller asked for TriStar AND the path
- * IS in ROUTED_PATHS AND env is missing — i.e., precisely the case
- * where the cockpit thinks it's doing TriStar work but actually isn't.
- * That's the bug signal worth surfacing.
+ *   mode=JORUVA, any path:              → LOCAL  (/api/<path>)
+ *   mode=TRISTAR, path routed:          → TRISTAR (/api/tristar/<path>)
+ *   mode=TRISTAR, path NOT routed:      → LOCAL  (/api/<path>)
  */
 export function resolveRoute(path, opts) {
-  const tristarConfig = resolveTristarConfig(opts);
-  const wantsTristar = opts && typeof opts === 'object' && opts.mode === MODES.TRISTAR;
-
-  if (tristarConfig && isPathRouted(path)) {
+  if (wantsTristar(opts) && isPathRouted(path)) {
     return {
-      url: `${tristarConfig.baseUrl}${path}`,
+      url: `${TRISTAR_PROXY_PREFIX}${path}`,
       target: TARGETS.TRISTAR,
-      applyHeaders: makeApplyHeaders(tristarConfig),
-    };
-  }
-
-  if (wantsTristar && !tristarConfig && isPathRouted(path)) {
-    return {
-      url: `/api${path}`,
-      target: TARGETS.DEGRADED,
-      applyHeaders: makeApplyHeaders(null),
+      applyHeaders: makeApplyHeaders(),
     };
   }
 
   return {
     url: `/api${path}`,
     target: TARGETS.LOCAL,
-    applyHeaders: makeApplyHeaders(null),
+    applyHeaders: makeApplyHeaders(),
   };
 }
 
 /**
- * Convenience: caller-side recipe for the base URL + auth without a
- * specific path. Same shape as resolveRoute minus the url. Useful for
- * code paths that build URLs with query strings dynamically.
- *
- * Same DEGRADED semantics: requested TriStar with missing env returns
- * DEGRADED so the caller can surface ops visibility before issuing any
- * routed request.
+ * Convenience: caller-side recipe for the base prefix + header merger without a
+ * specific path. Useful for code paths that build URLs with dynamic query
+ * strings. Returns the proxy prefix in TriStar mode, /api otherwise.
  */
 export function getApiConfig(opts) {
-  const tristarConfig = resolveTristarConfig(opts);
-  const wantsTristar = opts && typeof opts === 'object' && opts.mode === MODES.TRISTAR;
-
-  if (tristarConfig) {
+  if (wantsTristar(opts)) {
     return {
-      baseUrl: tristarConfig.baseUrl,
+      baseUrl: TRISTAR_PROXY_PREFIX,
       target: TARGETS.TRISTAR,
-      applyHeaders: makeApplyHeaders(tristarConfig),
-    };
-  }
-
-  if (wantsTristar && !tristarConfig) {
-    return {
-      baseUrl: '/api',
-      target: TARGETS.DEGRADED,
-      applyHeaders: makeApplyHeaders(null),
+      applyHeaders: makeApplyHeaders(),
     };
   }
 
   return {
     baseUrl: '/api',
     target: TARGETS.LOCAL,
-    applyHeaders: makeApplyHeaders(null),
+    applyHeaders: makeApplyHeaders(),
   };
 }

@@ -7,9 +7,8 @@
  *   - owner_phone is the dial-target button (MOST CRITICAL field per bead)
  *   - dry-run banner toggles on sequencer_dry_run_state !== 'live'
  *   - empty state renders when practices array is empty
- *   - ApiDegradedError is caught + surfaced inline (DegradedBanner is the
- *     global banner; this page also shows a row-level message so the
- *     content area isn't blank)
+ *   - a 503 from the TriStar proxy surfaces as a calm restart CTA (post-stet:
+ *     no client-side ApiDegradedError; the proxy 503 reaches the 5xx branch)
  *   - touchpoint replied-at trumps sent-at visually
  *   - tier filter button toggle re-issues getQueue with the right param
  *   - multi-in-progress dial-block (bead nucleus-phone-02k6) — warning
@@ -37,29 +36,20 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-// Mock getQueue + the two error classes (ApiDegradedError, ApiAuthError)
-// before importing the component. Queue.jsx imports all three from
-// ../lib/api at module load — the mock has to be in place before that
-// import is resolved.
+// Mock getQueue + ApiAuthError before importing the component. Queue.jsx
+// imports both from ../lib/api at module load — the mock has to be in place
+// before that import is resolved.
 //
-// Both error classes are mirrored here because Queue.jsx's
-// getQueue catch handler uses `err instanceof <Class>` to branch.
-// If the mock omits a class, the consumer sees `undefined` and
-// `instanceof` throws TypeError — masking every error-handling
-// test in the file.
+// ApiAuthError is mirrored here because Queue.jsx's getQueue catch handler uses
+// `err instanceof ApiAuthError` to branch. If the mock omits it, the consumer
+// sees `undefined` and `instanceof` throws TypeError — masking every
+// error-handling test in the file. (ApiDegradedError was removed by stet.)
 //
 // jest.mock factories are hoisted ABOVE top-level const/class declarations,
 // so the mock classes are defined inside the factory and re-exported for
 // use in test bodies via the imported api module reference below.
 const mockGetQueue = jest.fn();
 jest.mock('../../lib/api', () => {
-  class ApiDegradedError extends Error {
-    constructor(path) {
-      super(`degraded: ${path}`);
-      this.name = 'ApiDegradedError';
-      this.path = path;
-    }
-  }
   class ApiAuthError extends Error {
     constructor(path, status, target, body) {
       super(`Auth failed (${status}) on ${target}:${path}`);
@@ -72,14 +62,12 @@ jest.mock('../../lib/api', () => {
   }
   return {
     getQueue: (...args) => mockGetQueue(...args),
-    ApiDegradedError,
     ApiAuthError,
   };
 });
 
 import Queue from '../Queue';
 import {
-  ApiDegradedError as MockApiDegradedError,
   ApiAuthError as MockApiAuthError,
 } from '../../lib/api';
 
@@ -397,16 +385,13 @@ describe('Queue / TriStarQueueView', () => {
     expect(await screen.findByText(/No leads ready to call/)).toBeInTheDocument();
   });
 
-  it('catches ApiDegradedError and falls through to empty state (global DegradedBanner handles the alert)', async () => {
-    mockGetQueue.mockRejectedValue(new MockApiDegradedError('/queue'));
+  it('surfaces a 503 from the TriStar proxy as a calm restart CTA (post-stet, no client-side DEGRADED)', async () => {
+    // Post-stet there is no ApiDegradedError: a server that lost its TriStar
+    // env returns 503 from the /api/tristar/* proxy, which reaches Queue as a
+    // plain "API 503: ..." error and hits the 5xx branch.
+    mockGetQueue.mockRejectedValue(new Error('API 503: TriStar proxy not configured'));
     render(<Queue />);
-    // The page should NOT render its own alert — DegradedBanner at App level
-    // owns the user-facing surface. The page just shows the empty state so
-    // Britt doesn't see two red boxes for one missing-config event.
-    expect(await screen.findByText(/No leads ready to call/)).toBeInTheDocument();
-    // Also make sure no role="alert" red box appears on the page — that's
-    // the actual structural assertion (any inline alert would be wrong).
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(await screen.findByText(/TriStar server is restarting/)).toBeInTheDocument();
   });
 
   it('positive control: console.error spy catches the warnings we depend on', () => {

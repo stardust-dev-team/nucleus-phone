@@ -8,13 +8,11 @@
  *
  *   - In Joruva mode, fetches hit /api with credentials:'include' and
  *     no TriStar headers.
- *   - In TriStar mode + routed path, fetches hit the TriStar base URL
- *     with credentials:'omit', X-API-Key (last), and X-Cockpit-Mode.
+ *   - In TriStar mode + routed path, fetches hit the same-origin proxy
+ *     (/api/tristar/*) with credentials:'include', X-Cockpit-Mode, and NO
+ *     client-side X-API-Key (the proxy injects it server-side — stet).
  *   - In TriStar mode + non-routed path, fetches hit local /api but
  *     still carry X-Cockpit-Mode (latent capability for bead kvje).
- *   - DEGRADED state THROWS ApiDegradedError, dispatches 'api:degraded',
- *     and NEVER calls fetch (the no-local-writes guarantee at the call
- *     site).
  *   - TARGETS.TRISTAR ok response dispatches 'api:tristar-ok'; a 500
  *     does NOT (conservative auto-clear).
  *   - getQueue + saveTristarDisposition route correctly.
@@ -27,7 +25,6 @@
 import {
   configureApi,
   getModeConfig,
-  ApiDegradedError,
   getQueue,
   saveTristarDisposition,
   initiateCall,
@@ -35,22 +32,13 @@ import {
   getScoreboard,
   apiFetch,
 } from '../api';
-import { MODES } from '../mode-router';
+import { MODES, TRISTAR_PROXY_PREFIX } from '../mode-router';
 
-const TRISTAR_BASE = 'https://nucleus-tristar.example';
-const TRISTAR_KEY = 'k_test_shared_v1';
-
-const TRISTAR_CFG = {
-  mode: MODES.TRISTAR,
-  tristarBaseUrl: TRISTAR_BASE,
-  tristarApiKey: TRISTAR_KEY,
-};
-
-const JORUVA_CFG = {
-  mode: MODES.JORUVA,
-  tristarBaseUrl: null,
-  tristarApiKey: null,
-};
+// Post-stet (P1): TriStar routed paths resolve to the same-origin proxy
+// (TRISTAR_PROXY_PREFIX === '/api/tristar') and the key is injected
+// server-side. Client config is mode-only.
+const TRISTAR_CFG = { mode: MODES.TRISTAR };
+const JORUVA_CFG = { mode: MODES.JORUVA };
 
 describe('client/src/lib/api.js — mode-router wiring', () => {
   let originalFetch;
@@ -94,20 +82,13 @@ describe('client/src/lib/api.js — mode-router wiring', () => {
   describe('configureApi', () => {
     test('merges into module state (idempotent partial update)', () => {
       configureApi({ mode: MODES.TRISTAR });
-      configureApi({ tristarBaseUrl: TRISTAR_BASE });
-      configureApi({ tristarApiKey: TRISTAR_KEY });
-      expect(getModeConfig()).toEqual(TRISTAR_CFG);
+      expect(getModeConfig()).toEqual({ mode: MODES.TRISTAR });
     });
 
-    test('partial update does not reset other fields', () => {
+    test('flipping mode back to Joruva updates the config', () => {
       configureApi(TRISTAR_CFG);
       configureApi({ mode: MODES.JORUVA });
-      // baseUrl + key are still set; only mode flipped.
-      expect(getModeConfig()).toEqual({
-        mode: MODES.JORUVA,
-        tristarBaseUrl: TRISTAR_BASE,
-        tristarApiKey: TRISTAR_KEY,
-      });
+      expect(getModeConfig()).toEqual({ mode: MODES.JORUVA });
     });
 
     test('getModeConfig returns a fresh object (no aliasing)', () => {
@@ -146,35 +127,35 @@ describe('client/src/lib/api.js — mode-router wiring', () => {
   describe('TriStar mode, routed path', () => {
     beforeEach(() => configureApi(TRISTAR_CFG));
 
-    test('initiateCall hits TriStar URL with credentials:omit + X-API-Key + X-Cockpit-Mode', async () => {
+    test('initiateCall hits the same-origin proxy with credentials:include + X-Cockpit-Mode, NO client key', async () => {
       await initiateCall({ to: '+15555550100', contactName: 'X', companyName: 'Y', contactId: 'c1', callerIdentity: 'tom' });
       const { url, init } = fetchCalls[0];
-      expect(url).toBe(`${TRISTAR_BASE}/call/initiate`);
-      expect(init.credentials).toBe('omit');
-      expect(init.headers['X-API-Key']).toBe(TRISTAR_KEY);
+      expect(url).toBe(`${TRISTAR_PROXY_PREFIX}/call/initiate`);
+      expect(init.credentials).toBe('include');
+      expect(init.headers['X-API-Key']).toBeUndefined();
       expect(init.headers['X-Cockpit-Mode']).toBe('tristar');
       expect(init.headers['Content-Type']).toBe('application/json');
     });
 
-    test('saveTristarDisposition hits /call/:id/disposition on TriStar', async () => {
+    test('saveTristarDisposition hits /api/tristar/call/:id/disposition', async () => {
       await saveTristarDisposition('abc-123', { outcome: 'connected' });
       const { url, init } = fetchCalls[0];
-      expect(url).toBe(`${TRISTAR_BASE}/call/abc-123/disposition`);
+      expect(url).toBe(`${TRISTAR_PROXY_PREFIX}/call/abc-123/disposition`);
       expect(init.method).toBe('POST');
-      expect(init.credentials).toBe('omit');
-      expect(init.headers['X-API-Key']).toBe(TRISTAR_KEY);
+      expect(init.credentials).toBe('include');
+      expect(init.headers['X-API-Key']).toBeUndefined();
       expect(JSON.parse(init.body)).toEqual({ outcome: 'connected' });
     });
 
-    test('getQueue with no args hits /queue (no query string)', async () => {
+    test('getQueue with no args hits /api/tristar/queue (no query string)', async () => {
       await getQueue();
-      expect(fetchCalls[0].url).toBe(`${TRISTAR_BASE}/queue`);
+      expect(fetchCalls[0].url).toBe(`${TRISTAR_PROXY_PREFIX}/queue`);
     });
 
-    test('getQueue with limit + tier serializes query params', async () => {
+    test('getQueue with limit + tier serializes query params on the proxy path', async () => {
       await getQueue({ limit: 25, tier: 'hot' });
-      const u = new URL(fetchCalls[0].url);
-      expect(u.origin + u.pathname).toBe(`${TRISTAR_BASE}/queue`);
+      const u = new URL(fetchCalls[0].url, 'http://localhost');
+      expect(u.pathname).toBe(`${TRISTAR_PROXY_PREFIX}/queue`);
       expect(u.searchParams.get('limit')).toBe('25');
       expect(u.searchParams.get('tier')).toBe('hot');
     });
@@ -227,16 +208,21 @@ describe('client/src/lib/api.js — mode-router wiring', () => {
       expect(fetchCalls[0].init.headers['X-Cockpit-Mode']).toBe('tristar');
     });
 
-    test('caller-supplied X-API-Key CANNOT override mode-driven key', async () => {
-      // applyHeaders puts X-API-Key LAST. Caller cannot squash the
-      // mode-router's auth key by passing their own. bboo invariant
-      // pinned at the api.js boundary.
+    test('a caller-supplied X-API-Key is NOT relayed to the proxy (key is server-side only)', async () => {
+      // Post-stet the client never sends an auth key. A caller passing one is
+      // ignored end-to-end: api.js merges it into headers, but the server
+      // proxy builds its own header set and injects the real key. Here we
+      // only assert the client does not silently treat it as auth — the
+      // proxy's own test pins that the caller value can't override the
+      // injected key server-side.
       await apiFetch('/call/initiate', {
         method: 'POST',
         headers: { 'X-API-Key': 'attacker-supplied' },
         body: JSON.stringify({}),
       });
-      expect(fetchCalls[0].init.headers['X-API-Key']).toBe(TRISTAR_KEY);
+      // api.js passes caller headers through unchanged (no mode-router key to
+      // override it with) — the security boundary is the server proxy.
+      expect(fetchCalls[0].init.headers['X-API-Key']).toBe('attacker-supplied');
     });
   });
 
@@ -270,52 +256,29 @@ describe('client/src/lib/api.js — mode-router wiring', () => {
     });
   });
 
-  // ── DEGRADED state — the no-local-writes call-site guarantee ───────
+  // ── server-misconfig (post-stet) — no client-side DEGRADED ─────────
+  // The client no longer refuses a routed call: there is no client env to be
+  // missing. A misconfigured server returns 503 from the proxy, which surfaces
+  // as a plain API error (Queue.jsx maps 5xx to a "restarting" message). api.js
+  // ALWAYS fires the fetch in TriStar mode and never throws ApiDegradedError
+  // (that class is gone).
 
-  describe('DEGRADED target — refuses fetch + dispatches event', () => {
-    beforeEach(() => {
-      // TriStar requested, but baseUrl/key missing → DEGRADED for routed paths.
-      configureApi({ mode: MODES.TRISTAR, tristarBaseUrl: null, tristarApiKey: null });
+  describe('TriStar mode never refuses a routed fetch client-side', () => {
+    beforeEach(() => configureApi(TRISTAR_CFG));
+
+    test('a routed call always issues a fetch to the proxy (no ApiDegradedError)', async () => {
+      await getQueue();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(fetchCalls[0].url).toBe(`${TRISTAR_PROXY_PREFIX}/queue`);
+      expect(degradedEvents).toHaveLength(0);
     });
 
-    test('throws ApiDegradedError on a routed path', async () => {
-      await expect(
-        initiateCall({ to: '+15555550100', contactName: 'X', companyName: 'Y', contactId: 'c1', callerIdentity: 'tom' })
-      ).rejects.toThrow(ApiDegradedError);
-    });
-
-    test('the thrown error is instanceof ApiDegradedError (class identity, not message match)', async () => {
-      try {
-        await initiateCall({ to: '+15555550100', contactName: 'X', companyName: 'Y', contactId: 'c1', callerIdentity: 'tom' });
-        throw new Error('expected to throw');
-      } catch (err) {
-        expect(err).toBeInstanceOf(ApiDegradedError);
-        expect(err.name).toBe('ApiDegradedError');
-        expect(err.path).toBe('/call/initiate');
-      }
-    });
-
-    test('NEVER calls fetch when target resolves to DEGRADED', async () => {
-      await expect(getQueue()).rejects.toThrow(ApiDegradedError);
-      await expect(
-        saveTristarDisposition('abc-123', { outcome: 'connected' })
-      ).rejects.toThrow(ApiDegradedError);
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-
-    test('dispatches api:degraded with path + timestamp', async () => {
-      await expect(getQueue()).rejects.toThrow();
-      expect(degradedEvents).toHaveLength(1);
-      expect(degradedEvents[0].path).toBe('/queue');
-      expect(typeof degradedEvents[0].timestamp).toBe('number');
-    });
-
-    test('non-routed paths in DEGRADED-config mode still resolve to LOCAL (no throw)', async () => {
-      // resolveRoute returns LOCAL when the path is NOT routed even if
-      // mode === TRISTAR (DEGRADED is scoped to routed paths). Verifies
-      // api.js doesn't over-broaden the throw.
-      await getScoreboard();
-      expect(fetchCalls[0].url).toBe('/api/scoreboard');
+    test('a 503 from the proxy surfaces as a plain API error (5xx), not a special degraded state', async () => {
+      global.fetch = jest.fn(async (url) => {
+        fetchCalls.push({ url });
+        return { ok: false, status: 503, text: async () => 'TriStar proxy not configured', json: async () => ({}) };
+      });
+      await expect(getQueue()).rejects.toThrow(/API 503/);
       expect(degradedEvents).toHaveLength(0);
     });
   });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getQueue, ApiDegradedError, ApiAuthError } from '../lib/api';
+import { getQueue, ApiAuthError } from '../lib/api';
 import { formatRelativeDay } from '../lib/format';
 
 /**
@@ -26,11 +26,11 @@ import { formatRelativeDay } from '../lib/format';
  * if owner_phone is null). Cockpit takes phone as its identifier; this
  * keeps Britt's flow single-tap.
  *
- * Degraded-config (ApiDegradedError) is caught here but rendered as a
- * row-level error message — the global DegradedBanner.jsx (mounted in
- * App.jsx) already surfaces the alert globally. We don't double-render
- * the banner; we just keep the page useful (showing the error inline so
- * the page doesn't go blank).
+ * Server misconfig (post-stet): the cockpit only enters TriStar mode when
+ * /me reports tristar.configured === true, so a routed call lands on the
+ * /api/tristar/* proxy. If the server lost its env mid-session the proxy
+ * returns 503, handled by the 5xx branch below ("TriStar server is
+ * restarting"). There is no client-side ApiDegradedError anymore.
  *
  * Multi-in_progress dial-block (bead nucleus-phone-02k6):
  *   Block triggers when row.phone_in_progress_count > 1. Modal-half +
@@ -362,14 +362,6 @@ export default function TriStarQueueView() {
       })
       .catch((err) => {
         if (signal.aborted || err.name === 'AbortError') return;
-        if (err instanceof ApiDegradedError) {
-          // Global DegradedBanner (App.jsx) already surfaces this. Clear
-          // local data so the empty state shows instead of double-rendering
-          // the alert. The banner is the canonical surface for missing
-          // TriStar config.
-          setData({ practices: [], sequencer_dry_run_state: null });
-          return;
-        }
         // 401/403 surfaces as ApiAuthError (sj5m/7w3t). The TriStar-target
         // variant ALSO fires api:auth-failed → DegradedBanner shows the
         // ops-actionable "key rotation may be needed" copy. The local
