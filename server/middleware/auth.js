@@ -250,6 +250,24 @@ function tristarGate(req, res, next) {
   next();
 }
 
+// Defense-in-depth (bead nucleus-phone-kvje): refuse a LOCAL write when the
+// cockpit declares itself in TriStar mode via the X-Cockpit-Mode header.
+// Post-stet a TriStar-mode cockpit routes /call/initiate and /:id/disposition
+// through the /api/tristar/* proxy, so reaching nucleus-phone's LOCAL write
+// handler with X-Cockpit-Mode:tristar means a client-side bug — a stale cached
+// bundle, or a future refactor that reintroduced a direct fetch('/api/...').
+// Return 409 instead of letting a stray INSERT/UPDATE hit nucleus_phone_calls.
+//
+// NOT a security boundary: an authenticated user can forge X-Cockpit-Mode:joruva
+// or omit it. That adversarial case is what stet's server-side proxy addresses.
+// This only shrinks the blast radius of a client BUG (see kvje threat model).
+function rejectTristarCockpitWrite(req, res, next) {
+  if (req.headers['x-cockpit-mode'] === 'tristar') {
+    return res.status(409).json({ error: 'route_via_tristar_api' });
+  }
+  next();
+}
+
 // Test helper — writes a user directly to the in-memory cache so integration
 // tests can mock jwt.verify to return `{userId}` and skip the DB round-trip
 // on sessionAuth. NOT intended for production code paths.
@@ -266,6 +284,7 @@ module.exports = {
   isInteractiveCaller,
   isTristarAllowed,
   tristarGate,
+  rejectTristarCockpitWrite,
   loadUserById,
   invalidateUser,
   SESSION_TTL_SECONDS,

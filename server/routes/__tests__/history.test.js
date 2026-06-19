@@ -663,6 +663,33 @@ describe('POST /api/history/:id/disposition', () => {
       .expect(400);
   });
 
+  /* ── kvje: X-Cockpit-Mode defense-in-depth guard ── */
+
+  test('X-Cockpit-Mode:tristar → 409 route_via_tristar_api, NO UPDATE (kvje)', async () => {
+    const res = await request(app)
+      .post('/api/history/1/disposition')
+      .set('x-api-key', API_KEY)
+      .set('X-Cockpit-Mode', 'tristar')
+      .send({ disposition: 'connected' })
+      .expect(409);
+
+    expect(res.body.error).toBe('route_via_tristar_api');
+    // The guard runs before the handler — no UPDATE to nucleus_phone_calls.
+    const updateCall = pool.query.mock.calls.find((c) => /UPDATE\s+nucleus_phone_calls/.test(c[0] || ''));
+    expect(updateCall).toBeUndefined();
+  });
+
+  test('X-Cockpit-Mode:joruva → disposition proceeds (guard only blocks tristar) (kvje)', async () => {
+    const updated = { ...SAMPLE_CALL, disposition: 'connected' };
+    pool.query.mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
+    await request(app)
+      .post('/api/history/1/disposition')
+      .set('x-api-key', API_KEY)
+      .set('X-Cockpit-Mode', 'joruva')
+      .send({ disposition: 'connected' })
+      .expect(200);
+  });
+
   test('returns 400 when disposition is missing', async () => {
     await request(app)
       .post('/api/history/1/disposition')

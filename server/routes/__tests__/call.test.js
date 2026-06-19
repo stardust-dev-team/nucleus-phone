@@ -148,6 +148,43 @@ describe('POST /api/call/initiate', () => {
 
     expect(res.body.error).toMatch(/Failed to initiate/);
   });
+
+  /* ── kvje: X-Cockpit-Mode defense-in-depth guard ── */
+
+  test('X-Cockpit-Mode:tristar → 409 route_via_tristar_api, NO INSERT (kvje)', async () => {
+    const res = await request(app)
+      .post('/api/call/initiate')
+      .set('x-api-key', API_KEY)
+      .set('X-Cockpit-Mode', 'tristar')
+      .send({ to: '+16025551234', callerIdentity: 'tom' })
+      .expect(409);
+
+    expect(res.body.error).toBe('route_via_tristar_api');
+    // The guard runs before the handler — no write to nucleus_phone_calls.
+    const insertCall = pool.query.mock.calls.find((c) => /INSERT INTO nucleus_phone_calls/.test(c[0] || ''));
+    expect(insertCall).toBeUndefined();
+    expect(conference.createConference).not.toHaveBeenCalled();
+  });
+
+  test('X-Cockpit-Mode:joruva → normal initiate (guard only blocks tristar) (kvje)', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 7 }], rowCount: 1 });
+    const res = await request(app)
+      .post('/api/call/initiate')
+      .set('x-api-key', API_KEY)
+      .set('X-Cockpit-Mode', 'joruva')
+      .send({ to: '+16025551234', callerIdentity: 'tom' })
+      .expect(200);
+    expect(res.body.callId).toBe(7);
+  });
+
+  test('no X-Cockpit-Mode header → normal initiate (back-compat) (kvje)', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 8 }], rowCount: 1 });
+    await request(app)
+      .post('/api/call/initiate')
+      .set('x-api-key', API_KEY)
+      .send({ to: '+16025551234', callerIdentity: 'tom' })
+      .expect(200);
+  });
 });
 
 /* ───────────── POST /api/call/join ───────────── */
