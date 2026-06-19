@@ -487,7 +487,7 @@ describe('tristar-mode-no-local-writes', () => {
       'server/routes/history.js': 'routed-outbound: /api/history/:id/disposition; TriStar-mode cockpit calls /call/:id/disposition (ROUTED_PATHS) instead',
       'server/routes/incoming.js': 'inbound-DID + twilio-webhook-nucleus-account: line 165 INSERT (prospect dial), line 610 UPDATE (voicemail recording webhook). Both fire on nucleus-phone Twilio account only',
       'server/routes/recording-status.js': 'twilio-webhook-nucleus-account: recording callback on nucleus-phone Twilio account',
-      'server/routes/transcription.js': 'twilio-webhook-nucleus-account: RT transcription callback on nucleus-phone Twilio account',
+      'server/lib/transcript-ingest.js': 'twilio-webhook-nucleus-account + in-house-STT-ingest: UPDATE (transcript-ingest.js:73) invoked by routes/transcription.js (Twilio RT-transcription callback, nucleus-phone account) and routes/stt-ingest.js (server-side in-house STT). Not a cockpit-routed write — no TriStar-mode cockpit fetch reaches it',
       'server/routes/voice.js': 'twilio-webhook-nucleus-account: TwiML callback on nucleus-phone Twilio account',
       'server/lib/phone-extractor.js': 'transitive-from-webhook: invoked by transcription.js (twilio-webhook-nucleus-account)',
       'server/lib/stale-sweep.js': 'timer-job: 5-min interval cleanup of stuck rows. Touches existing rows only; in pure TriStar mode no rows exist for the user',
