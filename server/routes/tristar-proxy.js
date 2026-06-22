@@ -45,6 +45,15 @@ function isRoutedSubpath(p) {
 router.use(async (req, res) => {
   const subpath = req.path;
 
+  // Reject percent-encoding and dot-segments BEFORE the allowlist test. Every
+  // routed path is literal ASCII, so any %xx (esp. %2f / %2F encoded slash,
+  // %00 null) or '..' is an attempt to smuggle an extra path segment through
+  // the [^/]+ :id slot — the upstream would decode %2f to '/' and could route
+  // it elsewhere within the /call/.../disposition shape. Linus review 2026-06-21.
+  if (/%|\.\./.test(subpath)) {
+    return res.status(400).json({ error: 'Invalid TriStar path' });
+  }
+
   if (!isRoutedSubpath(subpath)) {
     return res.status(404).json({ error: 'Not a routed TriStar path' });
   }
