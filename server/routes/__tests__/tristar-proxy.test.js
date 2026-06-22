@@ -90,6 +90,20 @@ describe('closed-proxy path allowlist', () => {
     await request(app).get(path).expect(404);
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  // Linus review 2026-06-21: the [^/]+ :id slot must not carry an encoded slash
+  // or dot-segment that the upstream would decode into an extra path segment.
+  // Literal '../' is normalized away by any HTTP client before the wire, so the
+  // real vector is ENCODED traversal — an encoded slash/null in the :id slot
+  // that the upstream would decode. Those must 400, not reach upstream.
+  test.each([
+    '/api/tristar/call/..%2f..%2fadmin/disposition',
+    '/api/tristar/call/x%2Fy/disposition',
+    '/api/tristar/call/%00/disposition',
+  ])('400s percent-encoded traversal path %s without calling upstream', async (path) => {
+    await request(app).get(path).expect(400);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe('key injection + forwarding', () => {
