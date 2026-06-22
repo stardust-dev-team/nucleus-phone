@@ -2,11 +2,19 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Device } from '@twilio/voice-sdk';
 import { getToken } from '../lib/api';
 
+// Backstop for a stuck reconnect. The SDK normally resolves a network blip with
+// `reconnected` or gives up with `disconnect` well within this window; the watchdog
+// only fires in the pathological case where it does NEITHER, so the UI can't freeze
+// on a dead call. Deliberately longer than the SDK's own media-reconnect timeout so
+// we never preempt a recovery that was still in progress.
+const RECONNECT_WATCHDOG_MS = 30000;
+
 export default function useTwilioDevice(identity) {
   const [device, setDevice] = useState(null);
   const [call, setCall] = useState(null);
   const [status, setStatus] = useState('initializing');
   const deviceRef = useRef(null);
+  const reconnectWatchdogRef = useRef(null);
 
   useEffect(() => {
     if (!identity) return;
@@ -130,6 +138,8 @@ export default function useTwilioDevice(identity) {
 
     return () => {
       destroyed = true;
+      clearTimeout(reconnectWatchdogRef.current);
+      reconnectWatchdogRef.current = null;
       if (gestureHandler) {
         document.removeEventListener('click', gestureHandler);
       }
@@ -158,6 +168,8 @@ export default function useTwilioDevice(identity) {
     });
 
     activeCall.on('disconnect', () => {
+      clearTimeout(reconnectWatchdogRef.current);
+      reconnectWatchdogRef.current = null;
       setStatus('disconnected');
       setCall(null);
       // Reset to ready after a brief pause so Dialer can detect 'disconnected'
@@ -166,14 +178,52 @@ export default function useTwilioDevice(identity) {
     });
 
     activeCall.on('cancel', () => {
+      clearTimeout(reconnectWatchdogRef.current);
+      reconnectWatchdogRef.current = null;
       setStatus('ready');
       setCall(null);
     });
 
+    // Twilio fires Call `error` for transient, recoverable conditions (ICE/media
+    // renegotiation, the 31xxx/53xxx signaling warnings) as well as fatal ones. We do
+    // NOT classify by code — that list is unstable and was internally inconsistent with
+    // the SDK's own reconnect machinery. The old code flipped EVERY error to status
+    // 'error', which knocked callPhase out of 'active' and tore the live-analysis socket
+    // down mid-call (close(1000, 'disabled')) while the voice call itself recovered.
+    // Now: log every error, let the SDK recover (reconnecting → reconnected), and rely on
+    // `disconnect` to end the call. Note: the reconnect watchdog below is armed only by
+    // the `reconnecting` event, so it backstops a stuck reconnect — NOT the rarer case of
+    // an error that fires neither `reconnecting` nor `disconnect` (uncovered today; the
+    // SDK routes media/signaling failures through one of those events in practice).
     activeCall.on('error', (err) => {
-      console.error('Call error:', err);
-      setStatus('error');
-      setCall(null);
+      console.warn('Call error (logged; recovery handled by reconnect/disconnect):', err?.code, err?.message || err);
+    });
+
+    // Network blip: the SDK is renegotiating media/signaling. Keep the call 'connected'
+    // through the blip (don't downgrade callPhase) so transcription survives — but arm a
+    // watchdog so a reconnect that never resolves can't leave the UI frozen on a dead call.
+    activeCall.on('reconnecting', (err) => {
+      console.warn('Call reconnecting:', err?.code, err?.message || err);
+      clearTimeout(reconnectWatchdogRef.current);
+      reconnectWatchdogRef.current = setTimeout(() => {
+        reconnectWatchdogRef.current = null;
+        // Only intervene if the SDK is genuinely still stuck — not if it quietly
+        // recovered ('open') or already ended ('closed') without clearing the timer.
+        const state = activeCall.status();
+        if (state !== 'open' && state !== 'closed') {
+          console.error('Call reconnect timed out — forcing disconnect');
+          activeCall.disconnect(); // fires 'disconnect' → the normal teardown path
+        }
+      }, RECONNECT_WATCHDOG_MS);
+    });
+
+    activeCall.on('reconnected', () => {
+      console.log('Call reconnected');
+      clearTimeout(reconnectWatchdogRef.current);
+      reconnectWatchdogRef.current = null;
+      // Guard against a late `reconnected` resurrecting a call that already ended:
+      // only re-assert 'connected' if the SDK call is genuinely open.
+      if (activeCall.status() === 'open') setStatus('connected');
     });
 
     setCall(activeCall);

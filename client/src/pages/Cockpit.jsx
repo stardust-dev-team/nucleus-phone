@@ -195,7 +195,14 @@ export default function Cockpit({ identity, role, callState, twilioStatus, force
     || (isPractice
       ? (activeSimCallId ? `sim-${activeSimCallId}` : null)
       : confParam || callState.callData?.conferenceName || null);
-  const liveAnalysis = useLiveAnalysis(liveCallId, !!testCallId || callPhase === 'active' || !!activeSimCallId || !!confParam);
+  // `enabled` tracks call EXISTENCE, not the derived `callPhase === 'active'`.
+  // While the cockpit is mounted through a live call, callPhase leaves 'active' on
+  // any transient Twilio status flap (a recoverable Call `error`, a reconnect blip),
+  // which tore the analysis socket down mid-call with close(1000, 'disabled') and
+  // killed transcription. callData is set on startCall and preserved until
+  // clearCallData (disposition), so it survives flaps; the server's cleanupCall()
+  // closes the socket at true call-end, and effect cleanup closes it on unmount.
+  const liveAnalysis = useLiveAnalysis(liveCallId, !!testCallId || !!callState.callData || !!activeSimCallId || !!confParam);
   const navigatorMode = useNavigatorMode(liveCallId);
 
   // Clear conf search param when observed conference ends (WebSocket disconnects after being connected)
