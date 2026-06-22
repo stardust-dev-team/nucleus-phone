@@ -16,6 +16,7 @@ const { WebSocketServer } = WebSocket;
 const jwt = require('jsonwebtoken');
 const { logEvent } = require('./debug-log');
 const { AQ_RANK } = require('./aq-constants');
+const { loadUserById } = require('../middleware/auth');
 
 // callId -> Set<ws>
 const subscriptions = new Map();
@@ -54,8 +55,9 @@ function attachWebSocket(httpServer) {
       return;
     }
 
+    let payload;
     try {
-      jwt.verify(token, process.env.JWT_SECRET);
+      payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
       console.warn('live-analysis: JWT verify failed:', err.message);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -63,10 +65,46 @@ function attachWebSocket(httpServer) {
       return;
     }
 
-    console.log('live-analysis: WebSocket upgrade accepted');
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req);
-    });
+    // bead nucleus-phone-tl63 (a): mirror bearerAuth — require userId, load the
+    // user fresh, reject if revoked (loadUserById returns null when the row is
+    // gone or is_active=false). Pre-tl63 the upgrade verified signature only, so
+    // a revoked user kept their WS open until the JWT expired.
+    //
+    // Legacy {identity,role,email} JWTs (no userId) are rejected here. Safe: the
+    // e5p migration to userId-only tokens closed 2026-04-12, and session JWTs
+    // have a 30-day TTL, so every legacy token expired by ~2026-05-12 and
+    // jwt.verify above would already 401 it. No live WS can hold one.
+    //
+    // The async loadUserById means the upgrade handler resolves a Promise before
+    // handleUpgrade; handleUpgrade MUST run inside the .then so the socket isn't
+    // upgraded until the user is verified.
+    if (!payload.userId) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    loadUserById(payload.userId)
+      .then((user) => {
+        if (!user) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        console.log('live-analysis: WebSocket upgrade accepted');
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          // Stash the verified principal. bead nucleus-phone-tl63 (b) — the
+          // subscribe-time owner check (assert ws._user owns msg.callId) —
+          // is the planned follow-up; it consumes ws._user set here.
+          ws._user = { id: user.id, identity: user.identity, role: user.role };
+          wss.emit('connection', ws, req);
+        });
+      })
+      .catch((err) => {
+        console.error('live-analysis: user lookup failed:', err.message);
+        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+        socket.destroy();
+      });
   });
 
   wss.on('connection', (ws) => {
