@@ -1,0 +1,44 @@
+# Stardust knowledge hub manifest for nucleus-phone (knowledge-d22.7, Phase 1d-5)
+#
+# Declares which hub domains and runbooks this project consumes.
+# See ~/stardust/knowledge/CONTRIBUTING.md "Project onboarding" (hard-won rules).
+#
+# Domain justification: nucleus-phone is the outbound sales dialer PWA —
+# Twilio Conference calling, HubSpot contacts, Fireflies transcription,
+# Claude rapport intel, Slack alerts, Entra SSO.
+#   domain:voice    — Twilio conference telephony is the core (nucleus-phone +
+#                     twilio-voice runbooks)
+#   domain:comms    — Fireflies transcription sync + Slack alerting
+#   domain:outbound — reads v35_* tables (pb_contacts, discovery_queue,
+#                     lead_reservoir, webhook_events, qa_results) and proxies
+#                     multichannel signals into the cockpit
+#   domain:infra    — Render service + shared Postgres (Tom-context pull;
+#                     render-deploy not fenced, read on demand)
+#   NOT domain:brand — no brand-asset work in this repo (the bead's "possibly";
+#                      display-name/brand facts live in the hand-written section)
+#
+# NOTE on the AUTO-GEN fence: hand-curated lean set — regenerating with
+# `universal` declared imports every scope-matching file (46 for universal
+# alone, unloadable until knowledge-rf1 R2 distillates).
+#
+# Load-bearing (knowledge-7us): the Autopilot engine injects this repo's RAW
+# CLAUDE.md into build prompts under a hard 8KB cap — keep CLAUDE.md under
+# 8,192 bytes raw.
+
+project: nucleus-phone
+
+domains:
+  - universal
+  - domain:voice
+  - domain:comms
+  - domain:outbound
+  - domain:infra
+
+# Hand-curated fence set. Basenames resolved against hub root + runbooks/.
+runbooks:
+  - nucleus-phone.md
+  - knowledge-management.md
+  - operational-policies.md
+  - writing-style.md
+  - twilio-voice.md
+  - fireflies-api.md
