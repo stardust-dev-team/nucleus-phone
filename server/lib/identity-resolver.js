@@ -26,6 +26,12 @@ const { normalizePhone } = require('./phone');
 
 const HUB_URL = process.env.UCIL_HUB_URL || process.env.HUB_URL || 'https://joruva-ucil.onrender.com';
 const HUB_TIMEOUT_MS = 8000;
+// 60s is a STALENESS CEILING, not a freshness target: it is how long the cockpit can
+// lie after an upstream edit when no invalidation arrives. joruva-ucil-jno adds
+// event-driven invalidation on contact.* so an edit is reflected immediately — but
+// this TTL is what still covers the case where the event is lost or the spoke is not
+// subscribed. Raising it back to 5 min is only safe once the subscription is live AND
+// its delivery is being watched.
 const CACHE_TTL_MS = 60 * 1000;
 // Negative results (unresolved) get a much shorter TTL. A recent HubSpot edit
 // that landed during the 60s hit window would otherwise make the cockpit lie
@@ -77,6 +83,39 @@ function cacheSet(key, value) {
 }
 
 function clearCache() { cache.clear(); }
+
+/**
+ * Drop the cached identity for a contact the hub says changed (joruva-ucil-jno).
+ *
+ * The cache is keyed by IDENTIFIER, not by contact — one person can occupy a phone
+ * key, an email key and a hubspot-id key at once — so an invalidation has to sweep
+ * every identifier the event carries. Invalidating one of them and leaving the
+ * others is worse than not invalidating at all: the cockpit would show fresh data
+ * when looked up by phone and stale data by email, and nobody would know which.
+ *
+ * Returns the keys actually dropped, so the caller can log something meaningful and
+ * a test can assert on it rather than on cache internals.
+ *
+ * @param {object} payload the hub contact.* event payload
+ * @returns {string[]} cache keys removed
+ */
+function invalidateContact(payload) {
+  if (!payload || typeof payload !== 'object') return [];
+
+  const identifiers = [
+    payload.phone_normalized,
+    payload.phone,
+    payload.email,
+    payload.hubspot_contact_id,
+  ].filter((v) => typeof v === 'string' && v !== '');
+
+  const dropped = [];
+  for (const identifier of identifiers) {
+    const key = cacheKey(identifier);
+    if (key && cache.delete(key)) dropped.push(key);
+  }
+  return dropped;
+}
 
 // ── Hub client ─────────────────────────────────────────────
 
@@ -229,4 +268,4 @@ async function resolve(identifier) {
   return identity;
 }
 
-module.exports = { resolve, clearCache, fallbackMetrics, _adapt: adapt };
+module.exports = { resolve, clearCache, invalidateContact, fallbackMetrics, _adapt: adapt };
