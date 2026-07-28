@@ -28,6 +28,7 @@ const { startScheduler: startCurator } = require('./lib/equipment-curator');
 const { validatePersonaConfig } = require('./lib/personas');
 const { createHmac, timingSafeEqual } = require('crypto');
 const hubCatalog = require('./lib/hub-catalog-store');
+const identityResolver = require('./lib/identity-resolver');
 const { flush: flushDebugLog } = require('./lib/debug-log');
 
 const app = express();
@@ -116,6 +117,28 @@ app.post('/api/hub/events', (req, res) => {
   const eventType = req.body.event_type || '';
   if (eventType.startsWith('product.') || eventType.startsWith('catalog.')) {
     hubCatalog.refreshNow().catch(err => console.error('[hub-events] Catalog refresh failed:', err.message));
+  }
+
+  // Identity cache invalidation on contact events (joruva-ucil-jno). The resolver
+  // caches by identifier in-process, so without this the cockpit serves a stale name
+  // or title for up to CACHE_TTL_MS after a rep fixes it in HubSpot.
+  //
+  // NOT YET SUBSCRIBED: this spoke's only hub_subscriptions row is product.*, so
+  // contact.* events are not delivered here and this branch does not run in
+  // production yet. Enabling it is one row — see the bead. Written now so the code
+  // is ready and reviewed, and so enabling it is a config decision rather than a
+  // code change.
+  if (eventType.startsWith('contact.')) {
+    try {
+      const dropped = identityResolver.invalidateContact(req.body.payload);
+      if (dropped.length) {
+        console.log(`[hub-events] ${eventType}: invalidated ${dropped.length} identity cache entr${dropped.length === 1 ? 'y' : 'ies'}`);
+      }
+    } catch (err) {
+      // Never let a cache concern affect the ack — the hub has already been told
+      // 200, and a failed invalidation degrades to the existing TTL.
+      console.error('[hub-events] Identity invalidation failed:', err.message);
+    }
   }
 });
 
