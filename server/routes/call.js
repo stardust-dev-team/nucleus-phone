@@ -229,7 +229,27 @@ router.post('/join', ...callerGuard, (req, res) => {
 
   if (!requireConferenceOwner(req, res, conf)) return;
 
-  const joinTicket = issueJoinTicket(conferenceName, muted);
+  // jsec-gsx0: bind the ticket to the caller it is issued to. voice.js honours
+  // it only for that same identity, matched against Twilio's `From`.
+  // req.user.identity is the authenticated session identity — the very value
+  // /api/token binds the Twilio access token to — so for a legitimate caller the
+  // two necessarily agree, and an attacker cannot make them agree.
+  // An API-key principal has identity 'system' (middleware/auth.js), which is
+  // not a Voice SDK client and can never appear as client:<identity> on a leg.
+  // Minting for it would return 200 with a ticket that is impossible to redeem —
+  // a fake success that looks like a working integration until someone tries to
+  // use it. Refuse loudly instead, and say why.
+  //
+  // (The guard here used to test `!req.user.identity`. That was unreachable:
+  // nucleus_phone_users.identity is NOT NULL and the API-key principal always
+  // carries 'system'. Dead code with a comment describing a case that cannot
+  // happen is worse than no guard.)
+  if (req.user.authSource === 'api_key' || req.user.identity === 'system') {
+    return res.status(403).json({
+      error: 'Join requires a session with a Voice SDK identity; an API-key principal cannot join a conference',
+    });
+  }
+  const joinTicket = issueJoinTicket(conferenceName, muted, req.user.identity);
   res.json({ conferenceName, muted: !!muted, joinTicket });
 });
 

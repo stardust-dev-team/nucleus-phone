@@ -6,6 +6,16 @@
 // no other test catching it.
 
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
+// jsec-gsx0: /api/voice establishes the caller from the REST Call resource, so
+// these TwiML-shape tests need that lookup mocked. Every conference below is
+// owned by 'kate', so the leg is kate's.
+jest.mock('../../lib/twilio', () => {
+  const actual = jest.requireActual('../../lib/twilio');
+  return {
+    VoiceResponse: actual.VoiceResponse,
+    client: { calls: jest.fn(() => ({ fetch: jest.fn().mockResolvedValue({ from: 'client:kate' }) })) },
+  };
+});
 
 const request = require('supertest');
 const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
@@ -19,6 +29,10 @@ const { createConference, removeConference } = require('../../lib/conference');
 // REAL store the way /api/call/initiate does. Authorization itself is covered
 // in voice-join-authz.test.js; these tests remain about TwiML attributes.
 const SEEDED = ['nucleus-call-test-1', 'nucleus-call-test-2', 'nucleus-call-djy-1', 'nucleus-call-test-3'];
+// jsec-gsx0: /api/voice now requires Twilio's From (client:<identity>) on BOTH
+// branches, and the initiate branch requires it to match the conference owner.
+// Every conference below is seeded to 'kate', so every request sends kate's leg.
+
 
 beforeEach(() => {
   for (const name of SEEDED) {
@@ -55,7 +69,7 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
       .post('/api/voice')
       .send({
         ConferenceName: 'nucleus-call-test-1',
-        CallSid: 'CA1234567890abcdef',
+        CallSid: 'CA1234567890abcdef0000000000000f00',
       });
 
     expect(res.statusCode).toBe(200);
@@ -72,7 +86,7 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
       .post('/api/voice')
       .send({
         ConferenceName: 'nucleus-call-test-2',
-        CallSid: 'CA0000000000000001',
+        CallSid: 'CA0000000000000001000000000000ff00',
       });
 
     expect(res.text).toMatch(/startConferenceOnEnter="true"/);
@@ -94,7 +108,7 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
       .post('/api/voice')
       .send({
         ConferenceName: 'nucleus-call-djy-1',
-        CallSid: 'CA0000000000000djy',
+        CallSid: 'CA0000000000000d1a0000000000000f00',
       });
 
     expect(res.text).toContain('<Transcription');
@@ -111,11 +125,11 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
     // ticket here keeps this test about the flag it was written to pin
     // (endConferenceOnExit) rather than silently turning into a second copy
     // of the authorization tests in voice-join-authz.test.js.
-    const ticket = issueJoinTicket('nucleus-call-test-3', false);
+    const ticket = issueJoinTicket('nucleus-call-test-3', false, 'kate');
 
     const res = await request(await listenLoopback(app))
       .post('/api/voice')
-      .send({ Action: 'join', JoinTicket: ticket });
+      .send({ CallSid: 'CA101a0000000000000000000000000f00', Action: 'join', JoinTicket: ticket });
 
     // The `Action: 'join'` branch represents an additional listener
     // joining. Their leaving must NEVER end the conference for everyone else.

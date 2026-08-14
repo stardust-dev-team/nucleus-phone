@@ -113,14 +113,17 @@ describe('POST /api/call/join — who may listen (jsec-r0k6)', () => {
 
     expect(res.statusCode).toBe(200);
     expect(typeof res.body.joinTicket).toBe('string');
-    expect(redeemJoinTicket(res.body.joinTicket)).toEqual({ conferenceName: CONF, muted: true });
+    expect(redeemJoinTicket(res.body.joinTicket, 'tom')).toEqual({ conferenceName: CONF, muted: true, identity: 'tom' });
   });
 
   test('the owning rep may re-join their own conference', async () => {
     const res = await join('caller', 'kate');
 
     expect(res.statusCode).toBe(200);
-    expect(redeemJoinTicket(res.body.joinTicket)).toEqual({ conferenceName: CONF, muted: true });
+    // jsec-gsx0: the ticket is bound to KATE — the caller it was issued to —
+    // not to whoever presents it later. An admin cannot pick it up either.
+    expect(redeemJoinTicket(res.body.joinTicket, 'kate')).toEqual({ conferenceName: CONF, muted: true, identity: 'kate' });
+    expect(redeemJoinTicket(res.body.joinTicket, 'tom')).toBeNull();
   });
 
   test('owner match is case-insensitive (display-cased identity, 001z)', async () => {
@@ -133,7 +136,27 @@ describe('POST /api/call/join — who may listen (jsec-r0k6)', () => {
   test('muted:false is carried onto the ticket — an open-mic join is authorized as such', async () => {
     const res = await join('admin', 'tom', { muted: false });
 
-    expect(redeemJoinTicket(res.body.joinTicket)).toEqual({ conferenceName: CONF, muted: false });
+    expect(redeemJoinTicket(res.body.joinTicket, 'tom')).toEqual({ conferenceName: CONF, muted: false, identity: 'tom' });
+  });
+
+  test('muted defaults to false when the body omits it, and the response shape is stable', async () => {
+    // Ported from call.test.js rather than dropped when that file's /join tests
+    // moved to an API-key refusal: the `!!muted` default and the response shape
+    // {conferenceName, muted, joinTicket} had no other coverage, and the join()
+    // helper here always sends muted:true unless told otherwise.
+    const res = await request(await listenLoopback(app))
+      .post('/api/call/join')
+      .set('x-test-role', 'admin')
+      .set('x-test-identity', 'tom')
+      .send({ conferenceName: CONF })
+      .expect(200);
+
+    const { joinTicket, ...rest } = res.body;
+    expect(rest).toEqual({ conferenceName: CONF, muted: false });
+    expect(typeof joinTicket).toBe('string');
+    expect(redeemJoinTicket(joinTicket, 'tom')).toEqual({
+      conferenceName: CONF, muted: false, identity: 'tom',
+    });
   });
 
   test('an ownerless conference is admin-only (fail closed, not fail open)', async () => {
