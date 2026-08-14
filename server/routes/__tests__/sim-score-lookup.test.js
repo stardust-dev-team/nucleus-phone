@@ -44,12 +44,15 @@ jest.mock('../../lib/conversation-pipeline', () => ({
 jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn(), flush: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../../db');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 let nextUserId = 9000;
 function mockBearerUser(identity, role = 'external_caller') {
   const id = nextUserId++;
@@ -103,14 +106,14 @@ const SCORED_ROW = {
 
 describe('GET /api/sim/call/:id/score', () => {
   test('401 without auth', async () => {
-    await request(app).get('/api/sim/call/42/score').expect(401);
+    await request(await listenLoopback(app)).get('/api/sim/call/42/score').expect(401);
   });
 
   test('returns scoring contract for status=scored (camelCase nested)', async () => {
     mockBearerUser('kate');
     pool.query.mockResolvedValueOnce({ rows: [SCORED_ROW], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -140,7 +143,7 @@ describe('GET /api/sim/call/:id/score', () => {
     mockBearerUser('kate');
     pool.query.mockResolvedValueOnce({ rows: [SCORED_ROW], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -169,7 +172,7 @@ describe('GET /api/sim/call/:id/score', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -188,7 +191,7 @@ describe('GET /api/sim/call/:id/score', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -203,7 +206,7 @@ describe('GET /api/sim/call/:id/score', () => {
   test('404 when row is missing', async () => {
     mockBearerUser('kate');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/sim/call/999/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(404);
@@ -211,7 +214,7 @@ describe('GET /api/sim/call/:id/score', () => {
 
   test('400 on non-numeric :id', async () => {
     mockBearerUser('kate');
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/sim/call/not-a-number/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(400);
@@ -220,7 +223,7 @@ describe('GET /api/sim/call/:id/score', () => {
   test('RBAC: other rep’s call returns 404 (not 403)', async () => {
     mockBearerUser('paul'); // paul is external_caller, not admin
     pool.query.mockResolvedValueOnce({ rows: [SCORED_ROW], rowCount: 1 }); // kate's row
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(404);
@@ -229,7 +232,7 @@ describe('GET /api/sim/call/:id/score', () => {
   test('RBAC: admin can read any rep’s score', async () => {
     mockBearerUser('tom', 'admin');
     pool.query.mockResolvedValueOnce({ rows: [SCORED_ROW], rowCount: 1 }); // kate's row
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -239,7 +242,7 @@ describe('GET /api/sim/call/:id/score', () => {
   test('owner can read own score', async () => {
     mockBearerUser('kate');
     pool.query.mockResolvedValueOnce({ rows: [SCORED_ROW], rowCount: 1 });
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/sim/call/42/score')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);

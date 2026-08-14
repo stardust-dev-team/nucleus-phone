@@ -44,6 +44,7 @@ jest.mock('../../lib/conversation-pipeline', () => ({
 jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn(), flush: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -53,6 +54,8 @@ const { createConference, updateConference, removeConference } = require('../../
 const { logEvent } = require('../../lib/debug-log');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-call-ios-api-key';
 
 let nextUserId = 8000;
@@ -124,7 +127,7 @@ function mockHappyPath({ insertedId = 42, dailyCount = 0 } = {}) {
 
 describe('POST /api/sim/call/ios', () => {
   test('401 without auth', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .send({ personaId: 'mike-garza', difficulty: 'easy' })
       .expect(401);
@@ -134,7 +137,7 @@ describe('POST /api/sim/call/ios', () => {
     mockBearerUser('kate');
     mockHappyPath({ insertedId: 101 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -164,7 +167,7 @@ describe('POST /api/sim/call/ios', () => {
 
   test('400 when personaId missing', async () => {
     mockBearerUser('kate');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ difficulty: 'easy' })
@@ -173,7 +176,7 @@ describe('POST /api/sim/call/ios', () => {
 
   test('400 when difficulty missing', async () => {
     mockBearerUser('kate');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ personaId: 'mike-garza' })
@@ -182,7 +185,7 @@ describe('POST /api/sim/call/ios', () => {
 
   test('404 when personaId unknown', async () => {
     mockBearerUser('kate');
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ personaId: 'who-dis', difficulty: 'easy' })
@@ -192,7 +195,7 @@ describe('POST /api/sim/call/ios', () => {
 
   test('404 when difficulty is not declared by persona', async () => {
     mockBearerUser('kate');
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ personaId: 'mike-garza', difficulty: 'impossible' })
@@ -203,7 +206,7 @@ describe('POST /api/sim/call/ios', () => {
   test('409 when caller has a live call in progress', async () => {
     mockBearerUser('kate');
     pool.query.mockResolvedValueOnce({ rows: [{ id: 7 }], rowCount: 1 });
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -216,7 +219,7 @@ describe('POST /api/sim/call/ios', () => {
     pool.query
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })          // live: none
       .mockResolvedValueOnce({ rows: [{ id: 9 }], rowCount: 1 }); // duplicate-sim: hit
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/sim/call/ios')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -230,7 +233,7 @@ describe('POST /api/sim/call/ios', () => {
     test('count below limit allows the call', async () => {
       mockBearerUser('kate');
       mockHappyPath({ insertedId: 201, dailyCount: 14 });
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -244,7 +247,7 @@ describe('POST /api/sim/call/ios', () => {
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [{ count: 15 }], rowCount: 1 });
 
-      const res = await request(app)
+      const res = await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -266,7 +269,7 @@ describe('POST /api/sim/call/ios', () => {
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [{ count: 3 }], rowCount: 1 });
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -276,7 +279,7 @@ describe('POST /api/sim/call/ios', () => {
     test('SQL filters by caller_identity so one rep cannot trigger another rep’s cap', async () => {
       mockBearerUser('kate');
       mockHappyPath({ insertedId: 301, dailyCount: 0 });
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -295,7 +298,7 @@ describe('POST /api/sim/call/ios', () => {
       // 14 should pass (under 15 default); pin the fallback by exercising under-cap.
       mockHappyPath({ insertedId: 9001, dailyCount: 14 });
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -311,7 +314,7 @@ describe('POST /api/sim/call/ios', () => {
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [{ count: 15 }], rowCount: 1 });
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -323,7 +326,7 @@ describe('POST /api/sim/call/ios', () => {
     test('SQL uses Phoenix-local day boundary (timezone literal pinned)', async () => {
       mockBearerUser('kate');
       mockHappyPath({ insertedId: 401, dailyCount: 0 });
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -342,7 +345,7 @@ describe('POST /api/sim/call/ios', () => {
       mockBearerUser('kate');
       mockHappyPath({ insertedId: 501 });
 
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'medium' })
@@ -357,7 +360,7 @@ describe('POST /api/sim/call/ios', () => {
       delete process.env.VAPI_SIM_MIKE_GARZA_HARD_ID;
       delete process.env.VAPI_SIM_HARD_ID;
       mockBearerUser('kate');
-      const res = await request(app)
+      const res = await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'hard' })
@@ -379,7 +382,7 @@ describe('POST /api/sim/call/ios', () => {
         .mockRejectedValueOnce(new Error('simulated UPDATE failure')); // conference_name UPDATE
       const warn = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      const res = await request(app)
+      const res = await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })
@@ -409,7 +412,7 @@ describe('POST /api/sim/call/ios', () => {
       pool.query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
       generateAccessToken.mockImplementationOnce(() => { throw new Error('twilio sdk explosion'); });
 
-      const res = await request(app)
+      const res = await request(await listenLoopback(app))
         .post('/api/sim/call/ios')
         .set('Authorization', 'Bearer fake-jwt')
         .send({ personaId: 'mike-garza', difficulty: 'easy' })

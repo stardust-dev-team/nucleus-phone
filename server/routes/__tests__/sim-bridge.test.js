@@ -42,19 +42,27 @@ jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn() }));
 jest.mock('../../lib/health-tracker', () => ({ touch: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const { client } = require('../../lib/twilio');
 const { sendSystemAlert } = require('../../lib/slack');
 const voiceRouter = require('../voice');
 
+
+// jsec-kh7h: afterALL, not afterEach — this file binds ONE server in beforeAll, and an
+// afterEach would close it after the first test, silently sending every later request()
+// back to supertest's own bare listen(0).
+afterAll(closeLoopbackServers);
 let app;
-beforeAll(() => {
+let server; // jsec-kh7h: one loopback-bound listener per file
+beforeAll(async () => {
   app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use('/api/voice', voiceRouter);
   process.env.NODE_ENV = 'test'; // disables twilioWebhook signature validation
+  server = await listenLoopback(app);
 });
 
 /**
@@ -101,7 +109,7 @@ beforeEach(() => {
 });
 
 const send = (body = {}) =>
-  request(app)
+  request(server)
     .post('/api/voice/sim-bridge')
     .type('form')
     .send({ CallSid: 'CA-vapi-leg-1', From: '+15558675309', To: '+18885550000', ...body });

@@ -18,6 +18,7 @@ jest.mock('../../lib/phone', () => ({
 jest.mock('jsonwebtoken');
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -28,6 +29,8 @@ const { getCompany } = require('../../lib/hubspot');
 const { generateRapportIntel, clearCache } = require('../../lib/claude');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let nextUserId = 2000;
@@ -85,11 +88,11 @@ beforeEach(() => {
 
 describe('GET /api/cockpit/:identifier', () => {
   test('returns 401 without auth', async () => {
-    await request(app).get('/api/cockpit/+16025551234').expect(401);
+    await request(await listenLoopback(app)).get('/api/cockpit/+16025551234').expect(401);
   });
 
   test('returns mock data for test-call identifier', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/test-call')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -103,7 +106,7 @@ describe('GET /api/cockpit/:identifier', () => {
   });
 
   test('resolves identity and assembles full cockpit', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -156,7 +159,7 @@ describe('GET /api/cockpit/:identifier', () => {
       });
 
     mockSession();
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -186,7 +189,7 @@ describe('GET /api/cockpit/:identifier', () => {
       // Remaining queries — return empty to keep the route happy
       .mockResolvedValue({ rows: [], rowCount: 0 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -218,7 +221,7 @@ describe('GET /api/cockpit/:identifier', () => {
       })
       .mockResolvedValue({ rows: [], rowCount: 0 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -235,7 +238,7 @@ describe('GET /api/cockpit/:identifier', () => {
     pool.query.mockImplementation(() => Promise.reject(new Error('connection lost')));
     getCompany.mockRejectedValueOnce(new Error('HubSpot 500'));
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -249,7 +252,7 @@ describe('GET /api/cockpit/:identifier', () => {
   });
 
   test('clears cache when refresh=true', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234?refresh=true')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -258,7 +261,7 @@ describe('GET /api/cockpit/:identifier', () => {
   });
 
   test('does NOT clear cache when refresh is absent', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -287,7 +290,7 @@ describe('GET /api/cockpit/:identifier', () => {
       // Remaining queries — empty
       .mockResolvedValue({ rows: [], rowCount: 0 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/jane@acme.com')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -311,7 +314,7 @@ describe('GET /api/cockpit/:identifier', () => {
       hubspotCompanyId: null,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -329,7 +332,7 @@ describe('GET /api/cockpit/:identifier', () => {
   test('returns 500 when Claude rapport generation fails', async () => {
     generateRapportIntel.mockRejectedValue(new Error('Claude overloaded'));
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(500);
@@ -340,7 +343,7 @@ describe('GET /api/cockpit/:identifier', () => {
   test('returns 500 when identity resolution fails', async () => {
     resolve.mockRejectedValue(new Error('Apollo rate limit'));
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(500);
@@ -349,7 +352,7 @@ describe('GET /api/cockpit/:identifier', () => {
   });
 
   test('passes assembled data to Claude for rapport generation', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/cockpit/+16025551234')
       .set('x-api-key', API_KEY)
       .expect(200);

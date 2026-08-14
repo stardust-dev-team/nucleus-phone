@@ -35,9 +35,12 @@ jest.mock('../../lib/debug-log', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 
+
+afterEach(closeLoopbackServers);
 beforeAll(() => {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
   process.env.ENTRA_TENANT_ID = TEST_TENANT_ID;
@@ -92,7 +95,7 @@ test('burst limiter rejects the 6th request inside the 10s window with 429', asy
     // change that would let some early requests fail silently.
     const responses = [];
     for (let i = 0; i < 6; i++) {
-      const r = await request(app)
+      const r = await request(await listenLoopback(app))
         .post('/api/auth/exchange')
         .send({ idToken: 'x' });
       responses.push(r.status);
