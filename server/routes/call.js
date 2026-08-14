@@ -24,7 +24,7 @@ const teamRegistry = loadRegistryOrExit('call.js');
 // straight back to them (forward-type DID → the rep's mobile, iosIdentity-type
 // DID → the rep's dialer) instead of a shared number that reaches the wrong
 // person. Before this, every rep's outbound leg stamped the single global
-// NUCLEUS_PHONE_NUMBER, so e.g. Paul's calls presented Ryann's DID
+// NUCLEUS_PHONE_NUMBER, so e.g. Paul's calls presented Tom's DID
 // (+16026000188 == NUCLEUS_PHONE_NUMBER). Falls back to NUCLEUS_PHONE_NUMBER
 // for a rep with no DID (Britt, inbound: null) so an unconfigured rep can
 // still place calls. All team DIDs are verified account-owned Twilio numbers,
@@ -54,6 +54,22 @@ function enforceOwnIdentity(req, res, bodyIdentity) {
   const own = (req.user.identity || '').toLowerCase();
   if (!bodyIdentity || bodyIdentity.toLowerCase() === own) return true;
   res.status(403).json({ error: 'callerIdentity must match your own identity' });
+  return false;
+}
+
+// Ownership gate for operations on a LIVE conference (/mute, /end). Admin
+// bypasses; everyone else must be the rep who started it. The owner is
+// conf.startedBy — the only owner field createConference writes. These guards
+// used to read a phantom `conf.callerIdentity` (always undefined), so any
+// external_caller could mute or terminate any rep's live call (jsec-vr1s).
+// Compare lowercased for the same reason as enforceOwnIdentity (001z), and
+// fail CLOSED on a missing owner: a conference nobody owns is admin-only.
+// req.user is guaranteed by callerGuard on every callsite.
+function requireConferenceOwner(req, res, conf) {
+  if (hasMinRole(req.user.role, 'admin')) return true;
+  const owner = typeof conf.startedBy === 'string' ? conf.startedBy.toLowerCase() : '';
+  if (owner !== '' && owner === (req.user.identity || '').toLowerCase()) return true;
+  res.status(403).json({ error: 'Not your conference' });
   return false;
 }
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
@@ -159,7 +175,7 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
       ).catch((err) => console.error('Failed to persist conference_sid:', err.message));
 
       await client.conferences(sid).participants.create({
-        from: outboundCallerId(conf.callerIdentity),
+        from: outboundCallerId(conf.startedBy),
         to: leadPhone,
         earlyMedia: true,
         beep: false,
@@ -185,13 +201,20 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
 
 // POST /api/call/join — admin joins an active conference
 router.post('/join', ...callerGuard, (req, res) => {
-  const { conferenceName, callerIdentity, muted } = req.body;
+  const { conferenceName, muted } = req.body;
 
   const conf = getConference(conferenceName);
   if (!conf) {
     return res.status(404).json({ error: 'Conference not found' });
   }
 
+  // Deliberately NO ownership guard here: this endpoint is a preflight only
+  // (it never touches Twilio), the actual join is the Action==='join' branch
+  // in voice.js, and the ActiveCalls UI offers cross-rep "Join Silent" /
+  // "Join Call" to every rep as a shipped monitoring flow. Guarding the
+  // preflight would 403 that feature for non-admins while an attacker just
+  // skips it. Real enforcement belongs in voice.js — tracked as a follow-up
+  // bead (see jsec-vr1s).
   res.json({ conferenceName, muted: !!muted });
 });
 
@@ -204,11 +227,7 @@ router.post('/mute', ...callerGuard, async (req, res) => {
     return res.status(404).json({ error: 'Conference not found' });
   }
 
-  if (req.user && !hasMinRole(req.user.role, 'admin')) {
-    if (conf.callerIdentity && conf.callerIdentity !== req.user.identity) {
-      return res.status(403).json({ error: 'Not your conference' });
-    }
-  }
+  if (!requireConferenceOwner(req, res, conf)) return;
 
   try {
     await client.conferences(conf.conferenceSid)
@@ -332,7 +351,7 @@ router.get('/active', ...callerGuard, async (req, res) => {
 });
 
 // POST /api/call/end — end a conference. Non-admin users can only end their
-// own conferences (identified by conf.callerIdentity from createConference).
+// own conferences (identified by conf.startedBy from createConference).
 //
 // bd-sgc: after Twilio confirms the conference end, synchronously remove
 // the entry from the in-memory active map AND mark the DB row completed,
@@ -371,11 +390,11 @@ router.post('/end', ...callerGuard, async (req, res) => {
     return res.json({ success: true, alreadyEnded: true });
   }
 
-  if (req.user && !hasMinRole(req.user.role, 'admin')) {
-    if (conf.callerIdentity && conf.callerIdentity !== req.user.identity) {
-      return res.status(403).json({ error: 'Not your conference' });
-    }
-  }
+  // Ordering is deliberate: the alreadyEnded short-circuit above runs before
+  // this ownership check, so a non-owner can distinguish "live with a SID"
+  // (403) from "gone" (200). Accepted oracle — /active already exposes
+  // conference names to every external_caller, so this reveals nothing new.
+  if (!requireConferenceOwner(req, res, conf)) return;
 
   try {
     await client.conferences(conf.conferenceSid).update({ status: 'completed' });
@@ -474,7 +493,7 @@ router.post('/status', twilioWebhook, async (req, res) => {
           // Outbound legs present the calling rep's own DID; inbound legs
           // (dormant: INBOUND_CONFERENCE_ARCHITECTURE=false) keep the shared
           // number unchanged — per-rep caller ID is an outbound-only concern.
-          from: isInbound ? process.env.NUCLEUS_PHONE_NUMBER : outboundCallerId(conf.callerIdentity),
+          from: isInbound ? process.env.NUCLEUS_PHONE_NUMBER : outboundCallerId(conf.startedBy),
           to: conf.leadPhone,
           earlyMedia: true,
           beep: false,

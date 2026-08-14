@@ -214,9 +214,10 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
     // join (which we fire below via calls.create).
     //
     // callerIdentity = the rep's iOS identity (NOT the literal string
-    // 'inbound'). Two reasons:
-    //   (1) `/api/call/end` (`call.js:310-313`) authorizes the teardown
-    //       by checking `conf.callerIdentity === req.user.identity` for
+    // 'inbound'). createConference stores it as conf.startedBy — the single
+    // owner field (jsec-vr1s). Two reasons:
+    //   (1) `/api/call/end` authorizes the teardown by checking
+    //       `conf.startedBy` against `req.user.identity` for
     //       non-admin users. When iOS authenticates as `paul` and calls
     //       `api.endCall(conferenceName:)` from the disconnect arm of
     //       `VoIPPushDelegate.drainCallEvents`, the auth check must
