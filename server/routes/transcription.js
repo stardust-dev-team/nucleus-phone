@@ -37,6 +37,23 @@ const twilioWebhook = makeTwilioWebhook();
 // / `unknown`. Outbound = the rep's mic feed (us), inbound = the lead's.
 // joruva-dialer-mac-xft: pre-fix, raw Twilio values were forwarded and
 // iOS DecodingError tore the live-analysis WebSocket down on first chunk.
+// joruva-dialer-mac-8vr: WHAT IS KNOWN, and what is NOT.
+// Known: this mapping is what the OUTBOUND path relies on, and iOS/PWA decode
+// `agent`/`customer`/`unknown`.
+// NOT known: whether the same Track values mean the same thing on the INBOUND
+// path. Twilio labels tracks relative to the STARTING leg, and the starting leg
+// differs — outbound starts on the REP's leg (voice.js:50 saves the rep's
+// CallSid as caller_call_sid; voice.js:81 puts <Start><Transcription> in that
+// TwiML), inbound starts on the LEAD's PSTN leg (incoming.js:169). Leg-relative
+// labelling applied to opposite legs implies the mapping may INVERT, not hold.
+// That is an open P1 spike — nucleus-phone-rgja.3 — which states plainly that a
+// wrong mapping "swaps agent/customer + contaminates pipelines".
+// So: do NOT read this function's single-argument signature as proof that
+// direction is irrelevant. If rgja.3 finds the mapping is direction-dependent,
+// a direction parameter (or a per-path mapping) is the CORRECT fix, and this
+// comment must not be used to argue against it. An earlier draft of this
+// comment claimed the architecture was symmetric; that claim was wrong and
+// contradicted its own premise.
 function mapSpeaker(track) {
   if (track === 'outbound_track') return 'agent';
   if (track === 'inbound_track') return 'customer';
