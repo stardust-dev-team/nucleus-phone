@@ -12,6 +12,7 @@ jest.mock('../auth', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { generateAccessToken } = require('../../lib/twilio');
 const { pool } = require('../../db');
@@ -19,6 +20,8 @@ const { apiKeyAuth } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
 const pushCredentialCache = require('../../lib/push-credential-cache');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let app;
@@ -60,7 +63,7 @@ beforeEach(() => {
 
 describe('GET /api/token', () => {
   test('default (no mode) → incomingAllow:false (PWA path unchanged)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/token?identity=tom')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -70,7 +73,7 @@ describe('GET /api/token', () => {
   });
 
   test('?mode=mobile → incomingAllow:true (iOS opt-in for TVOCallInvite)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/token?identity=tom&mode=mobile')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -79,7 +82,7 @@ describe('GET /api/token', () => {
   });
 
   test('?mode=anything-else → incomingAllow:false (only "mobile" opts in)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/token?identity=tom&mode=desktop')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -100,7 +103,7 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
       rowCount: 1,
     });
 
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
 
     // Verify the lookup ran with the right user_id (drift sentinel: if
     // someone changes the SQL to filter by something else, this catches it).
@@ -117,7 +120,7 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
   test('mobile + session user + NO voip_tokens row → 503 (fail loud, Linus #1)', async () => {
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    const res = await request(appWithSession).get('/api/token?mode=mobile').expect(503);
+    const res = await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(503);
 
     // Body must point the iOS app at the fix path. The error keeps
     // VoIPPushRegistrar.swift:95's 503-handler from confusing this with
@@ -133,7 +136,7 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
   });
 
   test('NO mode (default) → no lookup runs, no pushCredentialSid forwarded', async () => {
-    await request(appWithSession).get('/api/token').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token').expect(200);
 
     expect(pool.query).not.toHaveBeenCalled();
     expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
@@ -144,7 +147,7 @@ describe('GET /api/token — pushCredentialSid lookup (session auth, mobile mode
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      const res = await request(appWithSession).get('/api/token?mode=mobile').expect(503);
+      const res = await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(503);
       expect(res.body.error).toBe('Push credential lookup failed');
       expect(generateAccessToken).not.toHaveBeenCalled();
       // We DO log to console for ops visibility — but the response itself
@@ -170,11 +173,11 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
     });
 
     // First fetch: cold cache → DB query.
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
     expect(pool.query).toHaveBeenCalledTimes(1);
 
     // Second fetch: warm cache → no DB query.
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
     expect(pool.query).toHaveBeenCalledTimes(1); // unchanged
 
     // Both responses forwarded the same credential.
@@ -191,7 +194,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
   test('missing voip_tokens row does NOT cache — retry after register recovers', async () => {
     // First fetch: no row → 503, nothing cached.
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
-    await request(appWithSession).get('/api/token?mode=mobile').expect(503);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(503);
     expect(pool.query).toHaveBeenCalledTimes(1);
 
     // Second fetch (simulating iOS retry after register completes): DB now
@@ -200,7 +203,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
       rows: [{ credential_sid: 'CRsandbox123' }],
       rowCount: 1,
     });
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
     expect(pool.query).toHaveBeenCalledTimes(2);
     expect(generateAccessToken).toHaveBeenCalledWith('tom', {
       incomingAllow: true,
@@ -213,7 +216,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
       rows: [{ credential_sid: 'CRold' }],
       rowCount: 1,
     });
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
 
     // /api/voice-push/register invalidates after upsert. Simulate that here.
     pushCredentialCache.invalidate(1);
@@ -222,7 +225,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
       rows: [{ credential_sid: 'CRnew' }],
       rowCount: 1,
     });
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
 
     expect(generateAccessToken).toHaveBeenLastCalledWith('tom', {
       incomingAllow: true,
@@ -234,7 +237,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
 
   test('non-mobile mode never touches the cache', async () => {
     pushCredentialCache.set(1, 'CRshouldnotreach');
-    await request(appWithSession).get('/api/token').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token').expect(200);
 
     expect(generateAccessToken).toHaveBeenCalledWith('tom', { incomingAllow: false });
     expect(pool.query).not.toHaveBeenCalled();
@@ -251,7 +254,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
       return { rows: [{ credential_sid: 'CRstale' }], rowCount: 1 };
     });
 
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
 
     // The response forwards what the SELECT returned (no choice; we
     // already have it in hand). The CACHE, however, must be empty so
@@ -268,7 +271,7 @@ describe('GET /api/token — push-credential cache (84ax)', () => {
       rows: [{ credential_sid: 'CRnew' }],
       rowCount: 1,
     });
-    await request(appWithSession).get('/api/token?mode=mobile').expect(200);
+    await request(await listenLoopback(appWithSession)).get('/api/token?mode=mobile').expect(200);
     expect(pool.query).toHaveBeenCalledTimes(2);
     expect(generateAccessToken).toHaveBeenLastCalledWith('tom', {
       incomingAllow: true,

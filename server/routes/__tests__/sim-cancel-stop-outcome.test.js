@@ -49,6 +49,7 @@ jest.mock('../../lib/conversation-pipeline', () => ({
 jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn(), flush: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -58,6 +59,11 @@ const { stopCallAndLog, getCall } = require('../../lib/vapi');
 const { sendSystemAlert } = require('../../lib/slack');
 const { scoreTranscript } = require('../../lib/sim-scorer');
 
+
+// jsec-kh7h: afterALL, not afterEach — this file binds ONE server in beforeAll, and an
+// afterEach would close it after the first test, silently sending every later request()
+// back to supertest's own bare listen(0).
+afterAll(closeLoopbackServers);
 let nextUserId = 9000;
 function mockBearerUser(identity, role = 'external_caller') {
   const id = nextUserId++;
@@ -70,20 +76,22 @@ function mockBearerUser(identity, role = 'external_caller') {
 // nucleus_session cookie (jwt.verify is mocked to return {userId}) plus the
 // X-Requested-With header.
 function cancelReq() {
-  return request(app)
+  return request(server)
     .post('/api/sim/call/77/cancel')
     .set('Cookie', 'nucleus_session=fake')
     .set('X-Requested-With', 'XMLHttpRequest');
 }
 
 let app;
-beforeAll(() => {
+let server; // jsec-kh7h: one loopback-bound listener per file
+beforeAll(async () => {
   process.env.NUCLEUS_PHONE_API_KEY = 'test-key';
   process.env.JWT_SECRET = 'test-secret';
   app = express();
   app.use(express.json());
   app.use(cookieParser());
   app.use('/api/sim', require('../sim'));
+  server = await listenLoopback(app);
 });
 
 afterAll(() => {

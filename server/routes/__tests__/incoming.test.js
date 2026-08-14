@@ -65,12 +65,15 @@ jest.mock('../../lib/slack', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 const slack = require('../../lib/slack');
 const { client: twilioClient } = require('../../lib/twilio');
 
+
+afterEach(closeLoopbackServers);
 let app;
 beforeAll(() => {
   app = express();
@@ -88,7 +91,7 @@ beforeEach(() => {
 
 describe('POST /api/voice/incoming — legacy forward route', () => {
   test('uses <Conference> TwiML and registers conference state', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: PSTN_NUMBER, From: '+14155551212', CallSid: 'CA-pstn-1' })
@@ -116,7 +119,7 @@ describe('POST /api/voice/incoming — legacy forward route', () => {
 
 describe('POST /api/voice/incoming — iOS-only route', () => {
   test('uses <Client> TwiML and skips createConference', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-1' })
@@ -153,7 +156,7 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
     // the default mock value.
     pool.query.mockResolvedValueOnce({ rows: [{ id: 4242 }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-2' })
@@ -167,7 +170,7 @@ describe('POST /api/voice/incoming — iOS-only route', () => {
 
 describe('POST /api/voice/incoming/dial-complete — status/duration (bv33)', () => {
   test('DialCallStatus=completed → UPDATE status=completed + duration, guarded on connecting', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-abc&from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'completed', DialCallDuration: '42' })
@@ -182,7 +185,7 @@ describe('POST /api/voice/incoming/dial-complete — status/duration (bv33)', ()
   });
 
   test('DialCallStatus=no-answer → UPDATE status=missed + duration 0', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-xyz&from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'no-answer' })
@@ -208,7 +211,7 @@ describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)',
 
   test('Phase 2 iOS conference path (flag ON, -ios conf) → NO status UPDATE (call.js /status owns the row)', async () => {
     process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'true';
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-conf1&from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'completed', DialCallDuration: '42' })
@@ -220,7 +223,7 @@ describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)',
 
   test('PSTN forward conference path (non -ios conf) → NO status UPDATE (call.js /status owns the row)', async () => {
     delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-pstn9&from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'completed', DialCallDuration: '42' })
@@ -232,7 +235,7 @@ describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)',
 
   test('legacy iOS path (flag OFF, -ios conf) → status UPDATE fires (only writer)', async () => {
     delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-legacy1&from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'completed', DialCallDuration: '17' })
@@ -245,7 +248,7 @@ describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)',
 
   test('explicit flag=false on -ios conf is still treated as legacy → UPDATE fires', async () => {
     process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'false';
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?conf=nucleus-inbound-ios-legacy2&from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'no-answer' })
@@ -264,7 +267,7 @@ describe('POST /api/voice/incoming/dial-complete — legacy-iOS scoping (pr5c)',
     // dropping it, or a misrouted callback) would 500 instead of 200. Flag
     // OFF so the legacy predicate (the one with the startsWith) is what runs.
     delete process.env.INBOUND_CONFERENCE_ARCHITECTURE;
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming/dial-complete?from=%2B14155551212')
       .type('form')
       .send({ DialCallStatus: 'no-answer' })
@@ -286,7 +289,7 @@ describe('legacy iOS inbound: dial-complete(no-answer) → voicemail-complete (p
     const callerSid = 'CA-caller-e2e1';
 
     // 1. Rep never answered → dial-complete fires with no-answer.
-    await request(app)
+    await request(await listenLoopback(app))
       .post(`/api/voice/incoming/dial-complete?conf=${conf}&from=%2B14155551212`)
       .type('form')
       .send({ DialCallStatus: 'no-answer' })
@@ -300,7 +303,7 @@ describe('legacy iOS inbound: dial-complete(no-answer) → voicemail-complete (p
 
     // 2. Caller leaves a message → voicemail-complete overrides missed→voicemail,
     //    keyed by caller_call_sid (no status guard, so it wins over 'missed').
-    await request(app)
+    await request(await listenLoopback(app))
       .post(`/api/voice/incoming/voicemail-complete?conf=${conf}&from=%2B14155551212`)
       .type('form')
       .send({ RecordingUrl: 'https://api.twilio.com/rec/RE123', RecordingDuration: '8', CallSid: callerSid })
@@ -330,7 +333,7 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
   });
 
   test('emits <Conference> caller TwiML and fires calls.create to client:identity', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-1' })
@@ -391,7 +394,7 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     // endConferenceOnExit:true, AND at the `answered` event the iOS leg
     // hasn't joined the conference yet (join is post-fetch of the
     // join-URL TwiML), so participants(CallSid).update() would 404.
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-statuscb' })
@@ -430,7 +433,7 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     const updateSpy = jest.fn().mockResolvedValue({});
     twilioClient.calls.mockReturnValueOnce({ update: updateSpy });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-2' })
@@ -460,7 +463,7 @@ describe('POST /api/voice/incoming — iOS route, conference architecture flag O
     const updateSpy = jest.fn().mockRejectedValue(new Error('still down'));
     twilioClient.calls.mockReturnValueOnce({ update: updateSpy });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-conf-3' })
@@ -482,7 +485,7 @@ describe('POST /api/voice/incoming — iOS route, conference flag unset (rollbac
   });
 
   test('unset flag falls back to legacy <Client> branch — calls.create NOT fired', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-legacy-1' })
@@ -497,7 +500,7 @@ describe('POST /api/voice/incoming — iOS route, conference flag unset (rollbac
   test('flag set to "false" string also falls back to legacy <Client> branch', async () => {
     process.env.INBOUND_CONFERENCE_ARCHITECTURE = 'false';
     try {
-      const res = await request(app)
+      const res = await request(await listenLoopback(app))
         .post('/api/voice/incoming')
         .type('form')
         .send({ To: IOS_NUMBER, From: '+14155551212', CallSid: 'CA-ios-legacy-2' })
@@ -515,7 +518,7 @@ describe('POST /api/voice/incoming — iOS route, conference flag unset (rollbac
 
 describe('POST /api/voice/incoming — hybrid route', () => {
   test('iosIdentity wins over forward when both are present', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/incoming')
       .type('form')
       .send({ To: HYBRID_NUMBER, From: '+14155551212', CallSid: 'CA-hyb-1' })

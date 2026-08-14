@@ -14,6 +14,7 @@ jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -21,6 +22,8 @@ const { apiKeyAuth, sessionAuth, __testSetUser } = require('../../middleware/aut
 const { rbac } = require('../../middleware/rbac');
 const { pool } = require('../../db');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let nextUserId = 5000;
@@ -70,52 +73,52 @@ beforeEach(() => {
 describe('RBAC role hierarchy', () => {
   test('no auth → 401 on every tier', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('no session'); });
-    await request(app).get('/ext').expect(401);
-    await request(app).get('/caller').expect(401);
-    await request(app).get('/admin').expect(401);
+    await request(await listenLoopback(app)).get('/ext').expect(401);
+    await request(await listenLoopback(app)).get('/caller').expect(401);
+    await request(await listenLoopback(app)).get('/admin').expect(401);
   });
 
   test('external_caller: ext=200, caller=403, admin=403', async () => {
     loginAs('external_caller');
-    await request(app).get('/ext').set('Cookie', 'nucleus_session=t').expect(200);
+    await request(await listenLoopback(app)).get('/ext').set('Cookie', 'nucleus_session=t').expect(200);
 
     loginAs('external_caller');
-    await request(app).get('/caller').set('Cookie', 'nucleus_session=t').expect(403);
+    await request(await listenLoopback(app)).get('/caller').set('Cookie', 'nucleus_session=t').expect(403);
 
     loginAs('external_caller');
-    await request(app).get('/admin').set('Cookie', 'nucleus_session=t').expect(403);
+    await request(await listenLoopback(app)).get('/admin').set('Cookie', 'nucleus_session=t').expect(403);
   });
 
   test('caller: ext=200, caller=200, admin=403', async () => {
     loginAs('caller');
-    await request(app).get('/ext').set('Cookie', 'nucleus_session=t').expect(200);
+    await request(await listenLoopback(app)).get('/ext').set('Cookie', 'nucleus_session=t').expect(200);
 
     loginAs('caller');
-    await request(app).get('/caller').set('Cookie', 'nucleus_session=t').expect(200);
+    await request(await listenLoopback(app)).get('/caller').set('Cookie', 'nucleus_session=t').expect(200);
 
     loginAs('caller');
-    await request(app).get('/admin').set('Cookie', 'nucleus_session=t').expect(403);
+    await request(await listenLoopback(app)).get('/admin').set('Cookie', 'nucleus_session=t').expect(403);
   });
 
   test('admin: ext=200, caller=200, admin=200', async () => {
     loginAs('admin');
-    await request(app).get('/ext').set('Cookie', 'nucleus_session=t').expect(200);
+    await request(await listenLoopback(app)).get('/ext').set('Cookie', 'nucleus_session=t').expect(200);
 
     loginAs('admin');
-    await request(app).get('/caller').set('Cookie', 'nucleus_session=t').expect(200);
+    await request(await listenLoopback(app)).get('/caller').set('Cookie', 'nucleus_session=t').expect(200);
 
     loginAs('admin');
-    await request(app).get('/admin').set('Cookie', 'nucleus_session=t').expect(200);
+    await request(await listenLoopback(app)).get('/admin').set('Cookie', 'nucleus_session=t').expect(200);
   });
 
   test('API key resolves to synthetic admin — passes every tier', async () => {
-    await request(app).get('/ext').set('x-api-key', API_KEY).expect(200);
-    await request(app).get('/caller').set('x-api-key', API_KEY).expect(200);
-    await request(app).get('/admin').set('x-api-key', API_KEY).expect(200);
+    await request(await listenLoopback(app)).get('/ext').set('x-api-key', API_KEY).expect(200);
+    await request(await listenLoopback(app)).get('/caller').set('x-api-key', API_KEY).expect(200);
+    await request(await listenLoopback(app)).get('/admin').set('x-api-key', API_KEY).expect(200);
   });
 
   test('wrong API key → 401, does not fall through to session', async () => {
-    await request(app).get('/admin').set('x-api-key', 'nope').expect(401);
+    await request(await listenLoopback(app)).get('/admin').set('x-api-key', 'nope').expect(401);
   });
 
   test('deactivated user → 401 even with valid JWT', async () => {
@@ -129,7 +132,7 @@ describe('RBAC role hierarchy', () => {
     });
     jwt.verify.mockReturnValue({ userId: 9999 });
 
-    await request(app).get('/ext').set('Cookie', 'nucleus_session=t').expect(401);
+    await request(await listenLoopback(app)).get('/ext').set('Cookie', 'nucleus_session=t').expect(401);
   });
 });
 
@@ -145,13 +148,13 @@ describe('CSRF guard (state-changing session requests)', () => {
   test('POST via cookie without X-Requested-With → 403', async () => {
     const csrfApp = makeCsrfApp();
     loginAs('caller');
-    await request(csrfApp).post('/mutate').set('Cookie', 'nucleus_session=t').expect(403);
+    await request(await listenLoopback(csrfApp)).post('/mutate').set('Cookie', 'nucleus_session=t').expect(403);
   });
 
   test('POST via cookie WITH X-Requested-With → 200', async () => {
     const csrfApp = makeCsrfApp();
     loginAs('caller');
-    await request(csrfApp)
+    await request(await listenLoopback(csrfApp))
       .post('/mutate')
       .set('Cookie', 'nucleus_session=t')
       .set('X-Requested-With', 'XMLHttpRequest')

@@ -51,10 +51,13 @@ jest.mock('../../middleware/auth', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 
+
+afterEach(closeLoopbackServers);
 let app;
 beforeAll(() => {
   app = express();
@@ -79,7 +82,7 @@ describe('POST /api/call/end — Phase 2 inbound auth path (Linus P0-1 regressio
       startedAt: new Date(Date.now() - 5_000),
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'caller')
       .set('x-test-identity', 'paul')
@@ -99,7 +102,7 @@ describe('POST /api/call/end — Phase 2 inbound auth path (Linus P0-1 regressio
       startedAt: new Date(),
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'caller')
       .set('x-test-identity', 'ryann')
@@ -121,7 +124,7 @@ describe('POST /api/call/end — Phase 2 inbound auth path (Linus P0-1 regressio
       startedAt: new Date(),
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'caller')
       .set('x-test-identity', 'paul')
@@ -138,7 +141,7 @@ describe('POST /api/call/end — Phase 2 inbound auth path (Linus P0-1 regressio
       startedAt: new Date(),
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'admin')
       .set('x-test-identity', 'system')

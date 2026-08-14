@@ -8,9 +8,12 @@
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 
+
+afterEach(closeLoopbackServers);
 let app;
 beforeAll(() => {
   process.env.NUCLEUS_PHONE_NUMBER = '+15555550100';
@@ -31,7 +34,7 @@ beforeEach(() => {
 
 describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', () => {
   test('initiate path emits endConferenceOnExit="true" so iOS hangup terminates the conference', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice')
       .send({
         ConferenceName: 'nucleus-call-test-1',
@@ -48,7 +51,7 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
   });
 
   test('initiate path also sets startConferenceOnEnter="true" — sanity check on related flags', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice')
       .send({
         ConferenceName: 'nucleus-call-test-2',
@@ -70,7 +73,7 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
     // Pin the attribute on the TwiML so any refactor that drops the
     // explicit `partialResults: false` (Twilio's default would matter
     // here too — confirm via Twilio SDK source) trips this assertion.
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice')
       .send({
         ConferenceName: 'nucleus-call-djy-1',
@@ -85,7 +88,7 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
   });
 
   test('join action does NOT set endConferenceOnExit="true" — secondary participants must not end the conference', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice')
       .send({
         Action: 'join',

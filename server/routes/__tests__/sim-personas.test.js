@@ -34,11 +34,14 @@ jest.mock('../../lib/conversation-pipeline', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-personas-api-key';
 
 let nextUserId = 7000;
@@ -79,11 +82,11 @@ beforeEach(() => {
 
 describe('GET /api/sim/personas', () => {
   test('401 without auth', async () => {
-    await request(app).get('/api/sim/personas').expect(401);
+    await request(await listenLoopback(app)).get('/api/sim/personas').expect(401);
   });
 
   test('returns array with the mike-garza row when authed via API key', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/personas')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -104,7 +107,7 @@ describe('GET /api/sim/personas', () => {
   // motivated the whole bead.
   test('returns persona array when authed via bearer token (iOS path)', async () => {
     mockBearerUser('tom');
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/personas')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -114,7 +117,7 @@ describe('GET /api/sim/personas', () => {
   });
 
   test('public shape never leaks assistantEnvVars', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/personas')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -123,7 +126,7 @@ describe('GET /api/sim/personas', () => {
   });
 
   test('omits assistantInboundNumbers (Architecture B)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/sim/personas')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -132,7 +135,7 @@ describe('GET /api/sim/personas', () => {
   });
 
   test('rejects with 401 when x-api-key is wrong', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/sim/personas')
       .set('x-api-key', 'wrong-key')
       .expect(401);

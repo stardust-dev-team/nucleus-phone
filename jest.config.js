@@ -4,5 +4,9 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.js'],
   forceExit: true,   // conference.js setInterval has no .unref()
   clearMocks: true,
-  setupFiles: ['<rootDir>/server/__tests__/setup-env.js'],
+  // jsec-kh7h: no-bare-listen arms a tripwire against the IPv6-wildcard listen(0) hazard.
+  setupFiles: [
+    '<rootDir>/server/__tests__/setup-env.js',
+    '<rootDir>/server/__tests__/no-bare-listen-setup.js',
+  ],
 };

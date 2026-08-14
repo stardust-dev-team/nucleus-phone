@@ -29,6 +29,7 @@ jest.mock('../../lib/slack', () => ({ sendSlackAlert: jest.fn() }));
 jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn(), flush: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -36,6 +37,8 @@ const { pool } = require('../../db');
 const { listActiveConferences } = require('../../lib/conference');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 let nextUserId = 10000;
 function mockBearerUser(identity, role = 'external_caller') {
   const id = nextUserId++;
@@ -80,7 +83,7 @@ describe('GET /api/call/active — sim visibility', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/call/active')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -100,7 +103,7 @@ describe('GET /api/call/active — sim visibility', () => {
     mockBearerUser('kate');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/call/active')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -120,7 +123,7 @@ describe('GET /api/call/active — sim visibility', () => {
     // We assert by SQL shape (above) and by absence: empty rows → empty calls.
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/call/active')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -138,7 +141,7 @@ describe('GET /api/call/active — sim visibility', () => {
       rowCount: 2,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/call/active')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -162,7 +165,7 @@ describe('GET /api/call/active — sim visibility', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/call/active?identity=kate')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);

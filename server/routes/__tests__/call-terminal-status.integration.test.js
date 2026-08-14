@@ -48,9 +48,12 @@ jest.mock('../../lib/slack', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const conference = require('../../lib/conference');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'gox1-itest-key';
 const PREFIX = `gox1-itest-${Date.now()}`;
 
@@ -148,7 +151,7 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
       const conf = `${PREFIX}-ce-${status}`;
       const id = await seed(conf, status);
 
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/call/status')
         .send({ StatusCallbackEvent: 'conference-end', FriendlyName: conf, ConferenceSid: 'CFnew' })
         .expect(204);
@@ -165,7 +168,7 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
       const conf = `${PREFIX}-ce-connecting`;
       const id = await seed(conf, 'connecting');
 
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/call/status')
         .send({ StatusCallbackEvent: 'conference-end', FriendlyName: conf, ConferenceSid: 'CFnew' })
         .expect(204);
@@ -183,7 +186,7 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
       const conf = `${PREFIX}-end-${status}`;
       const id = await seed(conf, status);
 
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/call/end')
         .set('x-api-key', API_KEY)
         .send({ conferenceName: conf })
@@ -200,7 +203,7 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
       const conf = `${PREFIX}-end-inprogress`;
       const id = await seed(conf, 'in-progress');
 
-      await request(app)
+      await request(await listenLoopback(app))
         .post('/api/call/end')
         .set('x-api-key', API_KEY)
         .send({ conferenceName: conf })

@@ -18,6 +18,7 @@ jest.mock('../../lib/live-analysis', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -25,6 +26,8 @@ const { apiKeyAuth, __testSetUser } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
 const { pool } = require('../../db');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let nextUserId = 9000;
@@ -65,7 +68,7 @@ describe('GET /api/debug/events', () => {
     loginAs('caller');
     const app = makeApp();
     // Use session auth (Cookie), NOT x-api-key (which auto-grants admin)
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/debug/events')
       .set('Cookie', 'nucleus_session=tok');
     expect(res.status).toBe(403);
@@ -81,7 +84,7 @@ describe('GET /api/debug/events', () => {
       .mockResolvedValueOnce({ rows: mockEvents })
       .mockResolvedValueOnce({ rows: [{ count: 1 }] });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/debug/events')
       .set('x-api-key', API_KEY)
       .set('Cookie', 'nucleus_session=tok');
@@ -97,7 +100,7 @@ describe('GET /api/debug/events', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/debug/events?category=error')
       .set('x-api-key', API_KEY)
       .set('Cookie', 'nucleus_session=tok');
@@ -114,7 +117,7 @@ describe('GET /api/debug/health', () => {
     const app = makeApp();
     pool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/debug/health')
       .set('x-api-key', API_KEY)
       .set('Cookie', 'nucleus_session=tok');
@@ -132,7 +135,7 @@ describe('GET /api/debug/connections', () => {
     loginAs('admin', 'tom');
     const app = makeApp();
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/debug/connections')
       .set('x-api-key', API_KEY)
       .set('Cookie', 'nucleus_session=tok');
@@ -148,7 +151,7 @@ describe('GET /api/debug/sweep', () => {
     const app = makeApp();
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1, ts: '2026-04-13', source: 'stale-sweep', level: 'info', summary: 'sweep complete', detail: null }] });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/debug/sweep')
       .set('x-api-key', API_KEY)
       .set('Cookie', 'nucleus_session=tok');

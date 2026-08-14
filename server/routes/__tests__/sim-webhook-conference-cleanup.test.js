@@ -64,11 +64,14 @@ jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn(), flush: jest.fn() 
 jest.mock('../../lib/health-tracker', () => ({ touch: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const { client } = require('../../lib/twilio');
 const conference = require('../../lib/conference');
 
+
+afterEach(closeLoopbackServers);
 let app;
 beforeAll(() => {
   process.env.VAPI_WEBHOOK_SECRET = 'test-secret';
@@ -106,7 +109,7 @@ describe('Vapi webhook end-of-call — defensive conference cleanup (B2b)', () =
     const update = jest.fn().mockResolvedValue({});
     client.conferences.mockReturnValue({ update });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/sim/webhook')
       .set('x-vapi-secret', 'test-secret')
       .send(endOfCallEnvelope)
@@ -127,7 +130,7 @@ describe('Vapi webhook end-of-call — defensive conference cleanup (B2b)', () =
       rowCount: 1,
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/sim/webhook')
       .set('x-vapi-secret', 'test-secret')
       .send(endOfCallEnvelope)
@@ -149,7 +152,7 @@ describe('Vapi webhook end-of-call — defensive conference cleanup (B2b)', () =
     client.conferences.mockReturnValue({ update });
 
     // No exception should escape — the 200 already shipped before this branch.
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/sim/webhook')
       .set('x-vapi-secret', 'test-secret')
       .send(endOfCallEnvelope)

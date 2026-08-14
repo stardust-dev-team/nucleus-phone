@@ -9,6 +9,7 @@ jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -16,6 +17,8 @@ const { apiKeyAuth, __testSetUser } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
 const { pool } = require('../../db');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let nextUserId = 6000;
@@ -51,7 +54,7 @@ beforeEach(() => {
 describe('POST /api/admin/users', () => {
   test('caller cannot create users', async () => {
     loginAs('caller');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users')
       .set('Cookie', 'nucleus_session=t')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -69,7 +72,7 @@ describe('POST /api/admin/users', () => {
         role: 'external_caller', display_name: 'Blake', is_active: true,
       }],
     });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users')
       .set('x-api-key', API_KEY)
       .send({
@@ -83,7 +86,7 @@ describe('POST /api/admin/users', () => {
   });
 
   test('rejects invalid role', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users')
       .set('x-api-key', API_KEY)
       .send({
@@ -94,7 +97,7 @@ describe('POST /api/admin/users', () => {
   });
 
   test('rejects bad identity format', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users')
       .set('x-api-key', API_KEY)
       .send({
@@ -108,7 +111,7 @@ describe('POST /api/admin/users', () => {
 describe('POST /api/admin/users/:id/deactivate', () => {
   test('caller cannot deactivate', async () => {
     loginAs('caller');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users/42/deactivate')
       .set('Cookie', 'nucleus_session=t')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -120,7 +123,7 @@ describe('POST /api/admin/users/:id/deactivate', () => {
       rows: [{ id: 42, email: 'blake@example.com', identity: 'blake', is_active: false }],
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users/42/deactivate')
       .set('x-api-key', API_KEY)
       .expect(200)
@@ -133,7 +136,7 @@ describe('POST /api/admin/users/:id/deactivate', () => {
     loginAs('admin');
     // loginAs sets jwt.verify to return { userId: id } — grab the id
     const { userId } = jwt.verify();
-    await request(app)
+    await request(await listenLoopback(app))
       .post(`/api/admin/users/${userId}/deactivate`)
       .set('Cookie', 'nucleus_session=t')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -145,7 +148,7 @@ describe('POST /api/admin/users/:id/deactivate', () => {
 
   test('404 on unknown user', async () => {
     pool.query.mockResolvedValueOnce({ rows: [] });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users/99999/deactivate')
       .set('x-api-key', API_KEY)
       .expect(404);
@@ -157,7 +160,7 @@ describe('POST /api/admin/users/:id/role', () => {
     pool.query.mockResolvedValueOnce({
       rows: [{ id: 42, email: 'blake@example.com', identity: 'blake', role: 'caller' }],
     });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users/42/role')
       .set('x-api-key', API_KEY)
       .send({ role: 'caller' })
@@ -170,7 +173,7 @@ describe('POST /api/admin/users/:id/role', () => {
   test('admin cannot demote themselves', async () => {
     loginAs('admin');
     const { userId } = jwt.verify();
-    await request(app)
+    await request(await listenLoopback(app))
       .post(`/api/admin/users/${userId}/role`)
       .set('Cookie', 'nucleus_session=t')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -187,7 +190,7 @@ describe('POST /api/admin/users/:id/role', () => {
     pool.query.mockResolvedValueOnce({
       rows: [{ id: userId, email: 'self@example.com', identity: 'self', role: 'admin' }],
     });
-    await request(app)
+    await request(await listenLoopback(app))
       .post(`/api/admin/users/${userId}/role`)
       .set('Cookie', 'nucleus_session=t')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -196,7 +199,7 @@ describe('POST /api/admin/users/:id/role', () => {
   });
 
   test('rejects unknown role', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/admin/users/42/role')
       .set('x-api-key', API_KEY)
       .send({ role: 'god' })

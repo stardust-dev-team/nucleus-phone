@@ -30,12 +30,15 @@ jest.mock('../../lib/debug-log', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../../db');
 const { verifyEntraIdToken } = require('../../lib/entra-token');
 
+
+afterEach(closeLoopbackServers);
 const TEST_JWT_SECRET = 'test-jwt-secret';
 const TEST_TENANT_ID = '66e70bed-49e9-4050-a55e-368908f78d4f';
 const TEST_DIALER_CLIENT_ID = '1760ac69-78c2-49ce-9967-7a1d3e39e74f';
@@ -94,7 +97,7 @@ describe('kill-switch', () => {
   test('returns 503 when ENABLE_NATIVE_EXCHANGE !== "true"', async () => {
     delete process.env.ENABLE_NATIVE_EXCHANGE;
     app = buildApp();
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 'whatever' })
       .expect(503);
@@ -106,7 +109,7 @@ describe('kill-switch', () => {
   test('returns 503 when ENABLE_NATIVE_EXCHANGE === "false"', async () => {
     process.env.ENABLE_NATIVE_EXCHANGE = 'false';
     app = buildApp();
-    await request(app).post('/api/auth/exchange').send({ idToken: 'x' }).expect(503);
+    await request(await listenLoopback(app)).post('/api/auth/exchange').send({ idToken: 'x' }).expect(503);
   });
 });
 
@@ -121,7 +124,7 @@ describe('happy path', () => {
       // UPDATE oid (null → claims.oid)
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 'valid-id-token' })
       .expect(200);
@@ -147,7 +150,7 @@ describe('happy path', () => {
   });
 
   test('400 on missing idToken', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({})
       .expect(400);
@@ -155,7 +158,7 @@ describe('happy path', () => {
   });
 
   test('400 on non-string idToken', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 123 })
       .expect(400);
@@ -169,7 +172,7 @@ describe('user lookup', () => {
     verifyEntraIdToken.mockResolvedValue(SAMPLE_CLAIMS);
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 'x' })
       .expect(403);
@@ -182,7 +185,7 @@ describe('user lookup', () => {
     verifyEntraIdToken.mockResolvedValue(SAMPLE_CLAIMS);
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app).post('/api/auth/exchange').send({ idToken: 'x' }).expect(403);
+    await request(await listenLoopback(app)).post('/api/auth/exchange').send({ idToken: 'x' }).expect(403);
   });
 });
 
@@ -197,7 +200,7 @@ describe('token verification failures', () => {
     ['bad signature', Object.assign(new Error('invalid signature'),    { name: 'JsonWebTokenError' })],
   ])('401 on %s', async (_label, error) => {
     verifyEntraIdToken.mockRejectedValue(error);
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 'x' })
       .expect(401);
@@ -215,7 +218,7 @@ describe('oid handling', () => {
       .mockResolvedValueOnce({ rows: [SAMPLE_USER], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
-    await request(app).post('/api/auth/exchange').send({ idToken: 'x' }).expect(200);
+    await request(await listenLoopback(app)).post('/api/auth/exchange').send({ idToken: 'x' }).expect(200);
 
     // Second call is the UPDATE
     const updateCall = pool.query.mock.calls[1];
@@ -234,7 +237,7 @@ describe('oid handling', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 'x' })
       .expect(409);
@@ -250,7 +253,7 @@ describe('oid handling', () => {
       rowCount: 1,
     });
 
-    await request(app).post('/api/auth/exchange').send({ idToken: 'x' }).expect(200);
+    await request(await listenLoopback(app)).post('/api/auth/exchange').send({ idToken: 'x' }).expect(200);
     // One DB call only — no UPDATE
     expect(pool.query).toHaveBeenCalledTimes(1);
   });
@@ -262,7 +265,7 @@ describe('oid handling', () => {
       .mockResolvedValueOnce({ rows: [SAMPLE_USER], rowCount: 1 })
       .mockRejectedValueOnce(uniqueViolation);
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/auth/exchange')
       .send({ idToken: 'x' })
       .expect(409);
@@ -275,6 +278,6 @@ describe('oid handling', () => {
       .mockResolvedValueOnce({ rows: [SAMPLE_USER], rowCount: 1 })
       .mockRejectedValueOnce(new Error('connection lost'));
 
-    await request(app).post('/api/auth/exchange').send({ idToken: 'x' }).expect(500);
+    await request(await listenLoopback(app)).post('/api/auth/exchange').send({ idToken: 'x' }).expect(500);
   });
 });

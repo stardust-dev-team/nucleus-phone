@@ -27,6 +27,7 @@ jest.mock('../../lib/email-sender', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -38,6 +39,8 @@ const { lookupCustomer } = require('../../lib/customer-lookup');
 const { sendFollowUpEmail } = require('../../lib/email-sender');
 const { __testSetUser, invalidateUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 const SAMPLE_CALL = {
@@ -103,12 +106,12 @@ beforeEach(() => {
 describe('GET /api/history', () => {
   test('returns 401 without session cookie', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app).get('/api/history').expect(401);
+    await request(await listenLoopback(app)).get('/api/history').expect(401);
   });
 
   test('returns 401 with API key (sessionAuth only)', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('x-api-key', API_KEY)
       .expect(401);
@@ -120,7 +123,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -135,7 +138,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [SAMPLE_CALL], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ count: '1' }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -150,7 +153,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?caller=kate')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -166,7 +169,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -181,7 +184,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?caller=ryann')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -195,7 +198,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -211,7 +214,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?includeInternal=true')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -225,7 +228,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?includeInternal=true')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -239,7 +242,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?q=compressor')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -256,7 +259,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?disposition=connected')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -270,7 +273,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?qualification=hot')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -286,7 +289,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?from=2026-04-01T00:00:00Z&to=2026-04-10T23:59:59Z')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -302,7 +305,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?hasSummary=true')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -318,7 +321,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -334,7 +337,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -350,7 +353,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?limit=999')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -364,7 +367,7 @@ describe('GET /api/history', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?limit=10&offset=20')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -378,7 +381,7 @@ describe('GET /api/history', () => {
     mockSession('ryann');
     pool.query.mockRejectedValueOnce(new Error('db error'));
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(500);
@@ -390,12 +393,12 @@ describe('GET /api/history', () => {
 describe('GET /api/history/:id', () => {
   test('returns 401 without session', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app).get('/api/history/1').expect(401);
+    await request(await listenLoopback(app)).get('/api/history/1').expect(401);
   });
 
   test('returns 400 for non-numeric id', async () => {
     mockSession('ryann');
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/abc')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(400);
@@ -405,7 +408,7 @@ describe('GET /api/history/:id', () => {
     mockSession('ryann');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/999')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(404);
@@ -415,7 +418,7 @@ describe('GET /api/history/:id', () => {
     mockSession('ryann');
     pool.query.mockResolvedValueOnce({ rows: [SAMPLE_CALL], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/history/1')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -429,7 +432,7 @@ describe('GET /api/history/:id', () => {
     mockSession('kate', 'caller');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/1')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(404);
@@ -442,7 +445,7 @@ describe('GET /api/history/:id', () => {
     mockSession('tom', 'admin');
     pool.query.mockResolvedValueOnce({ rows: [SAMPLE_CALL], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/1')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -456,14 +459,14 @@ describe('GET /api/history/:id', () => {
 describe('GET /api/history/:id/timeline', () => {
   test('returns 401 without session', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app).get('/api/history/1/timeline').expect(401);
+    await request(await listenLoopback(app)).get('/api/history/1/timeline').expect(401);
   });
 
   test('returns 404 if parent call not found', async () => {
     mockSession('ryann');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/999/timeline')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(404);
@@ -473,7 +476,7 @@ describe('GET /api/history/:id/timeline', () => {
     mockSession('kate', 'caller');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/1/timeline')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(404);
@@ -505,7 +508,7 @@ describe('GET /api/history/:id/timeline', () => {
       ],
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/history/1/timeline')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -525,7 +528,7 @@ describe('Bearer auth on GET routes', () => {
       .mockResolvedValueOnce({ rows: [SAMPLE_CALL], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ count: '1' }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/history')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -555,7 +558,7 @@ describe('Bearer auth on GET routes', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history?caller=ryann')
       .set('Authorization', 'Bearer kate-bearer')
       .expect(200);
@@ -569,7 +572,7 @@ describe('Bearer auth on GET routes', () => {
     mockSession('ryann');
     pool.query.mockResolvedValueOnce({ rows: [SAMPLE_CALL], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/1')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
@@ -590,21 +593,21 @@ describe('Bearer auth on GET routes', () => {
     });
     lookupCustomer.mockResolvedValueOnce({ interactions: [] });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history/1/timeline')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
   });
 
   test('malformed Authorization header → 401', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Authorization', 'NotBearer xyz')
       .expect(401);
   });
 
   test('Bearer with no token → 401', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Authorization', 'Bearer ')
       .expect(401);
@@ -612,7 +615,7 @@ describe('Bearer auth on GET routes', () => {
 
   test('Bearer with invalid jwt → 401', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid jwt'); });
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Authorization', 'Bearer bad-jwt')
       .expect(401);
@@ -628,7 +631,7 @@ describe('Bearer auth on GET routes', () => {
     jwt.verify.mockReturnValue({ userId: 999999 });
     pool.query.mockResolvedValueOnce({ rows: [] });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Authorization', 'Bearer fake-jwt')
       .expect(401);
@@ -645,7 +648,7 @@ describe('Bearer auth on GET routes', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Authorization', 'Bearer fake-jwt')
       // intentionally NO X-Requested-With
@@ -684,7 +687,7 @@ describe('Bearer auth on GET routes', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [{ count: '0' }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/history')
       .set('Cookie', 'nucleus_session=cookie-token')
       .set('Authorization', 'Bearer bearer-token')
@@ -700,7 +703,7 @@ describe('Bearer auth on GET routes', () => {
 
 describe('POST /api/history/:id/disposition', () => {
   test('returns 400 for non-numeric id', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/abc/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -708,7 +711,7 @@ describe('POST /api/history/:id/disposition', () => {
   });
 
   test('returns 400 when disposition is missing', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ notes: 'good call' })
@@ -719,7 +722,7 @@ describe('POST /api/history/:id/disposition', () => {
     // Enriched re-fetch returns empty, initial UPDATE returns empty
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/999/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -734,7 +737,7 @@ describe('POST /api/history/:id/disposition', () => {
       rowCount: 1,
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -750,7 +753,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })  // UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 }); // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -764,7 +767,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })  // UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 }); // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -780,7 +783,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })   // UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });  // enriched re-fetch
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -795,7 +798,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -813,7 +816,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })           // slack flag UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });   // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'qualified', qualification: 'hot', notes: 'ready to buy' })
@@ -833,7 +836,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'not_interested', qualification: 'cold' })
@@ -851,7 +854,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })          // hubspot_synced UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });  // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected', notes: 'good chat' })
@@ -871,7 +874,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'voicemail' })
@@ -888,7 +891,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -912,7 +915,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })           // slack flag
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });   // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'qualified', qualification: 'hot' })
@@ -931,7 +934,7 @@ describe('POST /api/history/:id/disposition', () => {
   test('returns 500 on DB error', async () => {
     pool.query.mockRejectedValueOnce(new Error('db down'));
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected' })
@@ -949,7 +952,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })                       // UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });                      // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ disposition: 'connected' })
@@ -958,7 +961,7 @@ describe('POST /api/history/:id/disposition', () => {
 
   test('invalid Bearer on POST is rejected with 401', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Authorization', 'Bearer some-token')
       .send({ disposition: 'connected' })
@@ -972,7 +975,7 @@ describe('POST /api/history/:id/disposition', () => {
     // admin principal even if x-api-key is also valid. Locks the
     // no-fallthrough invariant the composer relies on.
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Authorization', 'Bearer expired-jwt')
       .set('x-api-key', API_KEY)
@@ -1001,7 +1004,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })                              // UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });                             // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Authorization', 'Bearer fake-jwt')
       .set('x-api-key', API_KEY)
@@ -1039,7 +1042,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })  // UPDATE
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 }); // enriched re-fetch
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({
@@ -1061,7 +1064,7 @@ describe('POST /api/history/:id/disposition', () => {
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [updated], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected', lead_email: 'not-an-email' })
@@ -1089,7 +1092,7 @@ describe('POST /api/history/:id/disposition', () => {
     pool.query.mockResolvedValue({ rows: [updated], rowCount: 1 });
     getContact.mockResolvedValueOnce({ properties: { email: 'jane@acme.com' } });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1121,7 +1124,7 @@ describe('POST /api/history/:id/disposition', () => {
     const longLocal = 'a'.repeat(250);
     const oversize = `${longLocal}@b.co`; // 257 chars — passes EMAIL_RE shape
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('x-api-key', API_KEY)
       .send({ disposition: 'connected', lead_email: oversize })
@@ -1146,7 +1149,7 @@ describe('POST /api/history/:id/disposition', () => {
 
     pool.query.mockResolvedValue({ rows: [updated], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1183,7 +1186,7 @@ describe('POST /api/history/:id/disposition', () => {
     pool.query.mockResolvedValue({ rows: [updatedBeforeWrite], rowCount: 1 });
     getContact.mockResolvedValueOnce({ properties: { email: 'jane@acme.com' } });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/history/1/disposition')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1213,12 +1216,12 @@ describe('POST /api/history/:id/disposition', () => {
 
 describe('PATCH /api/history/:id is_internal', () => {
   test('returns 401 without auth', async () => {
-    await request(app).patch('/api/history/1').send({ is_internal: true }).expect(401);
+    await request(await listenLoopback(app)).patch('/api/history/1').send({ is_internal: true }).expect(401);
   });
 
   test('non-admin is rejected (403)', async () => {
     mockSession('ryann', 'caller');
-    await request(app)
+    await request(await listenLoopback(app))
       .patch('/api/history/1')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1228,7 +1231,7 @@ describe('PATCH /api/history/:id is_internal', () => {
 
   test('400 when is_internal is not a boolean', async () => {
     mockSession('tom', 'admin');
-    await request(app)
+    await request(await listenLoopback(app))
       .patch('/api/history/1')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1238,7 +1241,7 @@ describe('PATCH /api/history/:id is_internal', () => {
 
   test('400 for non-numeric id', async () => {
     mockSession('tom', 'admin');
-    await request(app)
+    await request(await listenLoopback(app))
       .patch('/api/history/abc')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1249,7 +1252,7 @@ describe('PATCH /api/history/:id is_internal', () => {
   test('404 when call not found', async () => {
     mockSession('tom', 'admin');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
-    await request(app)
+    await request(await listenLoopback(app))
       .patch('/api/history/999')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
@@ -1261,7 +1264,7 @@ describe('PATCH /api/history/:id is_internal', () => {
     mockSession('tom', 'admin');
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1, is_internal: true }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .patch('/api/history/1')
       .set('Cookie', 'nucleus_session=fake-token')
       .set('X-Requested-With', 'fetch')
