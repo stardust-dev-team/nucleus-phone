@@ -175,10 +175,7 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
       ).catch((err) => console.error('Failed to persist conference_sid:', err.message));
 
       await client.conferences(sid).participants.create({
-        // NOTE: still the phantom field, so per-rep DIDs stay INERT here. Activating them is a
-        // wire-visible change and lands in its own commit so it can be reverted independently
-        // of this security fix.
-        from: outboundCallerId(conf.callerIdentity),
+        from: outboundCallerId(conf.startedBy),
         to: leadPhone,
         earlyMedia: true,
         beep: false,
@@ -496,7 +493,7 @@ router.post('/status', twilioWebhook, async (req, res) => {
           // Outbound legs present the calling rep's own DID; inbound legs
           // (dormant: INBOUND_CONFERENCE_ARCHITECTURE=false) keep the shared
           // number unchanged — per-rep caller ID is an outbound-only concern.
-          from: isInbound ? process.env.NUCLEUS_PHONE_NUMBER : outboundCallerId(conf.callerIdentity),
+          from: isInbound ? process.env.NUCLEUS_PHONE_NUMBER : outboundCallerId(conf.startedBy),
           to: conf.leadPhone,
           earlyMedia: true,
           beep: false,

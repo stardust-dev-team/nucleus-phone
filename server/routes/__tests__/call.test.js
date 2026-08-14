@@ -621,13 +621,11 @@ describe('POST /api/call/status', () => {
       ConferenceSid: 'CF200',
     }).expect(204);
 
-    // Per-rep DIDs are still INERT at this commit: the dial path reads the phantom
-    // conf.callerIdentity, so outboundCallerId falls through to NUCLEUS_PHONE_NUMBER. Asserting
-    // the CURRENT behaviour rather than the intended one keeps this commit honest and green;
-    // the follow-up commit flips the dial path and this expectation together, so the DID
-    // activation can be reverted on its own.
+    // Paul's lead leg presents Paul's own DID (team.json), NOT the global
+    // NUCLEUS_PHONE_NUMBER — so the called party sees Paul's line and a
+    // call-back routes back to Paul.
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ from: process.env.NUCLEUS_PHONE_NUMBER, to: '+16025551234' })
+      expect.objectContaining({ from: '+16029050230', to: '+16025551234' })
     );
   });
 
