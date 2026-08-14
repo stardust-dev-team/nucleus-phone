@@ -239,10 +239,55 @@ router.post('/mute', ...callerGuard, async (req, res) => {
 // dialer's double-dial guard will allow a second call. Tracked: see
 // nucleus-phone bead for participant-aware filter once such a flow lands.
 router.get('/active', ...callerGuard, async (req, res) => {
-  const filterIdentity = typeof req.query.identity === 'string' && req.query.identity.length
-    ? req.query.identity
+  // zht.5: the LIVE half of this route is scoped the same way the sim half below already is —
+  // admin sees everything, a non-admin sees only their own conferences. That is the property
+  // that actually holds the line, and it holds no matter what the client sends. An earlier
+  // version of this guard only 403'd a non-admin who NAMED someone else's identity, which was
+  // theatre: omitting the param entirely returned every conference, lead phone numbers and all.
+  // Scope by default; let `?identity=` narrow an ALREADY-scoped set.
+  //
+  // Reject a repeated param rather than letting it fall through. Express's qs parser turns
+  // `?identity=a&identity=b` into an ARRAY, which a `typeof === 'string'` test silently
+  // downgrades to "no filter" — a scoping parameter must never fail open.
+  if (req.query.identity !== undefined && typeof req.query.identity !== 'string') {
+    return res.status(400).json({ error: 'identity must be a single value' });
+  }
+
+  // Canonicalize at the trust boundary, the way /initiate does — lowercase BEFORE comparing and
+  // before using. Comparing case-insensitively but then filtering with a strict === is how you
+  // get a 200 with an empty list: the route says "yes, you may see your own calls" and shows
+  // none, which iOS reads as "no active call" and dials again.
+  const ownIdentity = (req.user.identity || '').toLowerCase();
+  const isAdmin = hasMinRole(req.user.role, 'admin');
+  const requested = typeof req.query.identity === 'string' && req.query.identity.length
+    ? req.query.identity.toLowerCase()
     : null;
-  const conferences = listActiveConferences();
+
+  if (requested && !isAdmin && requested !== ownIdentity) {
+    return res.status(403).json({ error: 'identity must match your own identity' });
+  }
+
+  // A non-admin with no usable identity must fail CLOSED. Without this, ownIdentity is '' →
+  // scopeIdentity is '' → falsy → the filter below is skipped entirely and the caller gets
+  // every conference. That is the same falsy-empty trap the 400 above exists to kill, just
+  // relocated from req.query.identity to req.user.identity. The sim half already fails closed
+  // on this input (its `else if (req.user?.identity)` runs no query at all), so without this
+  // the two halves of one handler would disagree about what an empty identity means.
+  if (!isAdmin && !ownIdentity) {
+    return res.status(403).json({ error: 'caller has no identity to scope to' });
+  }
+
+  // Non-admins are pinned to their own identity even when they ask for nothing (or for ''),
+  // so every fail-open shape — absent param, empty string — lands on "own calls only".
+  const scopeIdentity = isAdmin ? requested : (requested || ownIdentity);
+
+  // Scope BEFORE enriching. Enrichment does a live Twilio REST call per conference, and
+  // useActiveCalls polls every 3s — enriching first meant every rep's poll billed Twilio for
+  // other reps' conferences and blocked on their latency, only to filter the result away. It
+  // also means another rep's data is never materialized in this process at all.
+  const conferences = listActiveConferences().filter(
+    (c) => !scopeIdentity || (c.startedBy || '').toLowerCase() === scopeIdentity,
+  );
 
   const enriched = await Promise.all(
     conferences.map(async (conf) => {
@@ -286,26 +331,30 @@ router.get('/active', ...callerGuard, async (req, res) => {
   //     ended on the rep's side, they should be free to start the next one.
   let simQuery = null;
   let simParams = [];
-  if (req.user?.role === 'admin') {
+  if (isAdmin) {
     simQuery = `
       SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
       FROM sim_call_scores
       WHERE status IN ('in-progress', 'scoring')
       ORDER BY created_at DESC
     `;
-  } else if (req.user?.identity) {
+  } else if (ownIdentity) {
     simQuery = `
       SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
       FROM sim_call_scores
       WHERE status = 'in-progress' AND caller_identity = $1
       ORDER BY created_at DESC
     `;
-    simParams = [req.user.identity];
+    simParams = [ownIdentity];
   }
   if (simQuery) {
     try {
       const { rows } = await pool.query(simQuery, simParams);
       for (const row of rows) {
+        // The sim QUERY scopes by ROLE (admin: all, non-admin: own). `?identity=` narrowing is
+        // a separate axis and must be applied here too, or an admin asking for one rep still
+        // gets everyone's sims — which is what the header comment has always promised.
+        if (requested && (row.caller_identity || '').toLowerCase() !== requested) continue;
         enriched.push({
           type: 'sim',
           simCallId: row.id,
@@ -325,10 +374,9 @@ router.get('/active', ...callerGuard, async (req, res) => {
     }
   }
 
-  const filtered = filterIdentity
-    ? enriched.filter((c) => c.startedBy === filterIdentity)
-    : enriched;
-  res.json({ calls: filtered });
+  // Nothing left to filter: live entries were scoped before enrichment, and sim entries are
+  // scoped by role in the query plus narrowed by `requested` at the push site above.
+  res.json({ calls: enriched });
 });
 
 // POST /api/call/end — end a conference. Non-admin users can only end their
