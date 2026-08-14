@@ -3,24 +3,21 @@
 // identity, posts to /api/call/end against a conference created by
 // incoming.js's Phase 2 branch with callerIdentity=<iosIdentity>.
 //
-// This is the test that would have caught Linus's P0-1 from the Phase 2
-// review — if `incoming.js` writes `callerIdentity: 'inbound'` (literal
-// string), the rep's identity 'paul' fails the `conf.callerIdentity !==
-// req.user.identity` check in call.js:310-313 and the rep gets 403.
-// iOS swallows that with `try?` and the conference resource leaks.
+// jsec-vr1s: this file exercises the REAL lib/conference store. The previous
+// version mocked getConference to return hand-built objects carrying a
+// `callerIdentity` key — a shape createConference never writes (the owner is
+// stored as `startedBy`) — so the guard these tests "verified" was dead in
+// production while every test here stayed green. Seeding through the real
+// createConference is the point: if the route guard and the store ever
+// disagree on the owner field again, the mismatch tests below fail 200 !== 403.
 //
-// Pre-fix (callerIdentity: 'inbound'): paul → 403, conference leaks.
-// Post-fix (callerIdentity: iosIdentity): paul → 200, conference cleanly torn down.
+// The original Linus P0-1 input-side contract — incoming.js's Phase 2 branch
+// must pass the rep's iOS identity, never the literal 'inbound' sentinel —
+// is pinned where that code actually runs: incoming.test.js (asserts
+// createConference is called with callerIdentity: 'paul'). This file pins
+// the route-side half: /end authorizes against what the store returns.
 
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
-jest.mock('../../lib/conference', () => ({
-  createConference: jest.fn(),
-  getConference: jest.fn(),
-  updateConference: jest.fn(),
-  removeConference: jest.fn(),
-  listActiveConferences: jest.fn().mockReturnValue([]),
-  claimLeadDial: jest.fn(),
-}));
 jest.mock('../../lib/twilio', () => {
   const conferences = jest.fn(() => ({
     update: jest.fn().mockResolvedValue({}),
@@ -54,10 +51,32 @@ const request = require('supertest');
 const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
-const conference = require('../../lib/conference');
+const {
+  createConference, getConference, updateConference, removeConference,
+} = require('../../lib/conference');
 
+const CONF = 'nucleus-inbound-ios-abc';
 
-afterEach(closeLoopbackServers);
+// Seed exactly the way production does: incoming.js's Phase 2 branch calls
+// createConference with callerIdentity=<owner>, then the /status webhook
+// stamps the conference SID. No hand-built conf objects.
+function seedConference(owner) {
+  createConference(CONF, {
+    callerIdentity: owner,
+    to: null,
+    contactName: '+16025550000',
+    companyName: null,
+    contactId: null,
+    dbRowId: 1,
+    direction: 'inbound',
+  });
+  updateConference(CONF, { conferenceSid: 'CFinbound' });
+}
+
+afterEach(() => {
+  removeConference(CONF);
+  return closeLoopbackServers();
+});
 let app;
 beforeAll(() => {
   app = express();
@@ -74,78 +93,47 @@ describe('POST /api/call/end — Phase 2 inbound auth path (Linus P0-1 regressio
   test('rep with matching iOS identity can tear down their Phase 2 inbound conference', async () => {
     // Phase 2 fix: incoming.js creates the conference with
     // callerIdentity=<iosIdentity>. When 'paul' calls endCall, the auth
-    // check passes because conf.callerIdentity ('paul') matches
+    // check passes because conf.startedBy ('paul') matches
     // req.user.identity ('paul'). 200 = conference cleanly torn down.
-    conference.getConference.mockReturnValue({
-      conferenceSid: 'CFinbound',
-      callerIdentity: 'paul',  // ← Phase 2 fix: rep's iOS identity, not 'inbound'
-      startedAt: new Date(Date.now() - 5_000),
-    });
+    seedConference('paul');
 
     await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'caller')
       .set('x-test-identity', 'paul')
-      .send({ conferenceName: 'nucleus-inbound-ios-abc' })
+      .send({ conferenceName: CONF })
       .expect(200);
 
-    expect(conference.removeConference).toHaveBeenCalledWith('nucleus-inbound-ios-abc');
+    expect(getConference(CONF)).toBeUndefined();
   });
 
   test('rep with mismatched identity is 403 (cross-rep teardown blocked)', async () => {
     // Same conference owned by 'paul'; 'ryann' tries to end it. Auth
     // check refuses. This is the contract that prevents one rep from
-    // accidentally killing another rep's call.
-    conference.getConference.mockReturnValue({
-      conferenceSid: 'CFinbound',
-      callerIdentity: 'paul',
-      startedAt: new Date(),
-    });
+    // killing another rep's call — and the test that fails 200 !== 403
+    // if the guard ever reads a field the store doesn't write (jsec-vr1s).
+    seedConference('paul');
 
     await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'caller')
       .set('x-test-identity', 'ryann')
-      .send({ conferenceName: 'nucleus-inbound-ios-abc' })
+      .send({ conferenceName: CONF })
       .expect(403);
 
-    expect(conference.removeConference).not.toHaveBeenCalled();
+    expect(getConference(CONF)).toBeDefined();
   });
 
-  test('PRE-FIX REGRESSION: rep auth FAILS when callerIdentity is literal "inbound" string', async () => {
-    // Pins the original Linus P0-1 failure mode. If a future regression
-    // sets callerIdentity back to the literal string 'inbound' (or any
-    // non-identity sentinel), this test fails — surfacing the bug
-    // BEFORE it reaches production. The fix is to set callerIdentity =
-    // the rep's iOS identity in incoming.js's Phase 2 branch.
-    conference.getConference.mockReturnValue({
-      conferenceSid: 'CFinbound',
-      callerIdentity: 'inbound',  // ← the broken value
-      startedAt: new Date(),
-    });
-
-    await request(await listenLoopback(app))
-      .post('/api/call/end')
-      .set('x-test-role', 'caller')
-      .set('x-test-identity', 'paul')
-      .send({ conferenceName: 'nucleus-inbound-ios-abc' })
-      .expect(403);
-  });
-
-  test('admin can tear down ANY conference regardless of callerIdentity', async () => {
+  test('admin can tear down ANY conference regardless of owner', async () => {
     // Admin path stays open — internal automation / support tools
     // (n8n, x-api-key) must be able to terminate stuck conferences.
-    conference.getConference.mockReturnValue({
-      conferenceSid: 'CFstuck',
-      callerIdentity: 'paul',
-      startedAt: new Date(),
-    });
+    seedConference('paul');
 
     await request(await listenLoopback(app))
       .post('/api/call/end')
       .set('x-test-role', 'admin')
       .set('x-test-identity', 'system')
-      .send({ conferenceName: 'nucleus-stuck' })
+      .send({ conferenceName: CONF })
       .expect(200);
   });
 });

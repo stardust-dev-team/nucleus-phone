@@ -36,6 +36,15 @@ describe('CRUD operations', () => {
     expect(getConference('nonexistent')).toBeUndefined();
   });
 
+  test('createConference throws when callerIdentity is missing or empty (jsec-vr1s)', () => {
+    // An ownerless conference is unrepresentable: under the fail-closed
+    // ownership guards it would be admin-only by accident, and a silently
+    // undefined owner is exactly how the guards were dead for months.
+    expect(() => createConference(CONF_NAME, { to: '+18005551234' })).toThrow(/callerIdentity/);
+    expect(() => createConference(CONF_NAME, { ...CONF_DATA, callerIdentity: '' })).toThrow(/callerIdentity/);
+    expect(getConference(CONF_NAME)).toBeUndefined();
+  });
+
   test('updateConference merges fields', () => {
     createConference(CONF_NAME, CONF_DATA);
     updateConference(CONF_NAME, { conferenceSid: 'CF123', participants: ['tom'] });

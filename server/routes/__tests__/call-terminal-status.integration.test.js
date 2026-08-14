@@ -123,7 +123,7 @@ describeIfDb('call.js terminal-status guard — real DB (gox1/596q)', () => {
       conferenceSid: 'CFold',
       startedAt: new Date(Date.now() - 7000),
       participants: [],
-      callerIdentity: 'inbound',
+      startedBy: 'inbound', // the owner field createConference actually writes (jsec-vr1s)
     });
   });
 

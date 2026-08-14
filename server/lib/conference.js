@@ -3,9 +3,19 @@
 const activeConferences = new Map();
 
 function createConference(conferenceName, data) {
+  // Every conference has an owner. Refuse to store one without: a silently
+  // undefined owner is how the ownership guards were dead for months
+  // (jsec-vr1s) — with fail-closed guards it would now mean an admin-only
+  // conference nobody intended. All callsites already pass an identity.
+  if (typeof data.callerIdentity !== 'string' || !data.callerIdentity) {
+    throw new Error(`createConference(${conferenceName}): callerIdentity is required`);
+  }
   activeConferences.set(conferenceName, {
     conferenceSid: null,
     startedAt: new Date(),
+    // startedBy is the ONLY owner field a conference carries. Consumers must
+    // read conf.startedBy — a `conf.callerIdentity` read is always undefined
+    // and silently disabled every ownership guard for months (jsec-vr1s).
     startedBy: data.callerIdentity,
     leadPhone: data.to,
     leadName: data.contactName,
