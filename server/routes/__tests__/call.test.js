@@ -168,7 +168,13 @@ describe('POST /api/call/join', () => {
       .expect(404);
   });
 
-  test('returns conference info on success', async () => {
+  test('returns conference info and a join ticket on success', async () => {
+    // jsec-r0k6: the response gained `joinTicket` — voice.js will not join a
+    // conference without one. These callers authenticate with the API key, so
+    // they are admin and clear the ownership check; who may and may not obtain
+    // a ticket is covered in call-join-authz.test.js, which seeds through the
+    // REAL conference store rather than the hand-built mock used here (that
+    // mock has no startedBy, so it cannot exercise ownership at all).
     conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
 
     const res = await request(server)
@@ -177,7 +183,10 @@ describe('POST /api/call/join', () => {
       .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom', muted: true })
       .expect(200);
 
-    expect(res.body).toEqual({ conferenceName: 'nucleus-call-abc', muted: true });
+    const { joinTicket, ...rest } = res.body;
+    expect(rest).toEqual({ conferenceName: 'nucleus-call-abc', muted: true });
+    expect(typeof joinTicket).toBe('string');
+    expect(joinTicket.length).toBeGreaterThan(20);
   });
 
   test('muted defaults to false', async () => {
