@@ -1,7 +1,11 @@
 // jsec-vr1s regression tests: the ownership guard on POST /api/call/mute,
-// exercised through the REAL lib/conference store. (POST /api/call/join is
-// deliberately unguarded — it is a preflight; the real join is voice.js's
-// Action==='join' branch, tracked in a follow-up bead.)
+// exercised through the REAL lib/conference store.
+//
+// (The parenthetical that used to sit here said POST /api/call/join is
+// "deliberately unguarded — it is a preflight". That was true until jsec-r0k6.
+// /join now performs the admin-or-owner check AND mints the ticket voice.js
+// requires, so it is the authorization step rather than a preflight. Its own
+// coverage lives in call-join-authz.test.js and voice-join-authz.test.js.)
 //
 // The guard these tests pin was dead code in production for months: it read
 // `conf.callerIdentity`, but createConference stores the owner as
