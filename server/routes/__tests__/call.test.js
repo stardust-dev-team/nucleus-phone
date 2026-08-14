@@ -606,7 +606,7 @@ describe('POST /api/call/status', () => {
   test('dials lead from the calling rep\'s OWN DID, not the global number', async () => {
     const conf = {
       conferenceSid: null,
-      callerIdentity: 'paul',
+      startedBy: 'paul', // the owner field createConference actually writes (jsec-vr1s)
       leadPhone: '+16025551234',
       participants: [],
     };
@@ -632,7 +632,7 @@ describe('POST /api/call/status', () => {
   test('falls back to NUCLEUS_PHONE_NUMBER for a rep with no DID (Britt)', async () => {
     const conf = {
       conferenceSid: null,
-      callerIdentity: 'britt', // inbound: null in team.json
+      startedBy: 'britt', // inbound: null in team.json
       leadPhone: '+16025551234',
       participants: [],
     };
@@ -655,7 +655,7 @@ describe('POST /api/call/status', () => {
   test('inbound leg keeps NUCLEUS_PHONE_NUMBER (per-rep caller ID is outbound-only)', async () => {
     const conf = {
       conferenceSid: null,
-      callerIdentity: 'paul',
+      startedBy: 'paul',
       leadPhone: '+16025551234',
       repSlackDm: '',
       participants: [],
@@ -671,7 +671,7 @@ describe('POST /api/call/status', () => {
       ConferenceSid: 'CF202',
     }).expect(204);
 
-    // isInbound → shared number, even though callerIdentity resolves to a DID.
+    // isInbound → shared number, even though startedBy resolves to a DID.
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ from: '+18005550000' })
     );
