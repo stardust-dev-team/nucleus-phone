@@ -66,16 +66,25 @@ export default function useCallState(twilioHook) {
   }, [makeCall]);
 
   const joinExistingCall = useCallback(async (conferenceName, identity, muted = true) => {
-    await joinCall({ conferenceName, callerIdentity: identity, muted });
+    // jsec-r0k6: /call/join authorizes the join and returns a short-lived
+    // ticket; the ticket is what the server acts on, so ConferenceName/Muted
+    // are deliberately not sent here. See server/lib/join-tickets.js.
+    const { joinTicket } = await joinCall({ conferenceName, callerIdentity: identity, muted });
+    if (!joinTicket) {
+      // apiFetch throws on a non-2xx, so reaching here means a 200 with no
+      // ticket — a server/client version skew. Fail with something a rep can
+      // report, rather than sending JoinTicket:undefined and collecting a 403
+      // plus a security alert for what is really a deploy mismatch.
+      throw new Error('Join was not authorized (no ticket issued). Reload the app and try again.');
+    }
 
     setCallData((prev) => ({ ...prev, conferenceName, joined: true }));
     setElapsed(0);
 
     const activeCall = await makeCall({
-      ConferenceName: conferenceName,
       CallerIdentity: identity,
       Action: 'join',
-      Muted: muted ? 'true' : 'false',
+      JoinTicket: joinTicket,
     });
 
     // Belt-and-suspenders: mute the browser mic directly via Voice SDK

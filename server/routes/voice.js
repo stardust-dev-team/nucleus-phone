@@ -4,6 +4,8 @@ const { pool } = require('../db');
 const { logEvent } = require('../lib/debug-log');
 const { touch } = require('../lib/health-tracker');
 const { sendSystemAlert } = require('../lib/slack');
+const { redeemJoinTicket } = require('../lib/join-tickets');
+const { getConference } = require('../lib/conference');
 
 const router = Router();
 
@@ -11,6 +13,65 @@ const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 const { makeTwilioWebhook } = require('../lib/twilio-webhook');
 const twilioWebhook = makeTwilioWebhook();
 const simBridgeWebhook = makeTwilioWebhook();
+
+// jsec-r0k6: refusals are a security signal, so they alert — but an alert an
+// attacker can trigger on demand is an alert channel an attacker can flood, and
+// the likelier cause is dull: one browser holding a pre-deploy JS bundle firing
+// one 🔴 per retry. Collapse repeats of the same (reason, conference) pair into
+// one alert per window. Refusals are ALWAYS logged; only the Slack call is
+// throttled, so throttling can never hide an event from the record.
+const REFUSAL_ALERT_WINDOW_MS = 5 * 60 * 1000;
+const lastRefusalAlertAt = new Map();
+
+function shouldAlertOnRefusal(key, now = Date.now()) {
+  const previous = lastRefusalAlertAt.get(key);
+  if (previous !== undefined && now - previous < REFUSAL_ALERT_WINDOW_MS) return false;
+  lastRefusalAlertAt.set(key, now);
+  // Bound the map: an attacker cycling conference names must not grow it
+  // without limit. These entries are pure rate-limiter state — dropping the
+  // oldest costs at most one extra alert.
+  if (lastRefusalAlertAt.size > 500) {
+    const oldest = lastRefusalAlertAt.keys().next().value;
+    lastRefusalAlertAt.delete(oldest);
+  }
+  return true;
+}
+
+/**
+ * Refuse to place a caller into a conference, on either branch of POST /api/voice.
+ *
+ * 403 rather than 200-with-hangup: Twilio does not render TwiML on a non-2xx,
+ * so the <Say> is for a human reading the response body, not for the caller.
+ * The status code is the point — a refusal surfaces as a Twilio 11200 in the
+ * account's own error log instead of looking like a normal completed call.
+ * (POST /api/voice/sim-bridge-twiml makes the same trade with a 400.)
+ */
+function refuseConferenceEntry(res, branch, reason, detail) {
+  console.warn(`voice: ${branch} REFUSED (${reason}) conference=${detail.requestedConference || detail.conference || '(none)'} callSid=${detail.callSid || '(none)'}`);
+  logEvent('error', 'twilio.voice', `${branch} REFUSED: ${reason}`, { level: 'error', detail });
+
+  const alertKey = `${branch}:${detail.requestedConference || detail.conference || '(none)'}`;
+  if (shouldAlertOnRefusal(alertKey)) {
+    sendSystemAlert(
+      '🔴 Nucleus Phone — conference entry refused',
+      [{
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `A \`/api/voice\` **${branch}** was refused: ${reason}.\n`
+            + `Conference: \`${detail.requestedConference || detail.conference || '(none)'}\`\nCallSid: \`${detail.callSid || '(none)'}\`\n\n`
+            + 'Expected volume is zero. A burst means either a client that predates jsec-r0k6, or someone probing the conference paths. '
+            + `Repeats for this conference are suppressed for ${REFUSAL_ALERT_WINDOW_MS / 60000} minutes; the server log has every occurrence.`,
+        },
+      }]
+    ).catch((alertErr) => console.error('voice: refusal Slack alert failed:', alertErr.message));
+  }
+
+  const refused = new VoiceResponse();
+  refused.say('This call cannot be joined.');
+  refused.hangup();
+  return res.status(403).type('text/xml').send(refused.toString());
+}
 
 // Window during which a Vapi inbound leg may correlate to a pending sim row.
 // Conference-start handler stamps conference_sid_set_at, Vapi typically dials
@@ -24,17 +85,59 @@ router.post('/', twilioWebhook, async (req, res) => {
   touch('twilio.webhook');
   logEvent('webhook', 'twilio.voice', `TwiML request: action=${req.body.Action || 'initiate'}, conf=${req.body.ConferenceName || 'none'}`);
   try {
-    const { ConferenceName, Action, Muted } = req.body;
+    // `Muted` is intentionally NOT destructured: on the join path it now comes
+    // from the ticket, and on the initiate path it was never used. Leaving it
+    // bound here would invite a future edit to read it back into the TwiML.
+    const { ConferenceName, Action } = req.body;
     const twiml = new VoiceResponse();
 
     if (Action === 'join') {
+      // jsec-r0k6: this is the REAL join — the one that puts a second pair of
+      // ears into a live customer call. It used to conference the caller into
+      // whatever `ConferenceName` the request carried. This request comes from
+      // Twilio, so it has no session and no req.user; there was nothing here to
+      // authorize against and any authenticated principal could silently land
+      // in any rep's call by naming their conference.
+      //
+      // The conference is now resolved from a server-minted ticket (see
+      // lib/join-tickets.js) issued by POST /api/call/join, which DOES have a
+      // session and checks admin-or-owner before minting. `ConferenceName` and
+      // `Muted` from this request body are deliberately IGNORED on this path —
+      // reading either one back would re-open the hole.
+      const grant = redeemJoinTicket(req.body.JoinTicket);
+      if (!grant) {
+        return refuseConferenceEntry(res, 'join', 'absent, unknown or expired JoinTicket', {
+          requestedConference: ConferenceName || null,
+          callSid: req.body.CallSid || null,
+        });
+      }
+
+      // Defense in depth: a ticket outlives the conference it names if the call
+      // ends inside the TTL (removeConference runs on normal call end). Without
+      // this check we would hand Twilio the name of a dead conference, and
+      // `startConferenceOnEnter: false` would park the joiner in silence
+      // forever. Refusing is both more honest and one less way to create a
+      // conference nobody asked for.
+      if (!getConference(grant.conferenceName)) {
+        return refuseConferenceEntry(res, 'join', 'ticket names a conference that has ended', {
+          conference: grant.conferenceName,
+          callSid: req.body.CallSid || null,
+        });
+      }
+
+      // Audit the ALLOWED join, not just the refused one. console.log rather
+      // than logEvent alone: logEvent is gated on DEBUG=1 (lib/debug-log.js)
+      // and is a no-op in a default production boot, and "who listened to whose
+      // call, when" is precisely the line that must survive that.
+      console.log(`voice: join ALLOWED conference=${grant.conferenceName} muted=${grant.muted} callSid=${req.body.CallSid || '(none)'}`);
+
       const dial = twiml.dial();
       dial.conference({
         startConferenceOnEnter: false,
         endConferenceOnExit: false,
-        muted: Muted === 'true',
+        muted: grant.muted,
         beep: false,
-      }, ConferenceName);
+      }, grant.conferenceName);
 
       return res.type('text/xml').send(twiml.toString());
     }
@@ -42,6 +145,44 @@ router.post('/', twilioWebhook, async (req, res) => {
     // Default: "initiate" — caller enters conference.
     // Lead dialing happens in the conference-start status callback (call.js),
     // NOT here. This eliminates the race condition of polling for the conference SID.
+
+    // jsec-r0k6: this branch is reached by OMITTING Action, and it used to be a
+    // strictly worse version of the join hole — it takes a client-supplied
+    // ConferenceName too, but emits no `muted` attribute (Twilio defaults to an
+    // OPEN MIC) and sets endConferenceOnExit="true", so an intruder hanging up
+    // would terminate the victim's live customer call. It also stamps their
+    // CallSid onto the victim's DB row below, breaking transcription mapping.
+    // Guarding only Action==='join' would have closed the front door and left
+    // this one open in the same handler.
+    //
+    // Two facts make this cheap to close without any client or iOS change:
+    //   1. Every conference a client can legitimately enter is registered in
+    //      lib/conference.js first — all four createConference callsites
+    //      (call.js /initiate, sim.js, incoming.js x2) run server-side before
+    //      the client is ever told a name.
+    //   2. conferenceSid is only ever set AFTER this TwiML is served, by the
+    //      conference-start callback (call.js) or the poll fallback, both of
+    //      which need a participant to already be in the conference.
+    // So a legitimate initiate always names a KNOWN, NOT-YET-STARTED
+    // conference, and entering an already-live one is never legitimate — which
+    // is exactly the attack. This is not an ownership check (the webhook has no
+    // session to check against); it is an invariant on conference lifecycle,
+    // and it takes the attack from "any live call" to "a conference you can
+    // name within the ~1s before it starts". Tightening it to true ownership
+    // needs a verified caller identity — tracked as a follow-up.
+    const initiating = getConference(ConferenceName);
+    if (!initiating) {
+      return refuseConferenceEntry(res, 'initiate', 'unknown conference', {
+        requestedConference: ConferenceName || null,
+        callSid: req.body.CallSid || null,
+      });
+    }
+    if (initiating.conferenceSid) {
+      return refuseConferenceEntry(res, 'initiate', 'conference is already live — entry via the initiate path is never legitimate', {
+        requestedConference: ConferenceName || null,
+        callSid: req.body.CallSid || null,
+      });
+    }
 
     // Save caller's CallSid for RT transcription webhook mapping.
     // The transcription webhook receives CallSid but the app tracks by

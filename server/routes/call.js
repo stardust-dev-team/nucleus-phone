@@ -8,6 +8,7 @@ const {
   createConference, getConference, updateConference,
   removeConference, listActiveConferences, claimLeadDial,
 } = require('../lib/conference');
+const { issueJoinTicket } = require('../lib/join-tickets');
 const { cleanupCall } = require('../lib/live-analysis');
 const { cleanupConversation } = require('../lib/conversation-pipeline');
 const { cleanupPipelineState } = require('../lib/equipment-pipeline');
@@ -199,7 +200,25 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
   }).catch((err) => console.error('[poll-fallback] Slack alert failed:', err.message));
 }
 
-// POST /api/call/join — admin joins an active conference
+// POST /api/call/join — authorize a join of an active conference.
+//
+// jsec-r0k6: this used to be a pure preflight that authorized nothing — it
+// returned JSON, touched no Twilio, and an attacker skipped it entirely and
+// called Device.connect({Action:'join'}) straight at voice.js. It carried a
+// comment saying a guard here would be theatre. That was true of a guard ALONE;
+// it is no longer true, because this route now mints the ticket that voice.js
+// requires. The check below is what decides who may listen, and the ticket is
+// what carries that decision to a webhook which has no session of its own.
+//
+// Policy (Tom, 2026-08-14): listening in on another rep's live customer call is
+// ADMIN-ONLY. requireConferenceOwner encodes exactly that — an admin joins
+// anything, everyone else joins only a conference they started, and an
+// ownerless conference is admin-only rather than open.
+//
+// This withdraws nothing that shipped to a rep: the /active page and its nav
+// entry are already gated on role === 'admin' (client/src/App.jsx:152,
+// components/layout/Shell.jsx:17), so the Join controls were never reachable by
+// a non-admin through the UI. The hole was purely server-side.
 router.post('/join', ...callerGuard, (req, res) => {
   const { conferenceName, muted } = req.body;
 
@@ -208,14 +227,10 @@ router.post('/join', ...callerGuard, (req, res) => {
     return res.status(404).json({ error: 'Conference not found' });
   }
 
-  // Deliberately NO ownership guard here: this endpoint is a preflight only
-  // (it never touches Twilio), the actual join is the Action==='join' branch
-  // in voice.js, and the ActiveCalls UI offers cross-rep "Join Silent" /
-  // "Join Call" to every rep as a shipped monitoring flow. Guarding the
-  // preflight would 403 that feature for non-admins while an attacker just
-  // skips it. Real enforcement belongs in voice.js — tracked as a follow-up
-  // bead (see jsec-vr1s).
-  res.json({ conferenceName, muted: !!muted });
+  if (!requireConferenceOwner(req, res, conf)) return;
+
+  const joinTicket = issueJoinTicket(conferenceName, muted);
+  res.json({ conferenceName, muted: !!muted, joinTicket });
 });
 
 // POST /api/call/mute — toggle participant mute via Twilio REST API

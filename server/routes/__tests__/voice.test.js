@@ -11,9 +11,26 @@ const request = require('supertest');
 const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
+const { issueJoinTicket, _clearJoinTickets } = require('../../lib/join-tickets');
+const { createConference, removeConference } = require('../../lib/conference');
 
+// jsec-r0k6: the initiate branch now refuses a conference it does not already
+// know about, so these TwiML-shape tests must seed the conference through the
+// REAL store the way /api/call/initiate does. Authorization itself is covered
+// in voice-join-authz.test.js; these tests remain about TwiML attributes.
+const SEEDED = ['nucleus-call-test-1', 'nucleus-call-test-2', 'nucleus-call-djy-1', 'nucleus-call-test-3'];
 
-afterEach(closeLoopbackServers);
+beforeEach(() => {
+  for (const name of SEEDED) {
+    createConference(name, { callerIdentity: 'kate', to: '+16025550001', contactName: 'Lead', dbRowId: 1 });
+  }
+});
+
+afterEach(() => {
+  _clearJoinTickets();
+  for (const name of SEEDED) removeConference(name);
+  return closeLoopbackServers();
+});
 let app;
 beforeAll(() => {
   process.env.NUCLEUS_PHONE_NUMBER = '+15555550100';
@@ -88,18 +105,20 @@ describe('POST /api/voice — outbound iOS-leg TwiML (joruva-dialer-mac-lkk)', (
   });
 
   test('join action does NOT set endConferenceOnExit="true" — secondary participants must not end the conference', async () => {
+    // jsec-r0k6: this test used to send a bare ConferenceName, because the
+    // join branch accepted one from anybody. It no longer does — the
+    // conference is resolved from a server-minted ticket. Issuing a real
+    // ticket here keeps this test about the flag it was written to pin
+    // (endConferenceOnExit) rather than silently turning into a second copy
+    // of the authorization tests in voice-join-authz.test.js.
+    const ticket = issueJoinTicket('nucleus-call-test-3', false);
+
     const res = await request(await listenLoopback(app))
       .post('/api/voice')
-      .send({
-        Action: 'join',
-        ConferenceName: 'nucleus-call-test-3',
-        Muted: 'false',
-      });
+      .send({ Action: 'join', JoinTicket: ticket });
 
     // The `Action: 'join'` branch represents an additional listener
-    // joining (not currently used in production but the contract is
-    // documented in voice.js:22). Their leaving must NEVER end the
-    // conference for everyone else.
+    // joining. Their leaving must NEVER end the conference for everyone else.
     expect(res.text).toContain('<Conference');
     expect(res.text).toMatch(/endConferenceOnExit="false"/);
   });
