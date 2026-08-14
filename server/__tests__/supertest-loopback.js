@@ -40,7 +40,14 @@ async function listenLoopback(app) {
   return server;
 }
 
-/** Close every server handed out since the last call. Wire as `afterEach(closeLoopbackServers)`. */
+/**
+ * Close every server handed out since the last call.
+ *
+ * Wire as `afterEach(closeLoopbackServers)` when each test binds its own server. If a file binds
+ * ONE server in `beforeAll`, wire it as `afterAll` instead — an afterEach would close that server
+ * after the first test, and every later request() would find address() === null and fall back to
+ * supertest's own bare listen(0), silently restoring the hazard this helper exists to prevent.
+ */
 function closeLoopbackServers() {
   for (const server of servers.splice(0)) {
     server.closeAllConnections?.();
