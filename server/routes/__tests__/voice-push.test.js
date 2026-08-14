@@ -13,6 +13,7 @@ jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 jest.mock('../../lib/debug-log', () => ({ logEvent: jest.fn(), flush: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -21,6 +22,8 @@ const { logEvent } = require('../../lib/debug-log');
 const { __testSetUser, bearerOrApiKeyOrSession } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 const PROD_SID = 'CRprodcredentialsid000000000000000';
 const SANDBOX_SID = 'CRsandboxcredentialsid000000000000';
@@ -71,14 +74,14 @@ beforeEach(() => {
 
 describe('POST /api/voice-push/register — auth', () => {
   test('rejects unauthenticated requests (401)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .send({ pushToken: VALID_TOKEN, environment: 'production' })
       .expect(401);
   });
 
   test('rejects api_key callers with 403 (registration is per-user only)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('x-api-key', API_KEY)
       .send({ pushToken: VALID_TOKEN, environment: 'production' })
@@ -90,7 +93,7 @@ describe('POST /api/voice-push/register — auth', () => {
   test('accepts valid bearer JWT and upserts on user_id', async () => {
     const userId = mockBearerUser('tom', 'admin');
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'production' })
@@ -108,7 +111,7 @@ describe('POST /api/voice-push/register — body validation', () => {
   beforeEach(() => mockBearerUser('kate'));
 
   test('rejects missing pushToken (400)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ environment: 'production' })
@@ -118,7 +121,7 @@ describe('POST /api/voice-push/register — body validation', () => {
   });
 
   test('rejects non-hex pushToken (400)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: 'not-hex-' + 'a'.repeat(56), environment: 'production' })
@@ -126,7 +129,7 @@ describe('POST /api/voice-push/register — body validation', () => {
   });
 
   test('rejects too-short pushToken (< 32 chars)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: 'a'.repeat(31), environment: 'production' })
@@ -134,7 +137,7 @@ describe('POST /api/voice-push/register — body validation', () => {
   });
 
   test('rejects too-long pushToken (> 256 chars)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: 'a'.repeat(257), environment: 'production' })
@@ -142,7 +145,7 @@ describe('POST /api/voice-push/register — body validation', () => {
   });
 
   test('rejects unknown environment value (400)', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'staging' })
@@ -151,7 +154,7 @@ describe('POST /api/voice-push/register — body validation', () => {
 
   test('accepts mixed-case hex and lowercases before storing', async () => {
     const mixed = 'A1b2'.repeat(16); // 64 chars, mixed case
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: mixed, environment: 'production' })
@@ -166,7 +169,7 @@ describe('POST /api/voice-push/register — environment routing', () => {
   beforeEach(() => mockBearerUser('paul'));
 
   test('production uses TWILIO_VOICE_PUSH_CREDENTIAL_SID', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'production' })
@@ -177,7 +180,7 @@ describe('POST /api/voice-push/register — environment routing', () => {
 
   test('sandbox without _SANDBOX env returns 503 (deferred per plan)', async () => {
     // _SANDBOX is intentionally unset by beforeEach above
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'sandbox' })
@@ -190,7 +193,7 @@ describe('POST /api/voice-push/register — environment routing', () => {
   test('sandbox with _SANDBOX env uses sandbox credential SID', async () => {
     process.env.TWILIO_VOICE_PUSH_CREDENTIAL_SID_SANDBOX = SANDBOX_SID;
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'sandbox' })
@@ -205,7 +208,7 @@ describe('POST /api/voice-push/register — audit log', () => {
   test('emits debug_events state_change after upsert with credential SID + token suffix', async () => {
     mockBearerUser('lily');
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'production' })
@@ -230,7 +233,7 @@ describe('POST /api/voice-push/register — audit log', () => {
   test('does NOT emit on validation failure (logEvent only fires after successful upsert)', async () => {
     mockBearerUser('alex');
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: 'not-hex', environment: 'production' })
@@ -242,7 +245,7 @@ describe('POST /api/voice-push/register — audit log', () => {
   test('does NOT emit on sandbox 503 (no row was written)', async () => {
     mockBearerUser('britt');
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/voice-push/register')
       .set('Authorization', 'Bearer fake-jwt')
       .send({ pushToken: VALID_TOKEN, environment: 'sandbox' })

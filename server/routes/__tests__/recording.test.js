@@ -5,6 +5,9 @@ jest.mock('undici', () => ({ request: jest.fn() }));
 const { Readable } = require('stream');
 const { createHmac } = require('crypto');
 const supertest = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
+
+afterEach(closeLoopbackServers);
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { request: undiciRequest } = require('undici');
@@ -73,12 +76,12 @@ beforeEach(() => {
 
 describe('GET /api/recording/:callId/signed-url', () => {
   test('401 without bearer token', async () => {
-    await supertest(app).get('/api/recording/42/signed-url').expect(401);
+    await supertest(await listenLoopback(app)).get('/api/recording/42/signed-url').expect(401);
   });
 
   test('401 on invalid bearer JWT', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('bad jwt'); });
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get('/api/recording/42/signed-url')
       .set('Authorization', 'Bearer xxx')
       .expect(401);
@@ -91,7 +94,7 @@ describe('GET /api/recording/:callId/signed-url', () => {
       rowCount: 1,
     });
 
-    const res = await supertest(app)
+    const res = await supertest(await listenLoopback(app))
       .get('/api/recording/42/signed-url')
       .set('Authorization', 'Bearer ok')
       .expect(200);
@@ -111,7 +114,7 @@ describe('GET /api/recording/:callId/signed-url', () => {
       rowCount: 1,
     });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get('/api/recording/42/signed-url')
       .set('Authorization', 'Bearer ok')
       .expect(200);
@@ -126,7 +129,7 @@ describe('GET /api/recording/:callId/signed-url', () => {
     mockBearer('kate', 'caller');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get('/api/recording/999/signed-url')
       .set('Authorization', 'Bearer ok')
       .expect(404);
@@ -139,7 +142,7 @@ describe('GET /api/recording/:callId/signed-url', () => {
       rowCount: 1,
     });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get('/api/recording/42/signed-url')
       .set('Authorization', 'Bearer ok')
       .expect(404);
@@ -147,7 +150,7 @@ describe('GET /api/recording/:callId/signed-url', () => {
 
   test('400 on non-integer callId', async () => {
     mockBearer('tom', 'admin');
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get('/api/recording/abc/signed-url')
       .set('Authorization', 'Bearer ok')
       .expect(400);
@@ -160,7 +163,7 @@ describe('GET /api/recording/:callId/signed-url', () => {
       rowCount: 1,
     });
 
-    const res = await supertest(app)
+    const res = await supertest(await listenLoopback(app))
       .get('/api/recording/42/signed-url')
       .set('Authorization', 'Bearer ok')
       .expect(200);
@@ -189,19 +192,19 @@ describe('GET /api/recording/:callId/stream', () => {
   }
 
   test('401 missing signature params', async () => {
-    await supertest(app).get(`/api/recording/${callId}/stream`).expect(401);
+    await supertest(await listenLoopback(app)).get(`/api/recording/${callId}/stream`).expect(401);
   });
 
   test('410 on expired exp', async () => {
     const exp = Math.floor(Date.now() / 1000) - 10;
     const t = sign(callId, userId, exp);
-    await supertest(app).get(streamUrl({ t, exp, u: userId })).expect(410);
+    await supertest(await listenLoopback(app)).get(streamUrl({ t, exp, u: userId })).expect(410);
   });
 
   test('401 on bad signature', async () => {
     const exp = Math.floor(Date.now() / 1000) + 60;
     const badT = 'a'.repeat(64);
-    await supertest(app).get(streamUrl({ t: badT, exp, u: userId })).expect(401);
+    await supertest(await listenLoopback(app)).get(streamUrl({ t: badT, exp, u: userId })).expect(401);
   });
 
   test('401 on tampered userId (HMAC will not match)', async () => {
@@ -209,12 +212,12 @@ describe('GET /api/recording/:callId/stream', () => {
     const t = sign(callId, userId, exp);
     // Substitute a different userId in the URL — server recomputes HMAC
     // with the URL's u value; mismatch → 401.
-    await supertest(app).get(streamUrl({ t, exp, u: userId + 1 })).expect(401);
+    await supertest(await listenLoopback(app)).get(streamUrl({ t, exp, u: userId + 1 })).expect(401);
   });
 
   test('401 on malformed signature (non-hex)', async () => {
     const exp = Math.floor(Date.now() / 1000) + 60;
-    await supertest(app).get(streamUrl({ t: 'zzz', exp, u: userId })).expect(401);
+    await supertest(await listenLoopback(app)).get(streamUrl({ t: 'zzz', exp, u: userId })).expect(401);
   });
 
   test('happy path: 200 + audio/mpeg, appends .mp3 to Twilio URL', async () => {
@@ -230,7 +233,7 @@ describe('GET /api/recording/:callId/stream', () => {
       body: Buffer.from('fake'),
     });
 
-    const res = await supertest(app)
+    const res = await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(200);
 
@@ -261,7 +264,7 @@ describe('GET /api/recording/:callId/stream', () => {
       body: Buffer.alloc(1024, 'x'),
     });
 
-    const res = await supertest(app)
+    const res = await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .set('Range', 'bytes=0-1023')
       .expect(206);
@@ -285,7 +288,7 @@ describe('GET /api/recording/:callId/stream', () => {
         body: Buffer.alloc(0),
       });
 
-      await supertest(app)
+      await supertest(await listenLoopback(app))
         .get(streamUrl({ t, exp, u: userId }))
         .expect(502);
     } finally {
@@ -306,7 +309,7 @@ describe('GET /api/recording/:callId/stream', () => {
       body: Buffer.from('not found'),
     });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(502);
   });
@@ -320,7 +323,7 @@ describe('GET /api/recording/:callId/stream', () => {
     });
     undiciRequest.mockRejectedValueOnce(new Error('ECONNRESET'));
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(502);
   });
@@ -333,7 +336,7 @@ describe('GET /api/recording/:callId/stream', () => {
       rowCount: 1,
     });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(404);
   });
@@ -343,7 +346,7 @@ describe('GET /api/recording/:callId/stream', () => {
     const t = sign(callId, userId, exp);
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(404);
   });
@@ -369,7 +372,7 @@ describe('GET /api/recording/:callId/stream', () => {
 
       let caught = null;
       try {
-        await supertest(app).get(streamUrl({ t, exp, u: userId }));
+        await supertest(await listenLoopback(app)).get(streamUrl({ t, exp, u: userId }));
       } catch (err) {
         caught = err;
       }
@@ -397,7 +400,7 @@ describe('GET /api/recording/:callId/stream', () => {
       body: Buffer.from('ok'),
     });
 
-    const res = await supertest(app)
+    const res = await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(200);
 
@@ -415,7 +418,7 @@ describe('GET /api/recording/:callId/stream', () => {
         rows: [{ recording_url: TWILIO_RECORDING_URL }],
         rowCount: 1,
       });
-      await supertest(app)
+      await supertest(await listenLoopback(app))
         .get(streamUrl({ t, exp, u: userId }))
         .expect(500);
     } finally {
@@ -432,7 +435,7 @@ describe('GET /api/recording/:callId/stream', () => {
     });
     mockTwilioResponse({ statusCode: 200, headers: { 'content-type': 'audio/mpeg' }, body: Buffer.from('') });
 
-    await supertest(app)
+    await supertest(await listenLoopback(app))
       .get(streamUrl({ t, exp, u: userId }))
       .expect(200);
 

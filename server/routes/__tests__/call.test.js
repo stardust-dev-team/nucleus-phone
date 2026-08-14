@@ -26,19 +26,27 @@ jest.mock('../../lib/slack', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 const { client } = require('../../lib/twilio');
 
+
+// jsec-kh7h: afterALL, not afterEach — this file binds ONE server in beforeAll, and an
+// afterEach would close it after the first test, silently sending every later request()
+// back to supertest's own bare listen(0).
+afterAll(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let app;
-beforeAll(() => {
+let server; // jsec-kh7h: one loopback-bound listener per file
+beforeAll(async () => {
   process.env.NUCLEUS_PHONE_API_KEY = API_KEY;
   app = express();
   app.use(express.json());
   app.use('/api/call', require('../call'));
+  server = await listenLoopback(app);
 });
 
 afterAll(() => {
@@ -54,11 +62,11 @@ beforeEach(() => {
 
 describe('POST /api/call/initiate', () => {
   test('returns 401 without auth', async () => {
-    await request(app).post('/api/call/initiate').expect(401);
+    await request(server).post('/api/call/initiate').expect(401);
   });
 
   test('returns 400 when to is missing', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ callerIdentity: 'tom' })
@@ -68,7 +76,7 @@ describe('POST /api/call/initiate', () => {
   });
 
   test('returns 400 when callerIdentity is missing', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '+16025551234' })
@@ -78,7 +86,7 @@ describe('POST /api/call/initiate', () => {
   });
 
   test('returns 400 for non-E.164 phone number', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '6025551234', callerIdentity: 'tom' })
@@ -88,7 +96,7 @@ describe('POST /api/call/initiate', () => {
   });
 
   test('rejects short E.164 numbers', async () => {
-    await request(app)
+    await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '+123', callerIdentity: 'tom' })
@@ -98,7 +106,7 @@ describe('POST /api/call/initiate', () => {
   test('creates DB row, conference, and returns callId', async () => {
     pool.query.mockResolvedValueOnce({ rows: [{ id: 42 }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({
@@ -133,7 +141,7 @@ describe('POST /api/call/initiate', () => {
   test('returns 500 on DB error', async () => {
     pool.query.mockRejectedValueOnce(new Error('connection refused'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '+16025551234', callerIdentity: 'tom' })
@@ -147,13 +155,13 @@ describe('POST /api/call/initiate', () => {
 
 describe('POST /api/call/join', () => {
   test('returns 401 without auth', async () => {
-    await request(app).post('/api/call/join').expect(401);
+    await request(server).post('/api/call/join').expect(401);
   });
 
   test('returns 404 when conference not found', async () => {
     conference.getConference.mockReturnValue(null);
 
-    await request(app)
+    await request(server)
       .post('/api/call/join')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-missing', callerIdentity: 'tom' })
@@ -163,7 +171,7 @@ describe('POST /api/call/join', () => {
   test('returns conference info on success', async () => {
     conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/join')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom', muted: true })
@@ -175,7 +183,7 @@ describe('POST /api/call/join', () => {
   test('muted defaults to false', async () => {
     conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/join')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom' })
@@ -191,7 +199,7 @@ describe('POST /api/call/mute', () => {
   test('returns 404 when conference not found', async () => {
     conference.getConference.mockReturnValue(null);
 
-    await request(app)
+    await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: true })
@@ -201,7 +209,7 @@ describe('POST /api/call/mute', () => {
   test('returns 404 when conference has no SID yet', async () => {
     conference.getConference.mockReturnValue({ conferenceSid: null });
 
-    await request(app)
+    await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: true })
@@ -217,7 +225,7 @@ describe('POST /api/call/mute', () => {
       participants: jest.fn(() => ({ update: mockUpdate })),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: true })
@@ -235,7 +243,7 @@ describe('POST /api/call/mute', () => {
       })),
     });
 
-    await request(app)
+    await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: false })
@@ -247,13 +255,13 @@ describe('POST /api/call/mute', () => {
 
 describe('GET /api/call/active', () => {
   test('returns 401 without auth', async () => {
-    await request(app).get('/api/call/active').expect(401);
+    await request(server).get('/api/call/active').expect(401);
   });
 
   test('returns empty calls array when no active conferences', async () => {
     conference.listActiveConferences.mockReturnValue([]);
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -285,7 +293,7 @@ describe('GET /api/call/active', () => {
       },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -319,7 +327,7 @@ describe('GET /api/call/active', () => {
       },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -338,7 +346,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active?identity=tom')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -357,7 +365,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active?identity=tom')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -375,7 +383,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -392,7 +400,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -415,7 +423,7 @@ describe('POST /api/call/end', () => {
     // semantic 200 ("teardown succeeded by no-op").
     conference.getConference.mockReturnValue(null);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'already-gone' })
@@ -436,7 +444,7 @@ describe('POST /api/call/end', () => {
     // the conference naturally.
     conference.getConference.mockReturnValue({ conferenceSid: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'no-sid' })
@@ -456,7 +464,7 @@ describe('POST /api/call/end', () => {
     const mockUpdate = jest.fn().mockResolvedValue({});
     client.conferences.mockReturnValue({ update: mockUpdate });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-xyz' })
@@ -501,7 +509,7 @@ describe('POST /api/call/end', () => {
       update: jest.fn().mockRejectedValue(new Error('nope')),
     });
 
-    await request(app)
+    await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-xyz' })
@@ -521,7 +529,7 @@ describe('POST /api/call/status', () => {
   // No x-api-key — this route uses twilioWebhook (signature validation,
   // disabled outside production), not apiKeyAuth.
   const send = (body) =>
-    request(app).post('/api/call/status').send(body);
+    request(server).post('/api/call/status').send(body);
 
   beforeAll(() => {
     process.env.NUCLEUS_PHONE_NUMBER = '+18005550000';

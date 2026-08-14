@@ -15,8 +15,11 @@
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 
+
+afterEach(closeLoopbackServers);
 let app;
 beforeAll(() => {
   app = express();
@@ -27,7 +30,7 @@ beforeAll(() => {
 
 describe('POST /api/voice/inbound-conference-join', () => {
   test('returns <Dial answerOnBridge><Conference endConferenceOnExit> with the requested name', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/inbound-conference-join')
       .query({ conference: 'nucleus-inbound-ios-abc-123' })
       .expect(200);
@@ -51,7 +54,7 @@ describe('POST /api/voice/inbound-conference-join', () => {
     // here thinking it'll deliver customParameters to iOS, the iOS leg
     // would still NOT receive them (this TwiML runs post-accept). This
     // assertion makes the wrong path fail loudly.
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/inbound-conference-join')
       .query({ conference: 'nucleus-inbound-ios-pin' })
       .expect(200);
@@ -60,7 +63,7 @@ describe('POST /api/voice/inbound-conference-join', () => {
   });
 
   test('rejects invalid conference names (path-traversal / TwiML injection)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/inbound-conference-join')
       .query({ conference: '../etc/passwd' })
       .expect(400);
@@ -71,7 +74,7 @@ describe('POST /api/voice/inbound-conference-join', () => {
   });
 
   test('rejects empty conference name', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/inbound-conference-join')
       .query({ conference: '' })
       .expect(400);
@@ -80,7 +83,7 @@ describe('POST /api/voice/inbound-conference-join', () => {
   });
 
   test('GET is not supported — Twilio always POSTs webhook URLs', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/voice/inbound-conference-join')
       .query({ conference: 'nucleus-inbound-ios-get' })
       .expect(404);

@@ -32,10 +32,13 @@ jest.mock('../auth', () => ({
 
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { apiKeyAuth } = require('../../middleware/auth');
 const { rbac } = require('../../middleware/rbac');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let app;
@@ -53,7 +56,7 @@ function decode(token) {
 
 describe('GET /api/token (JWT integration)', () => {
   test('default mode → VoiceGrant has NO incoming key (PWA contract)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/token?identity=tom')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -67,7 +70,7 @@ describe('GET /api/token (JWT integration)', () => {
   });
 
   test('?mode=mobile → VoiceGrant has incoming.allow:true (iOS PushKit contract)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/token?identity=tom&mode=mobile')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -77,7 +80,7 @@ describe('GET /api/token (JWT integration)', () => {
   });
 
   test('?mode=desktop → VoiceGrant has NO incoming key (only "mobile" opts in)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/token?identity=tom&mode=desktop')
       .set('x-api-key', API_KEY)
       .expect(200);
