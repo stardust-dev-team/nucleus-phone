@@ -203,6 +203,33 @@ describe('hubspotFetch — retry policy (429 + 5xx)', () => {
     expect(global.fetch.mock.calls[0][1]).not.toHaveProperty('idempotent');
   });
 
+  test('SECURITY-OF-AVAILABILITY: a huge Retry-After is CAPPED — a remote header must not hang a handler', async () => {
+    // post-merge C3. RETRY_CAP_MS bounds only our own backoff; honoring the
+    // header unbounded let `Retry-After: 900` become three 15-minute sleeps,
+    // and index.js sets no request timeout. GET /api/contacts/lookup chains
+    // four hubspotFetch calls with a fresh budget each.
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((fn) => { fn(); return 0; });
+    mockFetchResponse('unavailable', { status: 503, headers: { 'retry-after': '900' } });
+    mockFetchResponse({ results: [], total: 0 });
+    await searchContacts('acme');
+    const [, ms] = setTimeoutSpy.mock.calls[0];
+    expect(ms).toBe(30000);          // capped, not 900_000
+  });
+
+  test('post-merge C4: an HTTP-date Retry-After does not collapse to a 1ms retry storm', async () => {
+    // parseInt('Wed, 21 Oct 2026 07:28:00 GMT') is NaN; Math.max(1, NaN) is NaN;
+    // Node coerces setTimeout(fn, NaN) to 1ms — four requests ~1ms apart at an
+    // endpoint that had just rate-limited us. Fall back to the documented 2s.
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((fn) => { fn(); return 0; });
+    mockFetchResponse('slow down', { status: 429, headers: { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' } });
+    mockFetchResponse({ results: [], total: 0 });
+    await searchContacts('acme');
+    const [, ms] = setTimeoutSpy.mock.calls[0];
+    expect(ms).toBe(2000);
+    expect(Number.isFinite(ms)).toBe(true);
+  });
+
   test('a 5xx Retry-After is honoured when it exceeds our own backoff', async () => {
     // Our backoff peaks at 2s. If HubSpot says 30s during a real outage,
     // hammering burns the whole budget in under two seconds.

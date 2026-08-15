@@ -99,11 +99,18 @@ function listActiveConferences() {
 // A conference older than 2 hours with no participants is abandoned.
 const STALE_NO_SID_MS = 5 * 60 * 1000;
 const STALE_MAX_MS = 2 * 60 * 60 * 1000;
-const sweepInterval = setInterval(() => {
-  const now = Date.now();
+function sweepStale(now = Date.now()) {
   for (const [name, conf] of activeConferences) {
     const age = now - conf.startedAt.getTime();
-    const noSid = !conf.conferenceSid && age > STALE_NO_SID_MS;
+    // jsec-z4ff post-merge (C1): a practice call is a Vapi WebRTC / outbound
+    // call, NOT a Twilio conference — conferenceSid is written only by the
+    // Twilio conference webhooks in routes/call.js, so a sim NEVER gets one.
+    // The no-SID arm therefore reaped every browser/phone practice call ~5min
+    // in, and once removal started notifying live-analysis, that closed the
+    // cockpit socket with code 1000, which the client reads as intentional and
+    // does not reconnect from. Transcript, equipment and Navigator went quiet
+    // mid-call with no error shown. Sims keep the 2h backstop below.
+    const noSid = !conf.conferenceSid && conf.type !== 'sim' && age > STALE_NO_SID_MS;
     const tooOld = age > STALE_MAX_MS;
     if (noSid || tooOld) {
       console.warn(`Removing stale conference: ${name} (age=${Math.round(age / 1000)}s, sid=${!!conf.conferenceSid})`);
@@ -111,11 +118,15 @@ const sweepInterval = setInterval(() => {
       notifyRemoved(name);
     }
   }
-}, 2 * 60 * 1000);
+}
+
+const sweepInterval = setInterval(() => sweepStale(), 2 * 60 * 1000);
 sweepInterval.unref();
 
 module.exports = {
   onConferenceRemoved,
+  /** Test seam: run the sweep body at an injected clock. */
+  _sweepStaleForTest: sweepStale,
   createConference,
   getConference,
   updateConference,

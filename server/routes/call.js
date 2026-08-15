@@ -359,7 +359,10 @@ router.get('/active', ...callerGuard, async (req, res) => {
   // Admins are unaffected (scopeIdentity is null for them), and the
   // live-analysis authorization that motivated the ownership change reads
   // conf.startedBy directly rather than going through this route.
-  const conferences = listActiveConferences().filter(
+  // Practice calls are emitted below as type:'sim' from sim_call_scores; they
+  // must never ALSO appear here as type:'live'. They did (post-merge C2), and
+  // iOS reads type:'live' as "you are already on a call".
+  const conferences = listActiveConferences().filter((c) => c.type !== 'sim').filter(
     (c) => !scopeIdentity
       || ((c.startedBy || '').toLowerCase() === scopeIdentity && c.direction !== 'inbound'),
   );
