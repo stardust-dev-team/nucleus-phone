@@ -1,0 +1,17 @@
+-- 008_calls_is_internal.sql
+-- nucleus-phone-a3vs: nucleus_phone_calls.is_internal
+--
+-- Schema lives canonically in server/db.js initSchema() (self-applies on
+-- deploy). This file is intentionally a pointer — keeping the column
+-- definition in two places creates drift risk. See db.js for the actual
+-- ALTER (in the "Columns added after initial nucleus_phone_calls schema"
+-- block).
+--
+-- is_internal flags personal / demo / test calls (e.g. a live app demo that
+-- happens to dial a real number) so they are EXCLUDED from sales metrics,
+-- the call-history dedup paths, the customer_interactions sync, and rep-
+-- facing call lists. Read sites filter with the null-safe predicate
+-- `is_internal IS NOT TRUE` (NOT `= FALSE`): scoreboard.js, history.js,
+-- cockpit.js, signal-contacts.js, contacts.js, ask-nucleus.js.
+--
+--   ALTER TABLE nucleus_phone_calls ADD COLUMN IF NOT EXISTS is_internal BOOLEAN DEFAULT FALSE;

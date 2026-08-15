@@ -149,6 +149,35 @@ async function persistScores(rowId, result) {
   );
 }
 
+/**
+ * jsec-z4ff: register a practice call in the conference store.
+ *
+ * The live-analysis socket keys subscriptions by conference name and now
+ * authorizes them against lib/conference — so a practice call that was never
+ * registered is refused, including to the rep who started it. Only
+ * `simCallIos` did this; the browser and phone arms below did not, so every
+ * PWA practice cockpit would have gone dark (no transcript, no equipment
+ * detections, no Conversation Navigator) the moment the authz landed.
+ *
+ * The fix is registration, NOT weakening the check: the two sim paths simply
+ * disagreed about whether a practice call is a conference, and `simCallIos`
+ * had the right answer. `sim-${id}` matches what Cockpit.jsx subscribes to and
+ * what this file broadcasts on.
+ */
+function registerSimConference(simCallId, identity, difficulty) {
+  const conferenceName = `sim-${simCallId}`;
+  createConference(conferenceName, {
+    callerIdentity: identity,
+    to: null,
+    contactName: 'Mike Garza',
+    companyName: `Practice — ${difficulty}`,
+    contactId: null,
+    dbRowId: simCallId,
+  });
+  updateConference(conferenceName, { type: 'sim', difficulty });
+  return conferenceName;
+}
+
 // ─── POST /call — Initiate practice call ───────────────────────────
 // mode: 'phone' (default) calls the user's phone, 'browser' uses WebRTC.
 router.post('/call', sessionAuth, async (req, res) => {
@@ -187,11 +216,13 @@ router.post('/call', sessionAuth, async (req, res) => {
     return res.status(409).json({ error: "You're on a live call — finish it before starting practice" });
   }
 
-  // Guard: duplicate practice call
+  // Guard: duplicate practice call. 3-min window (n8z): a stuck row only blocks
+  // a retry for 3 min, not 10 — combined with stale-sweep this caps rep lockout
+  // at ~3 min instead of ~15 (incident 2026-04-14).
   const { rows: activeSim } = await pool.query(
     `SELECT id FROM sim_call_scores
      WHERE caller_identity = $1 AND status = 'in-progress'
-       AND created_at > NOW() - INTERVAL '10 minutes'
+       AND created_at > NOW() - INTERVAL '3 minutes'
      LIMIT 1`,
     [identity]
   );
@@ -221,6 +252,7 @@ router.post('/call', sessionAuth, async (req, res) => {
          RETURNING id`,
         [identity, difficulty, promptVersion]
       );
+      registerSimConference(row.id, identity, difficulty);
       res.json({ simCallId: row.id, assistantId, publicKey, firstMessage: pickGreeting(difficulty) });
     } catch (err) {
       console.error('sim: INSERT failed:', err.message);
@@ -261,6 +293,7 @@ router.post('/call', sessionAuth, async (req, res) => {
        RETURNING id`,
       [call.id, identity, difficulty, promptVersion, listenUrl, controlUrl]
     );
+    registerSimConference(row.id, identity, difficulty);
     res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
     console.error('sim: INSERT failed after Vapi call initiated, stopping orphan:', err.message);
@@ -416,8 +449,23 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
 
   const row = rows[0];
 
+  // stopCallAndLog returns 'stopped' | 'already-ended' | 'failed'. A 'failed'
+  // means the Vapi call is (probably) still live and burning minutes while the
+  // user already saw "cancelled" — surface it. Escalate to the system-alert
+  // channel (mirrors the orphan-stop path at the INSERT site) and echo the
+  // outcome in the HTTP response so the client can warn the operator. (nja)
+  let stopOutcome = null;
   if (row.vapi_call_id) {
-    await stopCallAndLog(row.vapi_call_id);
+    stopOutcome = await stopCallAndLog(row.vapi_call_id);
+    if (stopOutcome === 'failed') {
+      sendSystemAlert(
+        `🔴 Practice Call Cancel — Vapi stop FAILED`,
+        [{
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*Cancel requested but the Vapi stop call failed — the practice call may still be live and burning minutes.*\n*Vapi Call ID:* \`${row.vapi_call_id}\`\n*Caller:* ${row.caller_identity}\n*Sim Call ID:* ${row.id}\n*Action:* End this call manually in the Vapi dashboard.` },
+        }]
+      ).catch(() => {});
+    }
   }
 
   // Fetch transcript from Vapi API — the call just ended so transcript
@@ -441,7 +489,7 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
   if (!transcript) {
     // No transcript available — mark as cancelled (call was too short)
     await pool.query("UPDATE sim_call_scores SET status = 'cancelled' WHERE id = $1", [row.id]);
-    res.json({ cancelled: true });
+    res.json({ cancelled: true, stopOutcome });
     return;
   }
 
@@ -450,7 +498,7 @@ router.post('/call/:id/cancel', sessionAuth, async (req, res) => {
     `UPDATE sim_call_scores SET transcript = $2, recording_url = $3, status = 'scoring' WHERE id = $1`,
     [row.id, transcript, recording]
   );
-  res.json({ cancelled: false, scoring: true });
+  res.json({ cancelled: false, scoring: true, stopOutcome });
 
   // Capture navigator events then clean up conversation state
   const navEvents = getCallEventLog(`sim-${row.id}`);
@@ -832,7 +880,7 @@ async function simCallIos(req, res) {
     ({ rows: activeSim } = await pool.query(
       `SELECT id FROM sim_call_scores
        WHERE caller_identity = $1 AND status = 'in-progress'
-         AND created_at > NOW() - INTERVAL '10 minutes'
+         AND created_at > NOW() - INTERVAL '3 minutes'
        LIMIT 1`,
       [identity]
     ));

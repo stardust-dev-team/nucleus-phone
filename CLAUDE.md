@@ -6,6 +6,16 @@ Outbound sales dialer PWA for Joruva's 6-person calling team. Twilio Conference-
 **Phone:** (602) 600-0188
 **DB:** Shared Postgres with V3.5 and UCIL (same `DATABASE_URL`)
 
+<!-- Hub imports; fence hand-curated per stardust.config.yaml — read its NOTE before editing. -->
+<!-- AUTO-GEN:IMPORTS -->
+@~/stardust/knowledge/runbooks/nucleus-phone.md
+@~/stardust/knowledge/runbooks/knowledge-management.md
+@~/stardust/knowledge/operational-policies.md
+@~/stardust/knowledge/writing-style.md
+@~/stardust/knowledge/runbooks/twilio-voice.md
+@~/stardust/knowledge/runbooks/fireflies-api.md
+<!-- AUTO-GEN:IMPORTS-END -->
+
 ## Stack
 
 - **Backend:** Node.js (CJS `.js`), Express 4
@@ -54,8 +64,8 @@ Outbound sales dialer PWA for Joruva's 6-person calling team. Twilio Conference-
 | `apollo.js` | Apollo People Match (credit-gated, 10/day) | Apollo API |
 | `dropcontact.js` | Dropcontact reverse search (credit-gated, 10/day) | Dropcontact API |
 | `twilio.js` | Twilio client singleton | Twilio SDK |
-| `format.js` | Duration formatting | None |
-| `test-cockpit-data.js` | Mock cockpit data for dev/demo | None |
+
+(Also: `format.js` duration formatting, `test-cockpit-data.js` mock cockpit data.)
 
 ### Routes
 
@@ -79,44 +89,16 @@ Outbound sales dialer PWA for Joruva's 6-person calling team. Twilio Conference-
 
 ### Credit-Gating Pattern
 
-Apollo and Dropcontact calls are budget-gated via atomic `INSERT ... ON CONFLICT ... RETURNING` on `ucil_sync_state`. Daily limit: 10 credits each. The `checkCreditBudget()` function in `identity-resolver.js` handles day-reset and increment atomically.
+Apollo/Dropcontact calls are budget-gated (10/day each) via atomic `INSERT ... ON CONFLICT ... RETURNING` on `ucil_sync_state` — `checkCreditBudget()` in `identity-resolver.js` handles day-reset + increment atomically.
 
 ## Environment Variables
 
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `DATABASE_URL` | Yes | Shared Postgres |
-| `HUBSPOT_ACCESS_TOKEN` | Yes | HubSpot private app token |
-| `TWILIO_ACCOUNT_SID` | Yes | |
-| `TWILIO_AUTH_TOKEN` | Yes | |
-| `TWILIO_PHONE_NUMBER` | Yes | (602) 600-0188 |
-| `NUCLEUS_PHONE_API_KEY` | Yes | For API key auth |
-| `JWT_SECRET` | Yes | Session token signing |
-| `AZURE_CLIENT_ID` | Yes | Entra SSO |
-| `AZURE_CLIENT_SECRET` | Yes | Entra SSO |
-| `AZURE_TENANT_ID` | Yes | Entra SSO |
-| `FIREFLIES_API_KEY` | Yes | Transcription |
-| `ANTHROPIC_API_KEY` | Yes | Claude rapport intel + Fireflies analysis |
-| `SLACK_SALES_WEBHOOK_URL` | Optional | Call/milestone alerts |
-| `APOLLO_API_KEY` | Optional | Identity Step 3 (skipped if missing) |
-| `DROPCONTACT_API_KEY` | Optional | Identity Step 4 (skipped if missing) |
+Required: `DATABASE_URL`, `HUBSPOT_ACCESS_TOKEN`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` ((602) 600-0188), `NUCLEUS_PHONE_API_KEY`, `JWT_SECRET`, `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`/`AZURE_TENANT_ID` (Entra SSO), `FIREFLIES_API_KEY`, `ANTHROPIC_API_KEY`.
+Optional: `SLACK_SALES_WEBHOOK_URL` (alerts), `APOLLO_API_KEY` + `DROPCONTACT_API_KEY` (identity steps 3/4 — skipped if missing), `MULTICHANNEL_API_URL` + `MC_API_KEY` (signals proxy).
 
 ## Development
 
-```bash
-# Install
-npm install && cd client && npm install && cd ..
-
-# Dev (server only, client pre-built)
-npm run dev
-
-# Build client
-cd client && npm run build
-
-# Test
-npm test
-npm run test:watch
-```
+`npm install && cd client && npm install` · `npm run dev` (server only, client pre-built) · `cd client && npm run build` · `npm test` / `npm run test:watch`
 
 ## Testing
 
@@ -148,15 +130,4 @@ Jest + supertest. Config: `jest.config.js`. Tests in `server/lib/__tests__/` and
 
 ## Follow-ups — HARD RULE
 
-**Never offer `/schedule` (or `/loop`, `CronCreate`, `ScheduleWakeup`) for one-off
-end-of-session follow-up checks** — the global `~/.claude/CLAUDE.md` rule, which
-overrides the harness's baked-in `/schedule` suggestion. Pattern was tried four
-times on `joruva-dialer-mac` and never worked.
-
-**Approved method:** append entries to `FOLLOWUPS.md` at the repo root. Format
-documented at the top of that file. Read it at the start of any session that
-might be affected by a pending follow-up; append at end-of-session when a
-verification is needed later but you're not landing it now.
-
-`/schedule` remains acceptable for proactive recurring routines Tom has already
-endorsed (e.g. weekly triage). Don't pitch it for "verify this in N days" checks.
+Never offer `/schedule` (or `/loop`, `CronCreate`, `ScheduleWakeup`) for one-off end-of-session checks — the global `~/.claude/CLAUDE.md` rule. Approved method: append to `FOLLOWUPS.md` at the repo root (format at its top); read it at session start, append at end-of-session when a later verification is needed. `/schedule` stays acceptable only for recurring routines Tom already endorsed.

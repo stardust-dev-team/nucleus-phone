@@ -1,8 +1,11 @@
 jest.mock('../../db', () => require('../../__tests__/helpers/mock-pool')());
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let app;
@@ -24,7 +27,7 @@ beforeEach(() => {
 
 describe('POST /api/in-call/cue-response (bd-9tk Phase F MVP)', () => {
   test('logs accept action + returns { ok: true, recordedAt }', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/in-call/cue-response')
       .set('x-api-key', API_KEY)
       .send({ callId: 'nucleus-call-x', suggestionKey: 'rapport.tone.warm', action: 'accept' })
@@ -35,7 +38,7 @@ describe('POST /api/in-call/cue-response (bd-9tk Phase F MVP)', () => {
   });
 
   test.each(['accept', 'refine', 'dismiss'])('accepts action=%s', async (action) => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/in-call/cue-response')
       .set('x-api-key', API_KEY)
       .send({ callId: 'c', suggestionKey: 'k', action })
@@ -43,7 +46,7 @@ describe('POST /api/in-call/cue-response (bd-9tk Phase F MVP)', () => {
   });
 
   test('rejects missing required fields', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/in-call/cue-response')
       .set('x-api-key', API_KEY)
       .send({})
@@ -51,7 +54,7 @@ describe('POST /api/in-call/cue-response (bd-9tk Phase F MVP)', () => {
   });
 
   test('rejects unknown action', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/in-call/cue-response')
       .set('x-api-key', API_KEY)
       .send({ callId: 'c', suggestionKey: 'k', action: 'shrug' })
@@ -60,7 +63,7 @@ describe('POST /api/in-call/cue-response (bd-9tk Phase F MVP)', () => {
 
   test('fires regardless of ENABLE_QUICK_ACTIONS — analytics always on', async () => {
     process.env.ENABLE_QUICK_ACTIONS = 'false';
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/in-call/cue-response')
       .set('x-api-key', API_KEY)
       .send({ callId: 'c', suggestionKey: 'k', action: 'accept' })
@@ -73,7 +76,7 @@ describe('Quick action stubs (gated by ENABLE_QUICK_ACTIONS)', () => {
 
   test.each(verbs)('/%s returns feature_disabled when flag is off', async (verb) => {
     process.env.ENABLE_QUICK_ACTIONS = 'false';
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post(`/api/in-call/${verb}`)
       .set('x-api-key', API_KEY)
       .send({})
@@ -83,7 +86,7 @@ describe('Quick action stubs (gated by ENABLE_QUICK_ACTIONS)', () => {
 
   test.each(verbs)('/%s returns not_implemented when flag is on', async (verb) => {
     process.env.ENABLE_QUICK_ACTIONS = 'true';
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post(`/api/in-call/${verb}`)
       .set('x-api-key', API_KEY)
       .send({})

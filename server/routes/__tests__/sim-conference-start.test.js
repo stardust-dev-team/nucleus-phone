@@ -54,6 +54,7 @@ jest.mock('../../lib/conversation-pipeline', () => ({ cleanupConversation: jest.
 jest.mock('../../lib/equipment-pipeline', () => ({ cleanupPipelineState: jest.fn() }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const { client } = require('../../lib/twilio');
@@ -63,14 +64,21 @@ const { sendSystemAlert } = require('../../lib/slack');
 const conference = require('../../lib/conference');
 const callRouter = require('../call');
 
+
+// jsec-kh7h: afterALL, not afterEach — this file binds ONE server in beforeAll, and an
+// afterEach would close it after the first test, silently sending every later request()
+// back to supertest's own bare listen(0).
+afterAll(closeLoopbackServers);
 let app;
-beforeAll(() => {
+let server; // jsec-kh7h: one loopback-bound listener per file
+beforeAll(async () => {
   app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use('/api/call', callRouter);
   process.env.NUCLEUS_SIM_CONFERENCE_NUMBER = '+18885550000';
   process.env.NODE_ENV = 'test'; // disables twilioWebhook signature validation
+  server = await listenLoopback(app);
 });
 
 afterAll(() => {
@@ -103,7 +111,7 @@ beforeEach(() => {
 });
 
 const send = (body) =>
-  request(app)
+  request(server)
     .post('/api/call/status')
     .type('form')
     .send({ StatusCallbackEvent: 'conference-start', ConferenceSid: 'CF100', ...body });
@@ -289,7 +297,7 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
     });
     conference.getConference.mockReturnValue({ type: 'sim', personaId: 'mike-garza', difficulty: 'easy', assistantId: 'assistant-from-memory' });
 
-    await request(app)
+    await request(server)
       .post('/api/call/status')
       .type('form')
       .send({
@@ -317,7 +325,7 @@ describe('POST /api/call/status — sim branch (B2b)', () => {
 
   test('non-trigger conference events on sim FriendlyName do NOT trigger the bridge', async () => {
     for (const event of ['participant-leave', 'conference-end', 'announcement-end']) {
-      await request(app)
+      await request(server)
         .post('/api/call/status')
         .type('form')
         .send({

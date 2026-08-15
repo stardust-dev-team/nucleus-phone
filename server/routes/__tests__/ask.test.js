@@ -15,6 +15,7 @@ jest.mock('../../lib/slack', () => ({
 const originalFetch = global.fetch;
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -23,6 +24,8 @@ const { client: twilioClient } = require('../../lib/twilio');
 const { sendSlackDM } = require('../../lib/slack');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 function makeApp() {
   const app = express();
   app.use(express.json());
@@ -74,7 +77,7 @@ beforeEach(() => {
 describe('Auth', () => {
   test('POST /api/ask returns 401 without session', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask')
       .send({ message: 'hello' })
       .expect(401);
@@ -82,7 +85,7 @@ describe('Auth', () => {
 
   test('POST /api/ask returns 401 with API key (session only)', async () => {
     jwt.verify.mockImplementation(() => { throw new Error('invalid'); });
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask')
       .set('x-api-key', 'some-key')
       .send({ message: 'hello' })
@@ -95,7 +98,7 @@ describe('Auth', () => {
 describe('POST /api/ask validation', () => {
   test('returns 400 without message', async () => {
     mockSession('ryann');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -105,7 +108,7 @@ describe('POST /api/ask validation', () => {
 
   test('returns 400 for empty message', async () => {
     mockSession('ryann');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -115,7 +118,7 @@ describe('POST /api/ask validation', () => {
 
   test('returns 400 for message over 4000 chars', async () => {
     mockSession('ryann');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -134,7 +137,7 @@ describe('GET /api/ask/conversations', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/ask/conversations')
       .set('Cookie', 'nucleus_session=fake')
       .expect(200);
@@ -148,7 +151,7 @@ describe('GET /api/ask/conversations', () => {
     mockSession('tom', 'admin');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/ask/conversations')
       .set('Cookie', 'nucleus_session=fake')
       .expect(200);
@@ -164,7 +167,7 @@ describe('GET /api/ask/conversations/:id', () => {
     mockSession('ryann');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/ask/conversations/999')
       .set('Cookie', 'nucleus_session=fake')
       .expect(404);
@@ -174,7 +177,7 @@ describe('GET /api/ask/conversations/:id', () => {
     mockSession('kate');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/ask/conversations/1')
       .set('Cookie', 'nucleus_session=fake')
       .expect(404);
@@ -190,7 +193,7 @@ describe('GET /api/ask/conversations/:id', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/ask/conversations/1')
       .set('Cookie', 'nucleus_session=fake')
       .expect(200);
@@ -204,7 +207,7 @@ describe('DELETE /api/ask/conversations/:id', () => {
     mockSession('ryann');
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .delete('/api/ask/conversations/1')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -219,7 +222,7 @@ describe('DELETE /api/ask/conversations/:id', () => {
     mockSession('kate');
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .delete('/api/ask/conversations/1')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -230,7 +233,7 @@ describe('DELETE /api/ask/conversations/:id', () => {
     mockSession('tom', 'admin');
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .delete('/api/ask/conversations/1')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -246,7 +249,7 @@ describe('DELETE /api/ask/conversations/:id', () => {
 describe('POST /api/ask/escalate', () => {
   test('returns 400 without question', async () => {
     mockSession('ryann');
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask/escalate')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -257,7 +260,7 @@ describe('POST /api/ask/escalate', () => {
   test('sends SMS + Slack DM', async () => {
     mockSession('ryann');
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/ask/escalate')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -281,7 +284,7 @@ describe('POST /api/ask/escalate', () => {
     mockSession('alex');
 
     // First call succeeds
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask/escalate')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -289,7 +292,7 @@ describe('POST /api/ask/escalate', () => {
       .expect(200);
 
     // Second call within 5 min is rate-limited
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/ask/escalate')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -304,7 +307,7 @@ describe('POST /api/ask/escalate', () => {
     mockSession('britt');
     pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/ask/escalate')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')
@@ -321,7 +324,7 @@ describe('POST /api/ask/escalate', () => {
     mockSession('lily');
     twilioClient.messages.create.mockRejectedValueOnce(new Error('twilio down'));
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/ask/escalate')
       .set('Cookie', 'nucleus_session=fake')
       .set('X-Requested-With', 'fetch')

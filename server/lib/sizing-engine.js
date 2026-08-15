@@ -300,7 +300,11 @@ function addQualityFilters(recommendation, airQualityClass) {
  * Must be called AFTER addQualityFilters() so dryer type swap and OWS are included.
  *
  * salesChannel = 'direct' if ANY component is direct.
- * pricingStatus = 'quote_required' if ANY component is quote_required.
+ * pricingStatus = 'quote_required' if ANY component is quote_required,
+ *   else 'pending' if ANY component is pending (MSRP not yet set — e.g. JRS-20E),
+ *   else 'confirmed'. The 'pending' tier (lxdn) keeps the system aggregate from
+ *   over-claiming 'confirmed' when a component has no price. Consumers that test
+ *   `=== 'confirmed'` (hub-catalog-store.js) degrade 'pending' to the quote path.
  */
 function deriveSalesChannel(recommendation) {
   if (!recommendation) return;
@@ -320,7 +324,10 @@ function deriveSalesChannel(recommendation) {
   }
 
   recommendation.pricingStatus = components.some(c => c.pricingStatus === 'quote_required')
-    ? 'quote_required' : 'confirmed';
+    ? 'quote_required'
+    : components.some(c => c.pricingStatus === 'pending')
+    ? 'pending'
+    : 'confirmed';
 }
 
 module.exports = {

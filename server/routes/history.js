@@ -22,7 +22,7 @@ const LIST_COLUMNS = `npc.id, npc.created_at, npc.conference_name, npc.caller_id
   npc.direction, npc.status, npc.duration_seconds, npc.disposition, npc.qualification,
   npc.products_discussed, npc.notes, npc.recording_url, npc.recording_duration,
   npc.fireflies_uploaded, npc.lead_email, npc.follow_up_email_sent,
-  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items`;
+  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.is_internal`;
 
 // DETAIL_COLUMNS — used by GET /:id (detail view). Explicit list (no npc.*)
 // so new secret columns don't silently leak to the client.
@@ -31,7 +31,7 @@ const DETAIL_COLUMNS = `npc.id, npc.created_at, npc.conference_name, npc.caller_
   npc.direction, npc.status, npc.duration_seconds, npc.disposition, npc.qualification,
   npc.products_discussed, npc.notes, npc.recording_url, npc.recording_duration,
   npc.fireflies_uploaded, npc.lead_email, npc.follow_up_email_sent,
-  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.transcript`;
+  npc.follow_up_email_error, npc.ai_summary, npc.ai_action_items, npc.transcript, npc.is_internal`;
 
 // CALL_COLUMNS — used by POST /:id/disposition UPDATE RETURNING (no JOIN).
 const CALL_COLUMNS = `id, created_at, conference_name, caller_identity, lead_phone,
@@ -91,6 +91,13 @@ router.get('/', bearerOrSession, rbac('external_caller'), async (req, res) => {
   const where = [`npc.status = 'completed'`];
   const params = [];
   let idx = 1;
+
+  // Exclude internal/personal/demo calls (a3vs) unless an admin explicitly opts in.
+  // Null-safe: matches the BOOLEAN DEFAULT FALSE column and any transient NULL.
+  const includeInternal = req.query.includeInternal === 'true' && req.user.role === 'admin';
+  if (!includeInternal) {
+    where.push(`npc.is_internal IS NOT TRUE`);
+  }
 
   if (callerFilter) {
     where.push(`npc.caller_identity = $${idx++}`);
@@ -435,6 +442,37 @@ router.post('/:id/disposition', bearerOrApiKeyOrSession, rbac('external_caller')
   } catch (err) {
     console.error('Disposition save failed:', err.message);
     res.status(500).json({ error: 'Failed to save disposition' });
+  }
+});
+
+// PATCH /:id — admin-only flag flip for is_internal (gkjz). Sets ONLY
+// is_internal with NO syncInteraction / Slack / HubSpot fan-out, so marking a
+// personal/demo/test call internal never propagates it to customer_interactions
+// (the very thing the disposition route does unconditionally). Replaces the
+// psql touch that dewe needed for one-off cleanup. bearerOrSession (web + iOS),
+// admin only — internal-flagging is an ops decision, not a rep action.
+router.patch('/:id', bearerOrSession, rbac('admin'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'id must be an integer' });
+  }
+  if (typeof req.body.is_internal !== 'boolean') {
+    return res.status(400).json({ error: 'is_internal (boolean) required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE nucleus_phone_calls SET is_internal = $1 WHERE id = $2
+       RETURNING id, is_internal`,
+      [req.body.is_internal, id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Call not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('is_internal update failed:', err.message);
+    res.status(500).json({ error: 'Failed to update is_internal' });
   }
 });
 

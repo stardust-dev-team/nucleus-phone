@@ -27,8 +27,11 @@ jest.mock('../../lib/twilio', () => {
 });
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 
+
+afterEach(closeLoopbackServers);
 let app;
 beforeAll(() => {
   process.env.APP_URL = 'https://nucleus-phone-test.example.com';
@@ -44,7 +47,7 @@ afterAll(() => {
 
 describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   test('GET with valid conf returns conference TwiML with the right attributes', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/voice/sim-bridge-twiml')
       .query({ conf: 'sim-42' });
 
@@ -60,7 +63,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   });
 
   test('POST with valid conf also works (Twilio fetches via POST by default)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/voice/sim-bridge-twiml')
       .query({ conf: 'sim-99' });
 
@@ -69,7 +72,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   });
 
   test('default statusCallback uses APP_URL when sc is omitted', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/voice/sim-bridge-twiml')
       .query({ conf: 'dryrun-x' });
 
@@ -78,7 +81,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   });
 
   test('sc query overrides statusCallback when https://', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/voice/sim-bridge-twiml')
       .query({ conf: 'sim-7', sc: 'https://webhook.site/abc-def' });
 
@@ -87,7 +90,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   });
 
   test('sc that is not https:// is rejected and falls back to default', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/voice/sim-bridge-twiml')
       .query({ conf: 'sim-7', sc: 'http://attacker.example/intercept' });
 
@@ -97,7 +100,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   });
 
   test('injection attempt in conf name → 400, no <Conference> emitted', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/voice/sim-bridge-twiml')
       .query({ conf: 'evil"/><Say>haxx</Say>' });
 
@@ -109,7 +112,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   });
 
   test('missing conf → 400', async () => {
-    const res = await request(app).get('/api/voice/sim-bridge-twiml');
+    const res = await request(await listenLoopback(app)).get('/api/voice/sim-bridge-twiml');
     expect(res.statusCode).toBe(400);
     expect(res.text).not.toContain('<Conference');
   });
@@ -117,7 +120,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
   test('conf with whitespace or special chars → 400', async () => {
     const cases = ['sim 42', 'sim.42', 'sim@42', 'sim/42'];
     for (const conf of cases) {
-      const res = await request(app)
+      const res = await request(await listenLoopback(app))
         .get('/api/voice/sim-bridge-twiml')
         .query({ conf });
       expect(res.statusCode).toBe(400);
@@ -126,7 +129,7 @@ describe('GET/POST /api/voice/sim-bridge-twiml', () => {
 
   test('allowed chars: alphanumeric, underscore, dash', async () => {
     const conf = 'dryrun_abc-DEF-123';
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/voice/sim-bridge-twiml')
       .query({ conf });
     expect(res.statusCode).toBe(200);

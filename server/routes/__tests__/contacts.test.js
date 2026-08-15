@@ -7,6 +7,7 @@ jest.mock('../../lib/hubspot', () => ({
 jest.mock('jsonwebtoken');
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -14,6 +15,8 @@ const { pool } = require('../../db');
 const hubspot = require('../../lib/hubspot');
 const { __testSetUser } = require('../../middleware/auth');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let nextUserId = 3000;
@@ -56,7 +59,7 @@ beforeEach(() => {
 
 describe('GET /api/contacts', () => {
   test('returns 401 without auth', async () => {
-    await request(app).get('/api/contacts').expect(401);
+    await request(await listenLoopback(app)).get('/api/contacts').expect(401);
   });
 
   test('returns contacts from HubSpot with no call history', async () => {
@@ -67,7 +70,7 @@ describe('GET /api/contacts', () => {
       paging: null,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -80,7 +83,7 @@ describe('GET /api/contacts', () => {
   test('passes query, limit, and after to HubSpot', async () => {
     hubspot.searchContacts.mockResolvedValue({ results: [], paging: null });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts?q=acme&limit=10&after=abc123')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -112,7 +115,7 @@ describe('GET /api/contacts', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts?q=test')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -125,6 +128,12 @@ describe('GET /api/contacts', () => {
     });
     expect(res.body.contacts[1].callHistory).toBeNull();
     expect(res.body.paging).toEqual({ next: { after: 'cursor2' } });
+
+    // The call-history aggregate must only count completed, non-internal calls
+    // so in-progress/failed/personal rows don't inflate call_count (w8fj + a3vs).
+    const aggSql = pool.query.mock.calls[pool.query.mock.calls.length - 1][0];
+    expect(aggSql).toMatch(/status = 'completed'/);
+    expect(aggSql).toMatch(/is_internal IS NOT TRUE/);
   });
 
   test('api key auth: call history does NOT expose lastSummary', async () => {
@@ -149,7 +158,7 @@ describe('GET /api/contacts', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts?q=test')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -188,7 +197,7 @@ describe('GET /api/contacts', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts?q=test')
       .set('Cookie', 'nucleus_session=fake-token')
       .expect(200);
@@ -201,7 +210,7 @@ describe('GET /api/contacts', () => {
   test('passes default limit of 50 when no limit param provided', async () => {
     hubspot.searchContacts.mockResolvedValue({ results: [], paging: null });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts?q=test')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -215,7 +224,7 @@ describe('GET /api/contacts', () => {
   test('returns empty array when HubSpot returns no results', async () => {
     hubspot.searchContacts.mockResolvedValue({ results: [] });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -228,7 +237,7 @@ describe('GET /api/contacts', () => {
   test('returns 500 on HubSpot error', async () => {
     hubspot.searchContacts.mockRejectedValue(new Error('HubSpot timeout'));
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts')
       .set('x-api-key', API_KEY)
       .expect(500);
@@ -241,7 +250,7 @@ describe('GET /api/contacts', () => {
 
 describe('GET /api/contacts/:id', () => {
   test('returns 400 for non-numeric id', async () => {
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/abc')
       .set('x-api-key', API_KEY)
       .expect(400);
@@ -260,7 +269,7 @@ describe('GET /api/contacts/:id', () => {
       rowCount: 1,
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/101')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -277,7 +286,7 @@ describe('GET /api/contacts/:id', () => {
     });
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/101')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -291,7 +300,7 @@ describe('GET /api/contacts/:id', () => {
   test('returns 500 on HubSpot error', async () => {
     hubspot.getContact.mockRejectedValue(new Error('not found'));
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/999')
       .set('x-api-key', API_KEY)
       .expect(500);
@@ -306,11 +315,11 @@ describe('GET /api/contacts/:id', () => {
 // same entry — see the "cache key collapses equivalent formats" test.
 describe('GET /api/contacts/lookup', () => {
   test('returns 401 without auth', async () => {
-    await request(app).get('/api/contacts/lookup?phone=%2B16025550001').expect(401);
+    await request(await listenLoopback(app)).get('/api/contacts/lookup?phone=%2B16025550001').expect(401);
   });
 
   test('returns 400 when phone query param is missing', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup')
       .set('x-api-key', API_KEY)
       .expect(400);
@@ -318,7 +327,7 @@ describe('GET /api/contacts/lookup', () => {
   });
 
   test('returns 400 when phone normalizes to null (too short)', async () => {
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=123')
       .set('x-api-key', API_KEY)
       .expect(400);
@@ -331,7 +340,7 @@ describe('GET /api/contacts/lookup', () => {
       properties: { firstname: 'Tom', lastname: 'Russo', company: 'Acme' },
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550002')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -342,7 +351,7 @@ describe('GET /api/contacts/lookup', () => {
   test('returns all-null fields on miss (no HubSpot match)', async () => {
     hubspot.findContactByPhone.mockResolvedValue(null);
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550003')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -356,7 +365,7 @@ describe('GET /api/contacts/lookup', () => {
       properties: { firstname: 'Tom', lastname: '', company: 'Acme' },
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550004')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -370,7 +379,7 @@ describe('GET /api/contacts/lookup', () => {
       properties: { firstname: null, lastname: 'Russo', company: null },
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550005')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -384,7 +393,7 @@ describe('GET /api/contacts/lookup', () => {
       properties: { firstname: '', lastname: null, company: 'Acme' },
     });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550006')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -398,11 +407,11 @@ describe('GET /api/contacts/lookup', () => {
       properties: { firstname: 'Cached', lastname: 'Hit', company: 'Co' },
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550007')
       .set('x-api-key', API_KEY)
       .expect(200);
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550007')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -416,11 +425,11 @@ describe('GET /api/contacts/lookup', () => {
       properties: { firstname: 'Same', lastname: 'Number', company: null },
     });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550008')
       .set('x-api-key', API_KEY)
       .expect(200);
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=6025550008')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -431,11 +440,11 @@ describe('GET /api/contacts/lookup', () => {
   test('miss is also cached: repeat lookup of unknown number does not re-hit HubSpot', async () => {
     hubspot.findContactByPhone.mockResolvedValue(null);
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550009')
       .set('x-api-key', API_KEY)
       .expect(200);
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550009')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -451,13 +460,13 @@ describe('GET /api/contacts/lookup', () => {
         properties: { firstname: 'Recovered', lastname: 'Call', company: null },
       });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550010')
       .set('x-api-key', API_KEY)
       .expect(500);
 
     // Second call must retry HubSpot, proving the error path didn't poison the cache.
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/contacts/lookup?phone=%2B16025550010')
       .set('x-api-key', API_KEY)
       .expect(200);

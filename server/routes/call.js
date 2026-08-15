@@ -8,6 +8,7 @@ const {
   createConference, getConference, updateConference,
   removeConference, listActiveConferences, claimLeadDial,
 } = require('../lib/conference');
+const { issueJoinTicket } = require('../lib/join-tickets');
 const { cleanupCall } = require('../lib/live-analysis');
 const { cleanupConversation } = require('../lib/conversation-pipeline');
 const { cleanupPipelineState } = require('../lib/equipment-pipeline');
@@ -15,6 +16,25 @@ const { sendSlackAlert, sendSystemAlert } = require('../lib/slack');
 const { createOutboundCall } = require('../lib/vapi');
 const { resolveAssistantId } = require('../lib/personas');
 const { pickGreeting } = require('../lib/sim-greetings');
+const { loadRegistryOrExit } = require('../lib/team-registry');
+
+const teamRegistry = loadRegistryOrExit('call.js');
+
+// Outbound caller ID for a rep's lead leg. Each rep dials out as their OWN
+// dedicated DID so the called party sees that rep's line and a call-back routes
+// straight back to them (forward-type DID → the rep's mobile, iosIdentity-type
+// DID → the rep's dialer) instead of a shared number that reaches the wrong
+// person. Before this, every rep's outbound leg stamped the single global
+// NUCLEUS_PHONE_NUMBER, so e.g. Paul's calls presented Tom's DID
+// (+16026000188 == NUCLEUS_PHONE_NUMBER). Falls back to NUCLEUS_PHONE_NUMBER
+// for a rep with no DID (Britt, inbound: null) so an unconfigured rep can
+// still place calls. All team DIDs are verified account-owned Twilio numbers,
+// so they are valid <From> values (no Twilio 21210). Inbound legs are
+// intentionally left on NUCLEUS_PHONE_NUMBER (see status-callback dial).
+function outboundCallerId(callerIdentity) {
+  const rep = callerIdentity ? teamRegistry.getRepByIdentity(callerIdentity) : null;
+  return rep?.inbound?.did || process.env.NUCLEUS_PHONE_NUMBER;
+}
 
 const router = Router();
 
@@ -28,8 +48,29 @@ const callerGuard = [bearerOrApiKeyOrSession, rbac('external_caller')];
 function enforceOwnIdentity(req, res, bodyIdentity) {
   if (!req.user) return false;
   if (hasMinRole(req.user.role, 'admin')) return true;
-  if (!bodyIdentity || bodyIdentity === req.user.identity) return true;
+  // Compare case-insensitively: the identity registry is canonically lowercase
+  // ('paul', not 'Paul'), but a client may echo a display-cased name. Initiate
+  // already lowercases the body value before calling this, so this guard is the
+  // belt to that suspenders (and protects any future caller that doesn't). (001z)
+  const own = (req.user.identity || '').toLowerCase();
+  if (!bodyIdentity || bodyIdentity.toLowerCase() === own) return true;
   res.status(403).json({ error: 'callerIdentity must match your own identity' });
+  return false;
+}
+
+// Ownership gate for operations on a LIVE conference (/mute, /end). Admin
+// bypasses; everyone else must be the rep who started it. The owner is
+// conf.startedBy — the only owner field createConference writes. These guards
+// used to read a phantom `conf.callerIdentity` (always undefined), so any
+// external_caller could mute or terminate any rep's live call (jsec-vr1s).
+// Compare lowercased for the same reason as enforceOwnIdentity (001z), and
+// fail CLOSED on a missing owner: a conference nobody owns is admin-only.
+// req.user is guaranteed by callerGuard on every callsite.
+function requireConferenceOwner(req, res, conf) {
+  if (hasMinRole(req.user.role, 'admin')) return true;
+  const owner = typeof conf.startedBy === 'string' ? conf.startedBy.toLowerCase() : '';
+  if (owner !== '' && owner === (req.user.identity || '').toLowerCase()) return true;
+  res.status(403).json({ error: 'Not your conference' });
   return false;
 }
 const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
@@ -38,9 +79,31 @@ const twilioWebhook = makeTwilioWebhook();
 
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 
+// gox1: statuses that are terminal for a nucleus_phone_calls row. A writer
+// that stamps 'completed' on conference end must NEVER overwrite one of
+// these — e.g. incoming.js /voicemail-complete sets 'voicemail', the
+// dial-complete fallback sets 'missed', poll-fallback (call.js ~132) sets
+// 'failed'. Defined once and interpolated into both conference-row writers
+// (POST /api/call/end and the conference-end webhook arm) so the two can
+// never drift to different guard sets. Values are static literals — no user
+// input reaches this string, so the interpolation carries no injection risk.
+const TERMINAL_CALL_STATUSES = ['completed', 'voicemail', 'missed', 'failed'];
+const TERMINAL_STATUS_GUARD =
+  `status NOT IN (${TERMINAL_CALL_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+
 // POST /api/call/initiate — start a new call
 router.post('/initiate', ...callerGuard, async (req, res) => {
-  const { to, contactName, companyName, contactId, callerIdentity } = req.body;
+  const { to, contactName, companyName, contactId } = req.body;
+
+  // Canonicalize identity to lowercase at the trust boundary so caller-ID
+  // resolution (outboundCallerId → getRepByIdentity), the ownership check, the
+  // stored nucleus_phone_calls row, and the in-memory conference all see one
+  // form. A client echoing a display name ('Paul') split Paul's caller-ID and
+  // stats from the canonical 'paul' (see commit 7774bac, beads 001z + t5xn).
+  const callerIdentity =
+    typeof req.body.callerIdentity === 'string'
+      ? req.body.callerIdentity.toLowerCase()
+      : req.body.callerIdentity;
 
   if (!to || !callerIdentity) {
     return res.status(400).json({ error: 'to and callerIdentity required' });
@@ -113,7 +176,7 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
       ).catch((err) => console.error('Failed to persist conference_sid:', err.message));
 
       await client.conferences(sid).participants.create({
-        from: process.env.NUCLEUS_PHONE_NUMBER,
+        from: outboundCallerId(conf.startedBy),
         to: leadPhone,
         earlyMedia: true,
         beep: false,
@@ -137,16 +200,57 @@ async function dialLeadWhenReady(conferenceName, leadPhone, dbRowId) {
   }).catch((err) => console.error('[poll-fallback] Slack alert failed:', err.message));
 }
 
-// POST /api/call/join — admin joins an active conference
+// POST /api/call/join — authorize a join of an active conference.
+//
+// jsec-r0k6: this used to be a pure preflight that authorized nothing — it
+// returned JSON, touched no Twilio, and an attacker skipped it entirely and
+// called Device.connect({Action:'join'}) straight at voice.js. It carried a
+// comment saying a guard here would be theatre. That was true of a guard ALONE;
+// it is no longer true, because this route now mints the ticket that voice.js
+// requires. The check below is what decides who may listen, and the ticket is
+// what carries that decision to a webhook which has no session of its own.
+//
+// Policy (Tom, 2026-08-14): listening in on another rep's live customer call is
+// ADMIN-ONLY. requireConferenceOwner encodes exactly that — an admin joins
+// anything, everyone else joins only a conference they started, and an
+// ownerless conference is admin-only rather than open.
+//
+// This withdraws nothing that shipped to a rep: the /active page and its nav
+// entry are already gated on role === 'admin' (client/src/App.jsx:152,
+// components/layout/Shell.jsx:17), so the Join controls were never reachable by
+// a non-admin through the UI. The hole was purely server-side.
 router.post('/join', ...callerGuard, (req, res) => {
-  const { conferenceName, callerIdentity, muted } = req.body;
+  const { conferenceName, muted } = req.body;
 
   const conf = getConference(conferenceName);
   if (!conf) {
     return res.status(404).json({ error: 'Conference not found' });
   }
 
-  res.json({ conferenceName, muted: !!muted });
+  if (!requireConferenceOwner(req, res, conf)) return;
+
+  // jsec-gsx0: bind the ticket to the caller it is issued to. voice.js honours
+  // it only for that same identity, matched against Twilio's `From`.
+  // req.user.identity is the authenticated session identity — the very value
+  // /api/token binds the Twilio access token to — so for a legitimate caller the
+  // two necessarily agree, and an attacker cannot make them agree.
+  // An API-key principal has identity 'system' (middleware/auth.js), which is
+  // not a Voice SDK client and can never appear as client:<identity> on a leg.
+  // Minting for it would return 200 with a ticket that is impossible to redeem —
+  // a fake success that looks like a working integration until someone tries to
+  // use it. Refuse loudly instead, and say why.
+  //
+  // (The guard here used to test `!req.user.identity`. That was unreachable:
+  // nucleus_phone_users.identity is NOT NULL and the API-key principal always
+  // carries 'system'. Dead code with a comment describing a case that cannot
+  // happen is worse than no guard.)
+  if (req.user.authSource === 'api_key' || req.user.identity === 'system') {
+    return res.status(403).json({
+      error: 'Join requires a session with a Voice SDK identity; an API-key principal cannot join a conference',
+    });
+  }
+  const joinTicket = issueJoinTicket(conferenceName, muted, req.user.identity);
+  res.json({ conferenceName, muted: !!muted, joinTicket });
 });
 
 // POST /api/call/mute — toggle participant mute via Twilio REST API
@@ -158,11 +262,7 @@ router.post('/mute', ...callerGuard, async (req, res) => {
     return res.status(404).json({ error: 'Conference not found' });
   }
 
-  if (req.user && !hasMinRole(req.user.role, 'admin')) {
-    if (conf.callerIdentity && conf.callerIdentity !== req.user.identity) {
-      return res.status(403).json({ error: 'Not your conference' });
-    }
-  }
+  if (!requireConferenceOwner(req, res, conf)) return;
 
   try {
     await client.conferences(conf.conferenceSid)
@@ -193,10 +293,76 @@ router.post('/mute', ...callerGuard, async (req, res) => {
 // dialer's double-dial guard will allow a second call. Tracked: see
 // nucleus-phone bead for participant-aware filter once such a flow lands.
 router.get('/active', ...callerGuard, async (req, res) => {
-  const filterIdentity = typeof req.query.identity === 'string' && req.query.identity.length
-    ? req.query.identity
+  // zht.5: the LIVE half of this route is scoped the same way the sim half below already is —
+  // admin sees everything, a non-admin sees only their own conferences. That is the property
+  // that actually holds the line, and it holds no matter what the client sends. An earlier
+  // version of this guard only 403'd a non-admin who NAMED someone else's identity, which was
+  // theatre: omitting the param entirely returned every conference, lead phone numbers and all.
+  // Scope by default; let `?identity=` narrow an ALREADY-scoped set.
+  //
+  // Reject a repeated param rather than letting it fall through. Express's qs parser turns
+  // `?identity=a&identity=b` into an ARRAY, which a `typeof === 'string'` test silently
+  // downgrades to "no filter" — a scoping parameter must never fail open.
+  if (req.query.identity !== undefined && typeof req.query.identity !== 'string') {
+    return res.status(400).json({ error: 'identity must be a single value' });
+  }
+
+  // Canonicalize at the trust boundary, the way /initiate does — lowercase BEFORE comparing and
+  // before using. Comparing case-insensitively but then filtering with a strict === is how you
+  // get a 200 with an empty list: the route says "yes, you may see your own calls" and shows
+  // none, which iOS reads as "no active call" and dials again.
+  const ownIdentity = (req.user.identity || '').toLowerCase();
+  const isAdmin = hasMinRole(req.user.role, 'admin');
+  const requested = typeof req.query.identity === 'string' && req.query.identity.length
+    ? req.query.identity.toLowerCase()
     : null;
-  const conferences = listActiveConferences();
+
+  if (requested && !isAdmin && requested !== ownIdentity) {
+    return res.status(403).json({ error: 'identity must match your own identity' });
+  }
+
+  // A non-admin with no usable identity must fail CLOSED. Without this, ownIdentity is '' →
+  // scopeIdentity is '' → falsy → the filter below is skipped entirely and the caller gets
+  // every conference. That is the same falsy-empty trap the 400 above exists to kill, just
+  // relocated from req.query.identity to req.user.identity. The sim half already fails closed
+  // on this input (its `else if (req.user?.identity)` runs no query at all), so without this
+  // the two halves of one handler would disagree about what an empty identity means.
+  if (!isAdmin && !ownIdentity) {
+    return res.status(403).json({ error: 'caller has no identity to scope to' });
+  }
+
+  // Non-admins are pinned to their own identity even when they ask for nothing (or for ''),
+  // so every fail-open shape — absent param, empty string — lands on "own calls only".
+  const scopeIdentity = isAdmin ? requested : (requested || ownIdentity);
+
+  // Scope BEFORE enriching. Enrichment does a live Twilio REST call per conference, and
+  // useActiveCalls polls every 3s — enriching first meant every rep's poll billed Twilio for
+  // other reps' conferences and blocked on their latency, only to filter the result away. It
+  // also means another rep's data is never materialized in this process at all.
+  // jsec-z4ff: INBOUND conferences stay out of the identity-scoped view.
+  //
+  // Until z4ff they were owned by the literal 'inbound', so they matched no
+  // scopeIdentity and were invisible to every non-admin. Giving them a real
+  // owner — so a rep can read their own inbound cockpit — would silently have
+  // changed THIS route too, and this route feeds a guard in ANOTHER repo: the
+  // iOS dialer polls it as a double-dial precondition ("you're already on a
+  // call on another device", see the header above).
+  //
+  // The conference is created the moment the DID rings, before anyone answers,
+  // and `type: forward` reps are rung on their MOBILE, not the dialer. So a
+  // ringing-then-voicemail inbound call would start blocking that rep's
+  // outbound dialing — and since the map entry only clears on the
+  // conference-end webhook or the 2h stale sweep, a dropped webhook would wedge
+  // their dialer for two hours. That is a behaviour change to a cross-repo
+  // contract, not the "improvement" an earlier draft of this change called it.
+  //
+  // Admins are unaffected (scopeIdentity is null for them), and the
+  // live-analysis authorization that motivated the ownership change reads
+  // conf.startedBy directly rather than going through this route.
+  const conferences = listActiveConferences().filter(
+    (c) => !scopeIdentity
+      || ((c.startedBy || '').toLowerCase() === scopeIdentity && c.direction !== 'inbound'),
+  );
 
   const enriched = await Promise.all(
     conferences.map(async (conf) => {
@@ -240,26 +406,30 @@ router.get('/active', ...callerGuard, async (req, res) => {
   //     ended on the rep's side, they should be free to start the next one.
   let simQuery = null;
   let simParams = [];
-  if (req.user?.role === 'admin') {
+  if (isAdmin) {
     simQuery = `
       SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
       FROM sim_call_scores
       WHERE status IN ('in-progress', 'scoring')
       ORDER BY created_at DESC
     `;
-  } else if (req.user?.identity) {
+  } else if (ownIdentity) {
     simQuery = `
       SELECT id, caller_identity, difficulty, created_at, status, monitor_listen_url
       FROM sim_call_scores
       WHERE status = 'in-progress' AND caller_identity = $1
       ORDER BY created_at DESC
     `;
-    simParams = [req.user.identity];
+    simParams = [ownIdentity];
   }
   if (simQuery) {
     try {
       const { rows } = await pool.query(simQuery, simParams);
       for (const row of rows) {
+        // The sim QUERY scopes by ROLE (admin: all, non-admin: own). `?identity=` narrowing is
+        // a separate axis and must be applied here too, or an admin asking for one rep still
+        // gets everyone's sims — which is what the header comment has always promised.
+        if (requested && (row.caller_identity || '').toLowerCase() !== requested) continue;
         enriched.push({
           type: 'sim',
           simCallId: row.id,
@@ -279,14 +449,13 @@ router.get('/active', ...callerGuard, async (req, res) => {
     }
   }
 
-  const filtered = filterIdentity
-    ? enriched.filter((c) => c.startedBy === filterIdentity)
-    : enriched;
-  res.json({ calls: filtered });
+  // Nothing left to filter: live entries were scoped before enrichment, and sim entries are
+  // scoped by role in the query plus narrowed by `requested` at the push site above.
+  res.json({ calls: enriched });
 });
 
 // POST /api/call/end — end a conference. Non-admin users can only end their
-// own conferences (identified by conf.callerIdentity from createConference).
+// own conferences (identified by conf.startedBy from createConference).
 //
 // bd-sgc: after Twilio confirms the conference end, synchronously remove
 // the entry from the in-memory active map AND mark the DB row completed,
@@ -304,14 +473,32 @@ router.post('/end', ...callerGuard, async (req, res) => {
 
   const conf = getConference(conferenceName);
   if (!conf || !conf.conferenceSid) {
-    return res.status(404).json({ error: 'Conference not found' });
+    // Linus R4 P1-3: idempotent no-op when the conference is already
+    // cleaned up (or its SID hasn't landed yet). In the Phase 2 inbound
+    // happy path, the rep hangs up via CallKit → iOS Voice SDK
+    // disconnects → Twilio fires conference-end → server's /status
+    // webhook removeConference()s the in-memory entry — THEN iOS's drain
+    // yields `.disconnected` → tearDownServerConference → api.endCall
+    // arrives here with `conf === undefined`. Returning 404 made iOS log
+    // `.error` on every successful Phase 2 inbound call, drowning the
+    // real-leak signal the R3 logging upgrade was supposed to provide.
+    // Returning 200 honors the semantic ("your teardown intent
+    // succeeded — by no-op, because we already cleaned up") and keeps
+    // iOS's strict `.error`-on-failure contract intact for real failures.
+    //
+    // Security: this endpoint is auth-gated by callerGuard; the 200 vs
+    // 404 distinction conveys no information beyond what the auth
+    // boundary already covers. /join + /mute keep their 404 because for
+    // those endpoints "conference not found" IS a real client error,
+    // not a race against natural cleanup.
+    return res.json({ success: true, alreadyEnded: true });
   }
 
-  if (req.user && !hasMinRole(req.user.role, 'admin')) {
-    if (conf.callerIdentity && conf.callerIdentity !== req.user.identity) {
-      return res.status(403).json({ error: 'Not your conference' });
-    }
-  }
+  // Ordering is deliberate: the alreadyEnded short-circuit above runs before
+  // this ownership check, so a non-owner can distinguish "live with a SID"
+  // (403) from "gone" (200). Accepted oracle — /active already exposes
+  // conference names to every external_caller, so this reveals nothing new.
+  if (!requireConferenceOwner(req, res, conf)) return;
 
   try {
     await client.conferences(conf.conferenceSid).update({ status: 'completed' });
@@ -331,7 +518,8 @@ router.post('/end', ...callerGuard, async (req, res) => {
     await pool.query(
       `UPDATE nucleus_phone_calls
        SET status = 'completed', duration_seconds = $1, conference_sid = $2
-       WHERE conference_name = $3 AND status != 'completed'`,
+       WHERE conference_name = $3
+         AND ${TERMINAL_STATUS_GUARD}`,
       [duration, sid, conferenceName]
     );
   } catch (err) {
@@ -406,7 +594,10 @@ router.post('/status', twilioWebhook, async (req, res) => {
       const isInbound = FriendlyName.startsWith('nucleus-inbound-');
       try {
         const participantOpts = {
-          from: process.env.NUCLEUS_PHONE_NUMBER,
+          // Outbound legs present the calling rep's own DID; inbound legs
+          // (dormant: INBOUND_CONFERENCE_ARCHITECTURE=false) keep the shared
+          // number unchanged — per-rep caller ID is an outbound-only concern.
+          from: isInbound ? process.env.NUCLEUS_PHONE_NUMBER : outboundCallerId(conf.startedBy),
           to: conf.leadPhone,
           earlyMedia: true,
           beep: false,
@@ -444,8 +635,20 @@ router.post('/status', twilioWebhook, async (req, res) => {
   // Twilio webhook arrives 3-5s later, getConference returns undefined
   // for the already-removed conf and the `&& conf` short-circuit
   // prevents double-cleanup. If a future refactor removes that
-  // cleanup from /api/call/end, this arm must regain the SQL guard
-  // (`AND status != 'completed'`) and/or absorb the cleanup work.
+  // cleanup from /api/call/end, the SQL guard below still keeps the
+  // UPDATE idempotent.
+  //
+  // gox1: the UPDATE is guarded with TERMINAL_STATUS_GUARD (the same
+  // guard the /api/call/end UPDATE uses). The `&& conf` short-circuit
+  // only prevents double-CLEANUP from the /api/call/end double-fire; it
+  // does NOT protect `status` from being overwritten on a DIFFERENT
+  // path. On the Phase 2 inbound no-rep path, the rep never joins (so
+  // /api/call/end never fires and `conf` is still in memory here),
+  // incoming.js /voicemail-complete stamps status='voicemail' (keyed by
+  // caller_call_sid), and this conference-end arm fires afterward keyed
+  // by conference_name on the SAME row — without the guard it would
+  // clobber a terminal status ('voicemail'/'missed'/'failed') back to
+  // 'completed'. 'completed' is in the set too so the arm is idempotent.
   //
   // Sim conferences have their own end-of-call lifecycle (sim.js's Vapi
   // webhook handler ends the Twilio conference and clears the map). They
@@ -460,7 +663,8 @@ router.post('/status', twilioWebhook, async (req, res) => {
       await pool.query(
         `UPDATE nucleus_phone_calls
          SET status = 'completed', duration_seconds = $1, conference_sid = $2
-         WHERE conference_name = $3`,
+         WHERE conference_name = $3
+           AND ${TERMINAL_STATUS_GUARD}`,
         [duration, ConferenceSid, FriendlyName]
       );
     } catch (err) {

@@ -6,9 +6,12 @@
 
 const crypto = require('crypto');
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { makeTwilioWebhook } = require('../twilio-webhook');
 
+
+afterEach(closeLoopbackServers);
 /**
  * Reimplements Twilio's signature algorithm:
  *   base64(HMAC-SHA1(authToken, url + sortedKey1 + value1 + sortedKey2 + value2...))
@@ -34,12 +37,12 @@ describe('makeTwilioWebhook lazy NODE_ENV evaluation', () => {
 
   test('NODE_ENV=test: passes through (no signature required)', async () => {
     process.env.NODE_ENV = 'test';
-    await request(makeApp()).post('/hook').send({}).expect(204);
+    await request(await listenLoopback(makeApp())).post('/hook').send({}).expect(204);
   });
 
   test('NODE_ENV=production: 400 without X-Twilio-Signature', async () => {
     process.env.NODE_ENV = 'production';
-    const res = await request(makeApp()).post('/hook').send({});
+    const res = await request(await listenLoopback(makeApp())).post('/hook').send({});
     expect(res.status).toBe(400);
     expect(res.text).toMatch(/X-Twilio-Signature/);
   });
@@ -50,12 +53,12 @@ describe('makeTwilioWebhook lazy NODE_ENV evaluation', () => {
     // and ignore the second toggle — exactly the d74 footgun.
     const app = makeApp();
     process.env.NODE_ENV = 'test';
-    await request(app).post('/hook').send({}).expect(204);
+    await request(await listenLoopback(app)).post('/hook').send({}).expect(204);
     process.env.NODE_ENV = 'production';
-    const blocked = await request(app).post('/hook').send({});
+    const blocked = await request(await listenLoopback(app)).post('/hook').send({});
     expect(blocked.status).toBe(400);
     process.env.NODE_ENV = 'test';
-    await request(app).post('/hook').send({}).expect(204);
+    await request(await listenLoopback(app)).post('/hook').send({}).expect(204);
   });
 });
 
@@ -96,7 +99,7 @@ describe('makeTwilioWebhook signature validation: URL must include query string'
     const body = { CallSid: 'CA-test-1', DialCallStatus: 'no-answer' };
     const signature = signTwilio(TEST_TOKEN, `${BASE}${path}`, body);
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post(path)
       .type('form')
       .set('X-Twilio-Signature', signature)
@@ -114,7 +117,7 @@ describe('makeTwilioWebhook signature validation: URL must include query string'
     // the URL with query string.
     const buggySignature = signTwilio(TEST_TOKEN, `${BASE}/hook`, body);
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post(path)
       .type('form')
       .set('X-Twilio-Signature', buggySignature)

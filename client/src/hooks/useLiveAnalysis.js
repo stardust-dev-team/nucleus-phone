@@ -52,6 +52,12 @@ export default function useLiveAnalysis(callId, enabled = true) {
   const [sizing, setSizing] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
   const [connected, setConnected] = useState(false);
+  // jsec-z4ff: the server now authorizes `subscribe` by conference ownership
+  // and answers a refusal with `subscribe_denied`. Surface it. Without this the
+  // socket connects, the subscription is silently refused, and the cockpit
+  // renders forever-empty — indistinguishable from a quiet call or a broken
+  // transcription pipeline, and unsupportable.
+  const [accessDenied, setAccessDenied] = useState(null);   // { callId, reason }
 
   // Conversation Navigator state
   const [phase, setPhase] = useState(null);                 // { phase, key_topic }
@@ -84,6 +90,9 @@ export default function useLiveAnalysis(callId, enabled = true) {
     setSuggestionHistory([]);
     setObjection(null);
     setNavigatorStatus('ok');
+    // jsec-z4ff: clear the denial too. Every other field resets on a callId
+    // change; leaving this one set would show "no access" on the NEXT call.
+    setAccessDenied(null);
     seenRef.current.clear();
     predictionRef.current = null;
   }, []);
@@ -131,6 +140,12 @@ export default function useLiveAnalysis(callId, enabled = true) {
         }
 
         switch (msg.type) {
+          case 'subscribe_denied': {
+            console.warn('live-analysis: subscription denied —', msg.data?.reason);
+            setAccessDenied({ callId: msg.data?.callId ?? null, reason: msg.data?.reason ?? 'not authorized' });
+            return;
+          }
+
           case 'equipment_detected': {
             if (!msg.data) return;
             // Dedup by manufacturer:model. Server already deduplicates — this
@@ -240,7 +255,7 @@ export default function useLiveAnalysis(callId, enabled = true) {
   }, [callId, enabled, reset]);
 
   return {
-    equipment, sizing, recommendation, connected,
+    equipment, sizing, recommendation, connected, accessDenied,
     phase, sentiment, suggestionHistory, objection, navigatorStatus,
   };
 }

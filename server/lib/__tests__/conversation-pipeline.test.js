@@ -24,19 +24,22 @@ jest.mock('../coach-whisper', () => ({
   cleanupCoachWhisperState: (...args) => mockCleanupCoachWhisperState(...args),
 }));
 
-// Suppress fetch calls — we mock callHaiku results via _handleAnalysisResult
+// Suppress fetch calls — we mock callHaiku results via handleAnalysisResult.
+// Internal seams now live under a single __testHooks key (9i0).
 const {
   processConversationChunk,
   cleanupConversation,
   getCallEventLog,
-  _callState: callState,
-  _recentlyAborted: recentlyAborted,
-  _initState: initState,
-  _handleAnalysisResult: handleAnalysisResult,
-  _buildTranscriptWindow: buildTranscriptWindow,
-  _QUESTION_REGEX: QUESTION_REGEX,
-  _computeCallCost: computeCallCost,
-  _COST_ANOMALY_THRESHOLD_USD: COST_ANOMALY_THRESHOLD_USD,
+  __testHooks: {
+    callState,
+    recentlyAborted,
+    initState,
+    handleAnalysisResult,
+    buildTranscriptWindow,
+    QUESTION_REGEX,
+    computeCallCost,
+    COST_ANOMALY_THRESHOLD_USD,
+  },
 } = require('../conversation-pipeline');
 
 // Build a fake Haiku fetch response. Accepts partial overrides.
@@ -715,18 +718,31 @@ describe('abort under in-flight Haiku call', () => {
 });
 
 describe('double cleanup', () => {
+  let nowSpy;
+  afterEach(() => {
+    if (nowSpy) {
+      nowSpy.mockRestore();
+      nowSpy = undefined;
+    }
+  });
+
   it('repeated cleanupConversation does not extend the recentlyAborted TTL', () => {
     cleanupConversation('test-double');
     const firstAbortedAt = recentlyAborted.get('test-double');
     expect(firstAbortedAt).toBeDefined();
 
-    // Second cleanup call 10ms later — must NOT reset the timestamp.
+    // Second cleanup call 10ms later — must NOT reset the timestamp. Pin
+    // Date.now for the WHOLE second call (mockReturnValue, not …Once): with
+    // …Once the mock silently passes today only because the recentlyAborted
+    // .has() guard short-circuits before Date.now() is reached, so a future
+    // Date.now() added ahead of that guard would consume the single queued
+    // value and the test would still pass for the wrong reason. A persistent
+    // return + afterEach restore removes that trap. (7qh)
     const after = firstAbortedAt + 10;
-    jest.spyOn(Date, 'now').mockReturnValueOnce(after);
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(after);
     cleanupConversation('test-double');
 
     expect(recentlyAborted.get('test-double')).toBe(firstAbortedAt);
-    Date.now.mockRestore?.();
   });
 });
 

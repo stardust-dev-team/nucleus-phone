@@ -10,10 +10,13 @@ jest.mock('../../lib/slack', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const { sendSlackAlert } = require('../../lib/slack');
 
+
+afterEach(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let app;
@@ -30,7 +33,7 @@ afterAll(() => {
 
 describe('GET /api/scoreboard', () => {
   test('returns 401 without auth', async () => {
-    await request(app).get('/api/scoreboard').expect(401);
+    await request(await listenLoopback(app)).get('/api/scoreboard').expect(401);
   });
 
   test('returns leaderboard shape', async () => {
@@ -55,7 +58,7 @@ describe('GET /api/scoreboard', () => {
         rowCount: 1,
       });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .get('/api/scoreboard')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -67,23 +70,39 @@ describe('GET /api/scoreboard', () => {
     expect(entry.callsMade).toBe(15);
     expect(entry.daily).toHaveLength(1);
   });
+
+  test('excludes internal calls from leaderboard + daily queries (a3vs)', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await request(await listenLoopback(app)).get('/api/scoreboard').set('x-api-key', API_KEY).expect(200);
+
+    const sqls = pool.query.mock.calls.map((c) => c[0]);
+    expect(sqls).toHaveLength(2);
+    for (const sql of sqls) {
+      expect(sql).toMatch(/is_internal IS NOT TRUE/);
+    }
+  });
 });
 
 describe('POST /api/scoreboard/aggregate', () => {
   test('returns 401 without auth', async () => {
-    await request(app).post('/api/scoreboard/aggregate').expect(401);
+    await request(await listenLoopback(app)).post('/api/scoreboard/aggregate').expect(401);
   });
 
   test('aggregates and returns row count', async () => {
     // Aggregation upsert
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 3 });
 
-    const res = await request(app)
+    const res = await request(await listenLoopback(app))
       .post('/api/scoreboard/aggregate')
       .set('x-api-key', API_KEY)
       .expect(200);
 
     expect(res.body.aggregated).toBe(3);
+    // The materialization INSERT...SELECT must also exclude internal calls (a3vs).
+    expect(pool.query.mock.calls[0][0]).toMatch(/is_internal IS NOT TRUE/);
   });
 
   test('triggers milestone check (fire-and-forget)', async () => {
@@ -103,7 +122,7 @@ describe('POST /api/scoreboard/aggregate', () => {
     // pruneMilestoneKeys
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/scoreboard/aggregate')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -128,7 +147,7 @@ describe('POST /api/scoreboard/aggregate', () => {
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // streaks
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // claimMilestone — NOT won
 
-    await request(app)
+    await request(await listenLoopback(app))
       .post('/api/scoreboard/aggregate')
       .set('x-api-key', API_KEY)
       .expect(200);

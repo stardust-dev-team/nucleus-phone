@@ -26,19 +26,27 @@ jest.mock('../../lib/slack', () => ({
 }));
 
 const request = require('supertest');
+const { listenLoopback, closeLoopbackServers } = require('../../__tests__/supertest-loopback.js');
 const express = require('express');
 const { pool } = require('../../db');
 const conference = require('../../lib/conference');
 const { client } = require('../../lib/twilio');
 
+
+// jsec-kh7h: afterALL, not afterEach — this file binds ONE server in beforeAll, and an
+// afterEach would close it after the first test, silently sending every later request()
+// back to supertest's own bare listen(0).
+afterAll(closeLoopbackServers);
 const API_KEY = 'test-api-key';
 
 let app;
-beforeAll(() => {
+let server; // jsec-kh7h: one loopback-bound listener per file
+beforeAll(async () => {
   process.env.NUCLEUS_PHONE_API_KEY = API_KEY;
   app = express();
   app.use(express.json());
   app.use('/api/call', require('../call'));
+  server = await listenLoopback(app);
 });
 
 afterAll(() => {
@@ -54,11 +62,11 @@ beforeEach(() => {
 
 describe('POST /api/call/initiate', () => {
   test('returns 401 without auth', async () => {
-    await request(app).post('/api/call/initiate').expect(401);
+    await request(server).post('/api/call/initiate').expect(401);
   });
 
   test('returns 400 when to is missing', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ callerIdentity: 'tom' })
@@ -68,7 +76,7 @@ describe('POST /api/call/initiate', () => {
   });
 
   test('returns 400 when callerIdentity is missing', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '+16025551234' })
@@ -78,7 +86,7 @@ describe('POST /api/call/initiate', () => {
   });
 
   test('returns 400 for non-E.164 phone number', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '6025551234', callerIdentity: 'tom' })
@@ -88,7 +96,7 @@ describe('POST /api/call/initiate', () => {
   });
 
   test('rejects short E.164 numbers', async () => {
-    await request(app)
+    await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '+123', callerIdentity: 'tom' })
@@ -98,7 +106,7 @@ describe('POST /api/call/initiate', () => {
   test('creates DB row, conference, and returns callId', async () => {
     pool.query.mockResolvedValueOnce({ rows: [{ id: 42 }], rowCount: 1 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({
@@ -133,7 +141,7 @@ describe('POST /api/call/initiate', () => {
   test('returns 500 on DB error', async () => {
     pool.query.mockRejectedValueOnce(new Error('connection refused'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/initiate')
       .set('x-api-key', API_KEY)
       .send({ to: '+16025551234', callerIdentity: 'tom' })
@@ -147,41 +155,39 @@ describe('POST /api/call/initiate', () => {
 
 describe('POST /api/call/join', () => {
   test('returns 401 without auth', async () => {
-    await request(app).post('/api/call/join').expect(401);
+    await request(server).post('/api/call/join').expect(401);
   });
 
   test('returns 404 when conference not found', async () => {
     conference.getConference.mockReturnValue(null);
 
-    await request(app)
+    await request(server)
       .post('/api/call/join')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-missing', callerIdentity: 'tom' })
       .expect(404);
   });
 
-  test('returns conference info on success', async () => {
+  test('an API-key principal is refused rather than handed an unusable ticket', async () => {
+    // jsec-gsx0: a join ticket is bound to the identity that will appear on the
+    // Voice SDK leg. An API-key principal is identity 'system', which can never
+    // appear as client:<identity>, so minting for it would return 200 with a
+    // ticket nobody can redeem — a fake success that reads like a working
+    // integration until someone tries to use it. Refuse, and say why.
+    //
+    // The success path moved to call-join-authz.test.js, which uses session
+    // principals and seeds through the REAL conference store (the hand-built
+    // mock here has no startedBy, so it cannot exercise ownership at all).
     conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/join')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom', muted: true })
-      .expect(200);
+      .expect(403);
 
-    expect(res.body).toEqual({ conferenceName: 'nucleus-call-abc', muted: true });
-  });
-
-  test('muted defaults to false', async () => {
-    conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
-
-    const res = await request(app)
-      .post('/api/call/join')
-      .set('x-api-key', API_KEY)
-      .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom' })
-      .expect(200);
-
-    expect(res.body.muted).toBe(false);
+    expect(res.body.error).toMatch(/API-key principal cannot join/);
+    expect(res.body.joinTicket).toBeUndefined();
   });
 });
 
@@ -191,7 +197,7 @@ describe('POST /api/call/mute', () => {
   test('returns 404 when conference not found', async () => {
     conference.getConference.mockReturnValue(null);
 
-    await request(app)
+    await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: true })
@@ -201,7 +207,7 @@ describe('POST /api/call/mute', () => {
   test('returns 404 when conference has no SID yet', async () => {
     conference.getConference.mockReturnValue({ conferenceSid: null });
 
-    await request(app)
+    await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: true })
@@ -217,7 +223,7 @@ describe('POST /api/call/mute', () => {
       participants: jest.fn(() => ({ update: mockUpdate })),
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: true })
@@ -235,7 +241,7 @@ describe('POST /api/call/mute', () => {
       })),
     });
 
-    await request(app)
+    await request(server)
       .post('/api/call/mute')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'x', participantCallSid: 'CA1', muted: false })
@@ -247,13 +253,13 @@ describe('POST /api/call/mute', () => {
 
 describe('GET /api/call/active', () => {
   test('returns 401 without auth', async () => {
-    await request(app).get('/api/call/active').expect(401);
+    await request(server).get('/api/call/active').expect(401);
   });
 
   test('returns empty calls array when no active conferences', async () => {
     conference.listActiveConferences.mockReturnValue([]);
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -285,7 +291,7 @@ describe('GET /api/call/active', () => {
       },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -319,7 +325,7 @@ describe('GET /api/call/active', () => {
       },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -338,7 +344,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active?identity=tom')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -346,6 +352,32 @@ describe('GET /api/call/active', () => {
     expect(res.body.calls).toHaveLength(1);
     expect(res.body.calls[0].startedBy).toBe('tom');
     expect(res.body.calls[0].type).toBe('live');
+  });
+
+  test('jsec-z4ff: INBOUND conferences stay OUT of the identity-scoped view', async () => {
+    // z4ff gave inbound conferences a real owner (previously the literal
+    // 'inbound') so a rep can read their own inbound cockpit. That would
+    // silently have changed THIS route too — and the iOS dialer polls it as a
+    // double-dial precondition. The conference exists from the moment the DID
+    // rings, before anyone answers, and `type: forward` reps are rung on their
+    // MOBILE, not the dialer — so a ringing-then-voicemail inbound call would
+    // block that rep's outbound dialing, for up to 2h if the conference-end
+    // webhook is dropped (the stale sweeper's ceiling).
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom', conferenceSid: 'CF1', startedAt: now, startedBy: 'tom', leadPhone: '+16025550001' },
+      { conferenceName: 'nucleus-inbound-tom', conferenceSid: 'CF9', startedAt: now, startedBy: 'tom', direction: 'inbound', leadPhone: '+16025559999' },
+    ]);
+    client.conferences.mockReturnValue({
+      participants: { list: jest.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(server)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls.map((c) => c.conferenceName)).toEqual(['nucleus-call-tom']);
   });
 
   test('?identity=<me> with no match returns empty array (iOS proceeds with dial)', async () => {
@@ -357,7 +389,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active?identity=tom')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -375,7 +407,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -392,7 +424,7 @@ describe('GET /api/call/active', () => {
       participants: { list: jest.fn().mockResolvedValue([]) },
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/call/active')
       .set('x-api-key', API_KEY)
       .expect(200);
@@ -407,24 +439,44 @@ describe('GET /api/call/active', () => {
 /* ───────────── POST /api/call/end ───────────── */
 
 describe('POST /api/call/end', () => {
-  test('returns 404 when conference not found', async () => {
+  test('returns 200 with alreadyEnded:true when conference already cleaned up (Linus R4 P1-3)', async () => {
+    // Phase 2 inbound happy path: Twilio's conference-end webhook beats
+    // iOS's tearDownServerConference. By the time api.endCall arrives,
+    // the in-memory entry is gone. Pre-fix: 404 → iOS logs .error on
+    // EVERY successful rep-hangup, drowning the real-leak signal. Fix:
+    // semantic 200 ("teardown succeeded by no-op").
     conference.getConference.mockReturnValue(null);
 
-    await request(app)
+    const res = await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
-      .send({ conferenceName: 'missing' })
-      .expect(404);
+      .send({ conferenceName: 'already-gone' })
+      .expect(200);
+
+    expect(res.body).toEqual({ success: true, alreadyEnded: true });
+    // No Twilio call to update — conference is already terminated.
+    expect(client.conferences).not.toHaveBeenCalled();
+    // No DB cleanup — the conference-end webhook arm already did it.
+    expect(conference.removeConference).not.toHaveBeenCalled();
   });
 
-  test('returns 404 when conference has no SID', async () => {
+  test('returns 200 with alreadyEnded:true when conference has no SID yet (Linus R4 P1-3)', async () => {
+    // Race window: caller's leg in conference but conference-start
+    // webhook hasn't fired yet → conf.conferenceSid is null. iOS rapid
+    // accept+hangup hits this. Treat same as already-cleaned: 200 no-op.
+    // Twilio's `endConferenceOnExit=true` on the iOS leg will tear down
+    // the conference naturally.
     conference.getConference.mockReturnValue({ conferenceSid: null });
 
-    await request(app)
+    const res = await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'no-sid' })
-      .expect(404);
+      .expect(200);
+
+    expect(res.body).toEqual({ success: true, alreadyEnded: true });
+    expect(client.conferences).not.toHaveBeenCalled();
+    expect(conference.removeConference).not.toHaveBeenCalled();
   });
 
   test('ends conference via Twilio + removes from active map (bd-sgc)', async () => {
@@ -436,7 +488,7 @@ describe('POST /api/call/end', () => {
     const mockUpdate = jest.fn().mockResolvedValue({});
     client.conferences.mockReturnValue({ update: mockUpdate });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-xyz' })
@@ -451,11 +503,12 @@ describe('POST /api/call/end', () => {
     // bd-sgc DB UPDATE shape — this assert is the contract the
     // synchronous cleanup converges on with the /status webhook's
     // conference-end arm. Both branches must produce the same row
-    // state; the `AND status != 'completed'` guard is what makes
-    // the second-to-arrive a no-op rather than re-stamping an
-    // already-completed call.
+    // state; the terminal-status guard (gox1) is what makes the
+    // second-to-arrive a no-op rather than re-stamping an
+    // already-terminal call. The set must match the conference-end
+    // arm's so the two writers can never drift.
     expect(pool.query).toHaveBeenCalledWith(
-      expect.stringMatching(/UPDATE nucleus_phone_calls[\s\S]+SET status = 'completed'[\s\S]+AND status != 'completed'/),
+      expect.stringMatching(/UPDATE nucleus_phone_calls[\s\S]+SET status = 'completed'[\s\S]+AND status NOT IN \('completed', 'voicemail', 'missed', 'failed'\)/),
       expect.arrayContaining([
         expect.any(Number),         // duration_seconds — Math.floor((now-startedAt)/1000)
         'CF999',                    // conference_sid
@@ -480,7 +533,7 @@ describe('POST /api/call/end', () => {
       update: jest.fn().mockRejectedValue(new Error('nope')),
     });
 
-    await request(app)
+    await request(server)
       .post('/api/call/end')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-xyz' })
@@ -500,7 +553,7 @@ describe('POST /api/call/status', () => {
   // No x-api-key — this route uses twilioWebhook (signature validation,
   // disabled outside production), not apiKeyAuth.
   const send = (body) =>
-    request(app).post('/api/call/status').send(body);
+    request(server).post('/api/call/status').send(body);
 
   beforeAll(() => {
     process.env.NUCLEUS_PHONE_NUMBER = '+18005550000';
@@ -570,6 +623,82 @@ describe('POST /api/call/status', () => {
       beep: false,
       endConferenceOnExit: true,
     });
+  });
+
+  /* ── Per-rep outbound caller ID ── */
+
+  test('dials lead from the calling rep\'s OWN DID, not the global number', async () => {
+    const conf = {
+      conferenceSid: null,
+      startedBy: 'paul', // the owner field createConference actually writes (jsec-vr1s)
+      leadPhone: '+16025551234',
+      participants: [],
+    };
+    conference.getConference.mockReturnValue(conf);
+    conference.claimLeadDial.mockReturnValue(true);
+    const mockCreate = jest.fn().mockResolvedValue({});
+    client.conferences.mockReturnValue({ participants: { create: mockCreate } });
+
+    await send({
+      StatusCallbackEvent: 'conference-start',
+      FriendlyName: 'nucleus-call-paul',
+      ConferenceSid: 'CF200',
+    }).expect(204);
+
+    // Paul's lead leg presents Paul's own DID (team.json), NOT the global
+    // NUCLEUS_PHONE_NUMBER — so the called party sees Paul's line and a
+    // call-back routes back to Paul.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+16029050230', to: '+16025551234' })
+    );
+  });
+
+  test('falls back to NUCLEUS_PHONE_NUMBER for a rep with no DID (Britt)', async () => {
+    const conf = {
+      conferenceSid: null,
+      startedBy: 'britt', // inbound: null in team.json
+      leadPhone: '+16025551234',
+      participants: [],
+    };
+    conference.getConference.mockReturnValue(conf);
+    conference.claimLeadDial.mockReturnValue(true);
+    const mockCreate = jest.fn().mockResolvedValue({});
+    client.conferences.mockReturnValue({ participants: { create: mockCreate } });
+
+    await send({
+      StatusCallbackEvent: 'conference-start',
+      FriendlyName: 'nucleus-call-britt',
+      ConferenceSid: 'CF201',
+    }).expect(204);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+18005550000' })
+    );
+  });
+
+  test('inbound leg keeps NUCLEUS_PHONE_NUMBER (per-rep caller ID is outbound-only)', async () => {
+    const conf = {
+      conferenceSid: null,
+      startedBy: 'paul',
+      leadPhone: '+16025551234',
+      repSlackDm: '',
+      participants: [],
+    };
+    conference.getConference.mockReturnValue(conf);
+    conference.claimLeadDial.mockReturnValue(true);
+    const mockCreate = jest.fn().mockResolvedValue({});
+    client.conferences.mockReturnValue({ participants: { create: mockCreate } });
+
+    await send({
+      StatusCallbackEvent: 'conference-start',
+      FriendlyName: 'nucleus-inbound-xyz',
+      ConferenceSid: 'CF202',
+    }).expect(204);
+
+    // isInbound → shared number, even though startedBy resolves to a DID.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '+18005550000' })
+    );
   });
 
   /* ── Lead-dial on participant-join ── */
@@ -757,6 +886,41 @@ describe('POST /api/call/status', () => {
     expect(conference.removeConference).toHaveBeenCalledWith('nucleus-call-abc');
 
     Date.now.mockRestore();
+  });
+
+  // gox1: the conference-end UPDATE must carry a terminal-status guard so a
+  // prior 'voicemail' (or 'missed') set by incoming.js /voicemail-complete is
+  // never clobbered back to 'completed'. On the Phase 2 inbound no-rep path
+  // the rep never joins, so /api/call/end never fires and `conf` is still in
+  // memory when this arm runs — the `&& conf` short-circuit can't save us, the
+  // SQL WHERE clause has to. pool.query is mocked (no live row), so this is a
+  // guard-PRESENCE test on the emitted SQL, not a row-state assertion. The
+  // matching missed→voicemail row-flow is exercised in incoming.test.js.
+  test('conference-end UPDATE is guarded against clobbering a terminal status (gox1)', async () => {
+    conference.getConference.mockReturnValue({
+      startedAt: new Date(Date.now() - 5_000),
+      participants: [],
+    });
+    pool.query.mockResolvedValueOnce({ rowCount: 0 });
+
+    await send({
+      StatusCallbackEvent: 'conference-end',
+      FriendlyName: 'nucleus-inbound-ios-vm1',
+      ConferenceSid: 'CF200',
+    }).expect(204);
+
+    const dbCall = pool.query.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('UPDATE nucleus_phone_calls'),
+    );
+    expect(dbCall).toBeDefined();
+    // The WHERE clause must exclude every terminal status — 'voicemail' is
+    // the one the bug clobbered; 'missed', 'failed' and 'completed' are
+    // pinned too so the guard set can't silently shrink, and so it stays
+    // identical to the /api/call/end UPDATE's guard (both built from
+    // TERMINAL_CALL_STATUSES in call.js).
+    expect(dbCall[0]).toMatch(
+      /WHERE conference_name = \$3[\s\S]+AND status NOT IN \('completed', 'voicemail', 'missed', 'failed'\)/,
+    );
   });
 
   test('removes conference even when DB update fails', async () => {
