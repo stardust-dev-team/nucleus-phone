@@ -354,6 +354,32 @@ describe('GET /api/call/active', () => {
     expect(res.body.calls[0].type).toBe('live');
   });
 
+  test('post-merge C2: a PRACTICE call never appears as type:live — it would wedge the iOS dialer', async () => {
+    // registerSimConference omitted `direction`, so createConference defaulted
+    // it to 'outbound' and the sim survived the inbound filter — surfacing in
+    // /api/call/active as type:'live' with the rep's own startedBy. The iOS
+    // dialer polls exactly that as its double-dial precondition
+    // (`call.startedBy == identity && call.type == .live`), so a finished
+    // 2-minute practice call refused every outbound call that rep tried until
+    // the entry aged out. Same cross-repo failure this file's inbound comment
+    // argues against, two files over.
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom', conferenceSid: 'CF1', startedAt: now, startedBy: 'tom', leadPhone: '+16025550001' },
+      { conferenceName: 'sim-42', conferenceSid: null, startedAt: now, startedBy: 'tom', type: 'sim', direction: 'sim' },
+    ]);
+    client.conferences.mockReturnValue({ participants: { list: jest.fn().mockResolvedValue([]) } });
+
+    const res = await request(server)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    const live = res.body.calls.filter((c) => c.type === 'live');
+    expect(live.map((c) => c.conferenceName)).toEqual(['nucleus-call-tom']);
+    expect(live.some((c) => c.conferenceName === 'sim-42')).toBe(false);
+  });
+
   test('jsec-z4ff: INBOUND conferences stay OUT of the identity-scoped view', async () => {
     // z4ff gave inbound conferences a real owner (previously the literal
     // 'inbound') so a rep can read their own inbound cockpit. That would
