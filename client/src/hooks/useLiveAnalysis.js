@@ -90,6 +90,9 @@ export default function useLiveAnalysis(callId, enabled = true) {
     setSuggestionHistory([]);
     setObjection(null);
     setNavigatorStatus('ok');
+    // jsec-z4ff: clear the denial too. Every other field resets on a callId
+    // change; leaving this one set would show "no access" on the NEXT call.
+    setAccessDenied(null);
     seenRef.current.clear();
     predictionRef.current = null;
   }, []);

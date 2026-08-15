@@ -149,6 +149,35 @@ async function persistScores(rowId, result) {
   );
 }
 
+/**
+ * jsec-z4ff: register a practice call in the conference store.
+ *
+ * The live-analysis socket keys subscriptions by conference name and now
+ * authorizes them against lib/conference — so a practice call that was never
+ * registered is refused, including to the rep who started it. Only
+ * `simCallIos` did this; the browser and phone arms below did not, so every
+ * PWA practice cockpit would have gone dark (no transcript, no equipment
+ * detections, no Conversation Navigator) the moment the authz landed.
+ *
+ * The fix is registration, NOT weakening the check: the two sim paths simply
+ * disagreed about whether a practice call is a conference, and `simCallIos`
+ * had the right answer. `sim-${id}` matches what Cockpit.jsx subscribes to and
+ * what this file broadcasts on.
+ */
+function registerSimConference(simCallId, identity, difficulty) {
+  const conferenceName = `sim-${simCallId}`;
+  createConference(conferenceName, {
+    callerIdentity: identity,
+    to: null,
+    contactName: 'Mike Garza',
+    companyName: `Practice — ${difficulty}`,
+    contactId: null,
+    dbRowId: simCallId,
+  });
+  updateConference(conferenceName, { type: 'sim', difficulty });
+  return conferenceName;
+}
+
 // ─── POST /call — Initiate practice call ───────────────────────────
 // mode: 'phone' (default) calls the user's phone, 'browser' uses WebRTC.
 router.post('/call', sessionAuth, async (req, res) => {
@@ -223,6 +252,7 @@ router.post('/call', sessionAuth, async (req, res) => {
          RETURNING id`,
         [identity, difficulty, promptVersion]
       );
+      registerSimConference(row.id, identity, difficulty);
       res.json({ simCallId: row.id, assistantId, publicKey, firstMessage: pickGreeting(difficulty) });
     } catch (err) {
       console.error('sim: INSERT failed:', err.message);
@@ -263,6 +293,7 @@ router.post('/call', sessionAuth, async (req, res) => {
        RETURNING id`,
       [call.id, identity, difficulty, promptVersion, listenUrl, controlUrl]
     );
+    registerSimConference(row.id, identity, difficulty);
     res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
     console.error('sim: INSERT failed after Vapi call initiated, stopping orphan:', err.message);

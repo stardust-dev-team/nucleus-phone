@@ -28,6 +28,7 @@ const WebSocket = require('ws');
 const { pool } = require('../../db');
 const { attachWebSocket, broadcast } = require('../live-analysis');
 const { createConference, removeConference, updateConference } = require('../conference');
+const net = require('node:net');
 const { invalidateUser } = require('../../middleware/auth');
 
 const KATES_CALL = 'nucleus-call-kates-live-customer-call';
@@ -61,8 +62,9 @@ beforeEach(() => {
   for (const id of Object.keys(USERS)) invalidateUser(Number(id));
   pool.query.mockImplementation((sql, params) => {
     if (typeof sql === 'string' && sql.includes('FROM nucleus_phone_users')) {
-      const row = sql.includes('LOWER(identity)')
-        ? Object.values(USERS).find((u) => u.identity === String(params[0]).toLowerCase())
+      // Legacy tokens resolve by EMAIL (mirroring sessionAuth); modern ones by id.
+      const row = sql.includes('WHERE email')
+        ? Object.values(USERS).find((u) => u.email === params[0])
         : USERS[params[0]];
       return Promise.resolve({ rows: row ? [row] : [] });
     }
@@ -127,7 +129,7 @@ describe('live-analysis upgrade — a valid signature is not enough (jsec-z4ff)'
     // outage would become an open door — and it would open for EVERYONE at
     // once, silently, exactly when nobody is watching logs.
     pool.query.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
-    await expect(connectAs(1)).rejects.toThrow(/500|401/);
+    await expect(connectAs(1)).rejects.toThrow(/500/);
   });
 
   test('SECURITY: a legacy token cannot smuggle in a role the database does not grant', async () => {
@@ -164,6 +166,49 @@ describe('live-analysis upgrade — a valid signature is not enough (jsec-z4ff)'
     const denied = await subscribeAndAwait(ws, KATES_CALL);
     expect(denied?.type).toBe('subscribe_denied');   // external_caller, not admin
     ws.close();
+  });
+});
+
+describe('the upgrade must not become a remote process-kill (jsec-z4ff C1)', () => {
+  test('SECURITY: the socket has an error listener BEFORE the handler awaits anything', async () => {
+    // ws.handleUpgrade is what reattaches an 'error' listener to the socket
+    // (Node removes its own before emitting 'upgrade'). Putting a DB round-trip
+    // in front of it leaves the socket listener-less for the whole lookup, and
+    // an 'error' on a listener-less EventEmitter is an uncaughtException —
+    // which, with no process-level handler in this app, exits the process.
+    //
+    // That would have handed ANY authenticated principal — including the
+    // contractor this bead exists to contain — a remote kill, and taken the
+    // in-memory conference store with it. It also fires organically: the iOS
+    // dialer's URLSessionWebSocketTask produces RSTs on radio loss and app kill.
+    //
+    // Tested as a PROPERTY, not as a race. An earlier version of this test
+    // fired a real RST mid-lookup and passed with the fix REMOVED — jest
+    // absorbs the uncaught exception, so it proved nothing. Asserting the
+    // listener exists is deterministic and is the actual invariant: our
+    // handler was registered first, so by the time this second listener runs,
+    // the fix (if present) has already attached one.
+    const probe = http.createServer((_r, res) => { res.writeHead(404); res.end(); });
+    attachWebSocket(probe);
+
+    let listenersAtUpgrade = null;
+    probe.on('upgrade', (_req, socket) => {
+      listenersAtUpgrade = socket.listenerCount('error');
+    });
+
+    probe.listen(0, '127.0.0.1');
+    await once(probe, 'listening');
+    const probePort = probe.address().port;
+
+    const token = jwt.sign({ userId: 1 }, SECRET);
+    const ws = new WebSocket(`ws://127.0.0.1:${probePort}/api/live-analysis`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await once(ws, 'open');
+
+    expect(listenersAtUpgrade).toBeGreaterThan(0);
+    ws.close();
+    await new Promise((resolve) => probe.close(resolve));
   });
 });
 
@@ -215,6 +260,37 @@ describe('live-analysis subscribe — ownership decides who reads a call (jsec-z
     ws.close();
   });
 
+  test('an ADMIN may subscribe to a key that is not a conference at all (jsec-z4ff P3)', async () => {
+    // routes/equipment.js mints `test-<timestamp>` keys for the admin-only
+    // equipment harness — never conferences. With the not-found return ordered
+    // ABOVE the admin bypass, admins were refused their own tooling: the rule
+    // says "an admin sees anything", and the ordering was making that decision
+    // by accident. This pins the ordering, not just the rule.
+    const ws = await connectAs(3);
+    expect(await subscribeAndAwait(ws, `test-${Date.now()}`)).toBeNull();
+    ws.close();
+  });
+
+  test('SECURITY: deactivating a user reaches an ALREADY-OPEN socket (jsec-z4ff P9)', async () => {
+    // A socket can live for hours. Resolving the user once at connect meant a
+    // deactivation or demotion never reached an open connection, and the holder
+    // could keep subscribing to NEW conferences with stale privileges — while
+    // HTTP re-checked on every request. The two must not disagree.
+    const ws = await connectAs(1);
+    expect(await subscribeAndAwait(ws, KATES_CALL)).toBeNull();   // allowed while active
+
+    USERS[1].is_active = false;
+    invalidateUser(1);
+    try {
+      const frame = await subscribeAndAwait(ws, KATES_CALL);
+      expect(frame?.type).toBe('subscribe_denied');
+    } finally {
+      USERS[1].is_active = true;
+      invalidateUser(1);
+      ws.close();
+    }
+  });
+
   test('SECURITY: an unknown conference is refused, not treated as ownerless-and-open', async () => {
     const ws = await connectAs(2);
     const frame = await subscribeAndAwait(ws, 'nucleus-call-does-not-exist');
@@ -232,6 +308,25 @@ describe('live-analysis subscribe — ownership decides who reads a call (jsec-z
     const admin = await connectAs(3);
     expect(await subscribeAndAwait(admin, KATES_CALL)).toBeNull();
     admin.close();
+  });
+
+  test('removing a conference drops its subscribers (jsec-z4ff P7)', async () => {
+    // Subscriptions used to outlive removal harmlessly. Now that `subscribe`
+    // refuses an unknown conference and the client re-subscribes on every
+    // reconnect, a stale subscription plus a network blip would blank a live
+    // cockpit for the rest of the call. Removal must clean up.
+    const ws = await connectAs(1);
+    await subscribeAndAwait(ws, KATES_CALL);
+
+    removeConference(KATES_CALL);
+
+    const afterRemoval = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 200);
+      ws.once('message', (raw) => { clearTimeout(timer); resolve(JSON.parse(raw)); });
+    });
+    broadcast(KATES_CALL, { type: 'transcript', data: { text: 'should not arrive' } });
+    expect(await afterRemoval).toBeNull();
+    ws.close();
   });
 
   test('a refused subscribe does not disturb an existing valid subscription', async () => {
