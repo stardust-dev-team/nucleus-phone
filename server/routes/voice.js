@@ -6,6 +6,7 @@ const { touch } = require('../lib/health-tracker');
 const { sendSystemAlert } = require('../lib/slack');
 const { redeemJoinTicket } = require('../lib/join-tickets');
 const { getConference } = require('../lib/conference');
+const { resolveCallerIdentity } = require('../lib/twilio-caller-identity');
 
 const router = Router();
 
@@ -47,11 +48,15 @@ function shouldAlertOnRefusal(key, now = Date.now()) {
  * (POST /api/voice/sim-bridge-twiml makes the same trade with a 400.)
  */
 function refuseConferenceEntry(res, branch, reason, detail) {
-  console.warn(`voice: ${branch} REFUSED (${reason}) conference=${detail.requestedConference || detail.conference || '(none)'} callSid=${detail.callSid || '(none)'}`);
+  // caller= is the most useful field in this line and is trustworthy (jsec-gsx0):
+  // it comes from Twilio's From, not from anything the caller chose.
+  console.warn(`voice: ${branch} REFUSED (${reason}) caller=${detail.caller || '(unidentified)'} conference=${detail.requestedConference || detail.conference || '(none)'} callSid=${detail.callSid || '(none)'}`);
   logEvent('error', 'twilio.voice', `${branch} REFUSED: ${reason}`, { level: 'error', detail });
 
-  const alertKey = `${branch}:${detail.requestedConference || detail.conference || '(none)'}`;
+  const alertKey = detail.alertKey || `${branch}:${detail.requestedConference || detail.conference || '(none)'}`;
   if (shouldAlertOnRefusal(alertKey)) {
+    const body = detail.alertText
+      || 'Expected volume is zero. A burst means either a client that predates jsec-r0k6, or someone probing the conference paths.';
     sendSystemAlert(
       '🔴 Nucleus Phone — conference entry refused',
       [{
@@ -60,8 +65,8 @@ function refuseConferenceEntry(res, branch, reason, detail) {
           type: 'mrkdwn',
           text: `A \`/api/voice\` **${branch}** was refused: ${reason}.\n`
             + `Conference: \`${detail.requestedConference || detail.conference || '(none)'}\`\nCallSid: \`${detail.callSid || '(none)'}\`\n\n`
-            + 'Expected volume is zero. A burst means either a client that predates jsec-r0k6, or someone probing the conference paths. '
-            + `Repeats for this conference are suppressed for ${REFUSAL_ALERT_WINDOW_MS / 60000} minutes; the server log has every occurrence.`,
+            + `${body} `
+            + `Repeats for this cause are suppressed for ${REFUSAL_ALERT_WINDOW_MS / 60000} minutes; the server log has every occurrence.`,
         },
       }]
     ).catch((alertErr) => console.error('voice: refusal Slack alert failed:', alertErr.message));
@@ -91,6 +96,43 @@ router.post('/', twilioWebhook, async (req, res) => {
     const { ConferenceName, Action } = req.body;
     const twiml = new VoiceResponse();
 
+    // jsec-gsx0: who is on this leg. Read from the REST Call resource, NOT from
+    // req.body.From.
+    //
+    // The body param looks identical and is identical on every legitimate call —
+    // which is precisely why it is the wrong thing to trust.
+    // `Device.connect({params})` puts client-supplied keys into this same flat
+    // POST body, and Twilio documents that those params are not safe. Whether a
+    // custom `From` overrides the standard one is undocumented; the REST
+    // resource makes the answer irrelevant. (The first draft of this change read
+    // the body param, justified by a survey of production calls — which proved
+    // what `From` looks like, not whether a caller can set it. Caught in review.)
+    //
+    // Cost: one Twilio REST round-trip per request to this route. Acceptable —
+    // the route is only reachable by Voice SDK legs (it is the voice URL of one
+    // TwiML App, and no phone number points at it), and routes/call.js already
+    // requires the Twilio REST API to dial the lead in, so this introduces no
+    // new outage class. Fails CLOSED on an API error.
+    const {
+      identity: callerIdentity, error: identityError, infrastructure,
+    } = await resolveCallerIdentity(client, req.body.CallSid);
+    if (!callerIdentity) {
+      return refuseConferenceEntry(res, Action === 'join' ? 'join' : 'initiate', `could not establish caller identity — ${identityError}`, {
+        requestedConference: ConferenceName || null,
+        callSid: req.body.CallSid || null,
+        // A Twilio REST degradation refuses every in-flight call, and every one
+        // has a different conference name — so the usual per-conference alert
+        // key would emit one "someone is probing" alert PER CALL during an
+        // outage. Collapse infrastructure failures onto a single key with
+        // honest wording; they are the likeliest refusal on this route and they
+        // are not an attack.
+        alertKey: infrastructure ? 'identity-lookup-unavailable' : undefined,
+        alertText: infrastructure
+          ? 'Callers could not be identified because the Twilio lookup failed, so conference entry is being refused. This is an INFRASTRUCTURE failure, not a probe — outbound calls are affected. Alerts for this cause are collapsed to one.'
+          : undefined,
+      });
+    }
+
     if (Action === 'join') {
       // jsec-r0k6: this is the REAL join — the one that puts a second pair of
       // ears into a live customer call. It used to conference the caller into
@@ -104,11 +146,15 @@ router.post('/', twilioWebhook, async (req, res) => {
       // session and checks admin-or-owner before minting. `ConferenceName` and
       // `Muted` from this request body are deliberately IGNORED on this path —
       // reading either one back would re-open the hole.
-      const grant = redeemJoinTicket(req.body.JoinTicket);
+      // jsec-gsx0: the ticket must ALSO have been issued to this caller.
+      // Redemption takes the identity as an argument rather than returning it
+      // for comparison here, so the check cannot be forgotten at the call site.
+      const grant = redeemJoinTicket(req.body.JoinTicket, callerIdentity);
       if (!grant) {
-        return refuseConferenceEntry(res, 'join', 'absent, unknown or expired JoinTicket', {
+        return refuseConferenceEntry(res, 'join', 'JoinTicket absent, unknown, expired, or issued to a different caller', {
           requestedConference: ConferenceName || null,
           callSid: req.body.CallSid || null,
+          caller: callerIdentity,
         });
       }
 
@@ -129,7 +175,10 @@ router.post('/', twilioWebhook, async (req, res) => {
       // than logEvent alone: logEvent is gated on DEBUG=1 (lib/debug-log.js)
       // and is a no-op in a default production boot, and "who listened to whose
       // call, when" is precisely the line that must survive that.
-      console.log(`voice: join ALLOWED conference=${grant.conferenceName} muted=${grant.muted} callSid=${req.body.CallSid || '(none)'}`);
+      // Log grant.identity, not callerIdentity: they are equal by construction
+      // (redeem refuses otherwise), but the grant's copy states WHICH mint this
+      // redemption matched, which is the fact an audit actually wants.
+      console.log(`voice: join ALLOWED caller=${grant.identity} conference=${grant.conferenceName} muted=${grant.muted} callSid=${req.body.CallSid}`);
 
       const dial = twiml.dial();
       dial.conference({
@@ -165,22 +214,72 @@ router.post('/', twilioWebhook, async (req, res) => {
     //      which need a participant to already be in the conference.
     // So a legitimate initiate always names a KNOWN, NOT-YET-STARTED
     // conference, and entering an already-live one is never legitimate — which
-    // is exactly the attack. This is not an ownership check (the webhook has no
-    // session to check against); it is an invariant on conference lifecycle,
-    // and it takes the attack from "any live call" to "a conference you can
-    // name within the ~1s before it starts". Tightening it to true ownership
-    // needs a verified caller identity — tracked as a follow-up.
+    // is exactly the attack.
+    //
+    // jsec-gsx0 then ADDED a true ownership check below (the r0k6 note that used
+    // to sit here said one "needs a verified caller identity — tracked as a
+    // follow-up"; that follow-up is the code 20 lines down). Both checks run.
+    // They are not redundant: see the note on each.
     const initiating = getConference(ConferenceName);
     if (!initiating) {
       return refuseConferenceEntry(res, 'initiate', 'unknown conference', {
         requestedConference: ConferenceName || null,
         callSid: req.body.CallSid || null,
+        caller: callerIdentity,
       });
     }
+
+    // jsec-gsx0: a REAL ownership check, now that the caller identity is
+    // established from the authoritative REST Call resource. jsec-r0k6 could
+    // only assert the lifecycle invariant above, which left a residual window:
+    // between createConference and the conference-start callback (~1s) a
+    // conference is known AND not-yet-started, so an attacker who already knew
+    // the name could walk in. Ownership closes that window — you must be the rep
+    // it was created for, whenever you arrive.
+    //
+    // Ordered BEFORE the caller_call_sid UPDATE below on purpose: a refused
+    // caller must not reach the victim's nucleus_phone_calls row. Stamping their
+    // CallSid there breaks transcription mapping for the real rep even though
+    // the audio never connected. Pinned by a test that asserts pool.query was
+    // never called with SET caller_call_sid.
+    //
+    // No admin bypass here, deliberately. On this path an admin has no reason
+    // to enter a conference started by someone else: /api/call/initiate creates
+    // the conference for the identity that will connect, and the PWA and iOS
+    // both pass their own identity to /initiate and /token alike. An admin who
+    // wants into another rep's call uses the JOIN path, which is where the
+    // admin bypass lives (requireConferenceOwner in routes/call.js). Adding a
+    // bypass here would reintroduce a way into a live call that skips ticketing
+    // altogether.
+    // No `owner === ''` clause here, unlike requireConferenceOwner in
+    // routes/call.js. There it is load-bearing because req.user.identity can be
+    // '' and '' === '' would match. Here callerIdentity is guaranteed a
+    // non-empty string (parseClientIdentity returns string|null, never ''), so
+    // an ownerless conference already fails the inequality. Copying the idiom
+    // would be a dead guard with a false justification — the exact thing
+    // deleted from call.js in this same change.
+    const owner = typeof initiating.startedBy === 'string' ? initiating.startedBy.toLowerCase() : '';
+    if (owner !== callerIdentity) {
+      return refuseConferenceEntry(res, 'initiate', 'caller is not the rep this conference was created for', {
+        requestedConference: ConferenceName || null,
+        callSid: req.body.CallSid || null,
+        caller: callerIdentity,
+      });
+    }
+
+    // NOT merely defense in depth — this is the PRIMARY guard against a
+    // principal who can legitimately obtain a token as somebody else.
+    // routes/token.js mints an access token for ANY valid identity on the
+    // API-key path (its own comment: the shared key "is trusted to act as any
+    // identity", token.js:14-21). Such a principal satisfies the ownership check
+    // above *as that rep*, and is stopped here and only here. Do not delete this
+    // as redundant with the ownership check: it covers a caller the ownership
+    // check cannot.
     if (initiating.conferenceSid) {
       return refuseConferenceEntry(res, 'initiate', 'conference is already live — entry via the initiate path is never legitimate', {
         requestedConference: ConferenceName || null,
         callSid: req.body.CallSid || null,
+        caller: callerIdentity,
       });
     }
 

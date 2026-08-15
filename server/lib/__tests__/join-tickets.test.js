@@ -14,13 +14,13 @@ afterEach(() => {
 
 describe('issueJoinTicket', () => {
   test('refuses to issue a ticket without a conference — a ticket to nowhere would resolve to undefined downstream', () => {
-    expect(() => issueJoinTicket('', true)).toThrow(/conferenceName is required/);
-    expect(() => issueJoinTicket(undefined, true)).toThrow(/conferenceName is required/);
+    expect(() => issueJoinTicket('', true, 'tom')).toThrow(/conferenceName is required/);
+    expect(() => issueJoinTicket(undefined, true, 'tom')).toThrow(/conferenceName is required/);
   });
 
   test('every ticket is distinct, even for the same conference and flags', () => {
     const seen = new Set();
-    for (let i = 0; i < 200; i += 1) seen.add(issueJoinTicket('conf-a', true));
+    for (let i = 0; i < 200; i += 1) seen.add(issueJoinTicket('conf-a', true, 'tom'));
     expect(seen.size).toBe(200);
   });
 
@@ -28,7 +28,7 @@ describe('issueJoinTicket', () => {
     // A ticket that encoded its target would leak which call is live to anyone
     // who saw it, and would invite someone to "just decode it" downstream
     // instead of redeeming it.
-    const ticket = issueJoinTicket('nucleus-call-very-distinctive-name', true);
+    const ticket = issueJoinTicket('nucleus-call-very-distinctive-name', true, 'tom');
     expect(ticket).not.toContain('nucleus');
     expect(ticket).not.toContain('very-distinctive-name');
   });
@@ -36,13 +36,13 @@ describe('issueJoinTicket', () => {
 
 describe('redeemJoinTicket', () => {
   test('resolves a live ticket to its conference and muted flag', () => {
-    const ticket = issueJoinTicket('conf-a', true);
-    expect(redeemJoinTicket(ticket)).toEqual({ conferenceName: 'conf-a', muted: true });
+    const ticket = issueJoinTicket('conf-a', true, 'tom');
+    expect(redeemJoinTicket(ticket, 'tom')).toEqual({ conferenceName: 'conf-a', muted: true, identity: 'tom' });
   });
 
   test('muted is normalised to a boolean, so TwiML never receives a truthy string', () => {
-    expect(redeemJoinTicket(issueJoinTicket('conf-a', 'false')).muted).toBe(true);
-    expect(redeemJoinTicket(issueJoinTicket('conf-a', undefined)).muted).toBe(false);
+    expect(redeemJoinTicket(issueJoinTicket('conf-a', 'false', 'tom'), 'tom').muted).toBe(true);
+    expect(redeemJoinTicket(issueJoinTicket('conf-a', undefined, 'tom'), 'tom').muted).toBe(false);
   });
 
   test('returns null — never throws — for every junk input shape', () => {
@@ -57,61 +57,118 @@ describe('redeemJoinTicket', () => {
     // comment on it in join-tickets.js. Do not read this test as proof the
     // guard is load-bearing today.
     for (const junk of [undefined, null, '', 0, 42, {}, [], true, Symbol('x')]) {
-      expect(redeemJoinTicket(junk)).toBeNull();
+      expect(redeemJoinTicket(junk, 'tom')).toBeNull();
     }
   });
 
   test('an unknown ticket is null', () => {
-    issueJoinTicket('conf-a', true);
-    expect(redeemJoinTicket('some-other-ticket')).toBeNull();
+    issueJoinTicket('conf-a', true, 'tom');
+    expect(redeemJoinTicket('some-other-ticket', 'tom')).toBeNull();
   });
 
   test('a ticket is dead the instant it reaches its TTL, and stays dead', () => {
-    const ticket = issueJoinTicket('conf-a', true);
+    const ticket = issueJoinTicket('conf-a', true, 'tom');
     const start = Date.now();
 
     jest.spyOn(Date, 'now').mockReturnValue(start + TICKET_TTL_MS - 1);
-    expect(redeemJoinTicket(ticket)).not.toBeNull();
+    expect(redeemJoinTicket(ticket, 'tom')).not.toBeNull();
 
     // Boundary is >=, not >: a ticket must not survive its own expiry instant.
     jest.spyOn(Date, 'now').mockReturnValue(start + TICKET_TTL_MS);
-    expect(redeemJoinTicket(ticket)).toBeNull();
+    expect(redeemJoinTicket(ticket, 'tom')).toBeNull();
 
     // And redeeming past expiry must not resurrect it when the clock is
     // restored — expiry drops the entry.
     Date.now.mockRestore();
-    expect(redeemJoinTicket(ticket)).toBeNull();
+    expect(redeemJoinTicket(ticket, 'tom')).toBeNull();
   });
 
-  test('DELIBERATE: a ticket is reusable inside its TTL, because Twilio retries webhooks', () => {
-    // Twilio re-sends a webhook that 5xx'd or timed out with identical
-    // parameters. A single-use ticket would reject the retry and drop a
-    // legitimate join. If someone "hardens" this to single-use, this test is
-    // where they find out why it isn't — and must justify the tradeoff rather
-    // than discover it in production.
-    const ticket = issueJoinTicket('conf-a', true);
-    expect(redeemJoinTicket(ticket)).not.toBeNull();
-    expect(redeemJoinTicket(ticket)).not.toBeNull();
+  test('DELIBERATE: a ticket is reusable inside its TTL — safe now that it is identity-bound', () => {
+    // Reusability was the weak point pre-gsx0, because a ticket lifted from a
+    // Twilio log worked for anyone. Now it only works for the identity it was
+    // minted for, so replay by a different principal is impossible and reuse
+    // costs nothing — the rightful owner's retry succeeds, nobody else's does.
+    // If someone "hardens" this to single-use, this test is where they find out
+    // why it isn't, and must justify the tradeoff rather than meet it in prod.
+    const ticket = issueJoinTicket('conf-a', true, 'tom');
+    expect(redeemJoinTicket(ticket, 'tom')).not.toBeNull();
+    expect(redeemJoinTicket(ticket, 'tom')).not.toBeNull();
   });
 
   test('tickets are independent — redeeming one does not disturb another', () => {
-    const a = issueJoinTicket('conf-a', true);
-    const b = issueJoinTicket('conf-b', false);
-    expect(redeemJoinTicket(a).conferenceName).toBe('conf-a');
-    expect(redeemJoinTicket(b).conferenceName).toBe('conf-b');
+    const a = issueJoinTicket('conf-a', true, 'tom');
+    const b = issueJoinTicket('conf-b', false, 'tom');
+    expect(redeemJoinTicket(a, 'tom').conferenceName).toBe('conf-a');
+    expect(redeemJoinTicket(b, 'tom').conferenceName).toBe('conf-b');
+  });
+});
+
+describe('identity binding (jsec-gsx0)', () => {
+  test('SECURITY: a stolen ticket is useless to anyone but the caller it was issued to', () => {
+    // The threat this closes: the ticket transits Twilio and sits in Call and
+    // Debugger logs for its whole TTL. Pre-gsx0 anyone who read it there — plus
+    // any device token, which every authenticated principal can mint for
+    // themselves — could redeem it. Now possession is not enough.
+    const ticket = issueJoinTicket('conf-a', true, 'tom');
+
+    expect(redeemJoinTicket(ticket, 'blake')).toBeNull();
+    expect(redeemJoinTicket(ticket, 'paul')).toBeNull();
+    // ...and the rightful owner is unaffected by the failed attempts.
+    expect(redeemJoinTicket(ticket, 'tom')).not.toBeNull();
+  });
+
+  test('refuses to mint an unbound ticket rather than silently degrading to bearer semantics', () => {
+    for (const bad of [undefined, null, '', '   ', 42, {}]) {
+      expect(() => issueJoinTicket('conf-a', true, bad)).toThrow(/identity is required/);
+    }
+  });
+
+  test('a missing caller identity at redeem is a refusal, not a wildcard', () => {
+    // If voice.js ever failed to recover an identity and passed nothing, the
+    // ticket must NOT open. Fail closed.
+    const ticket = issueJoinTicket('conf-a', true, 'tom');
+    for (const missing of [undefined, null, '', 42, {}]) {
+      expect(redeemJoinTicket(ticket, missing)).toBeNull();
+    }
+  });
+
+  test('the identity comparison is case-insensitive on both sides', () => {
+    // Mint from a session identity, redeem from Twilio's From. Both are
+    // canonically lowercase today; normalising both ends means a display-cased
+    // value on either side cannot turn into a permanent silent 403.
+    const ticket = issueJoinTicket('conf-a', true, 'Tom');
+    expect(redeemJoinTicket(ticket, 'tom')).not.toBeNull();
+    expect(redeemJoinTicket(ticket, 'TOM')).not.toBeNull();
+  });
+
+  test('the identity is exposed on the grant so the caller can be audited', () => {
+    const ticket = issueJoinTicket('conf-a', false, 'paul');
+    expect(redeemJoinTicket(ticket, 'paul')).toEqual({
+      conferenceName: 'conf-a', muted: false, identity: 'paul',
+    });
+  });
+
+  test('two callers holding tickets for the SAME conference cannot use each other\'s', () => {
+    const tomTicket = issueJoinTicket('conf-shared', true, 'tom');
+    const paulTicket = issueJoinTicket('conf-shared', true, 'paul');
+
+    expect(redeemJoinTicket(tomTicket, 'paul')).toBeNull();
+    expect(redeemJoinTicket(paulTicket, 'tom')).toBeNull();
+    expect(redeemJoinTicket(tomTicket, 'tom').conferenceName).toBe('conf-shared');
+    expect(redeemJoinTicket(paulTicket, 'paul').conferenceName).toBe('conf-shared');
   });
 });
 
 describe('sweepExpiredTickets', () => {
   test('drops only expired entries, so the map cannot grow without bound', () => {
     const start = Date.now();
-    const stale = issueJoinTicket('conf-old', true);
+    const stale = issueJoinTicket('conf-old', true, 'tom');
 
     jest.spyOn(Date, 'now').mockReturnValue(start + TICKET_TTL_MS + 1);
-    const fresh = issueJoinTicket('conf-new', true);
+    const fresh = issueJoinTicket('conf-new', true, 'tom');
 
     expect(sweepExpiredTickets()).toBe(1);
-    expect(redeemJoinTicket(stale)).toBeNull();
-    expect(redeemJoinTicket(fresh)).not.toBeNull();
+    expect(redeemJoinTicket(stale, 'tom')).toBeNull();
+    expect(redeemJoinTicket(fresh, 'tom')).not.toBeNull();
   });
 });

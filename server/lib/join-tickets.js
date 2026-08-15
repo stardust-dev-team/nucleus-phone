@@ -30,16 +30,17 @@
 //   therefore cheap insurance against a retry we have not proven exists, not a
 //   requirement we have measured.
 //
-//   What bounds the risk today is the TTL, and the fact that reading a ticket
-//   requires either the authorized user's browser (in which case you have their
-//   session anyway) or read access to the Twilio console. The latter is a real
-//   if narrow replay window, and the clean fix is to bind the ticket to the
-//   authorized identity and check it against the `From: client:<identity>` that
-//   Twilio derives from the access token rather than from client params. That
-//   is NOT done here because this session could not verify the shape of `From`
-//   against a real call — the Twilio API probe was blocked, and shipping a
-//   guard on an unverified parameter shape is the exact mistake that left the
-//   jsec-vr1s guards dead for two months. Tracked as a follow-up bead.
+//   Reusability used to be the weak point, because a ticket lifted from a
+//   Twilio log was usable by anyone. jsec-gsx0 closed that: the ticket is now
+//   BOUND TO AN IDENTITY and redeemJoinTicket refuses unless the caller
+//   recovered from Twilio's `From` matches. Replay by a different principal is
+//   impossible, so reusability costs nothing — a retry by the rightful owner
+//   works, and nobody else's does.
+//
+//   `From` is safe to authorize on because Twilio derives it from the ACCESS
+//   TOKEN, not from client-supplied params, and routes/token.js mints tokens
+//   bound to req.user.identity. Verified empirically before being relied on —
+//   see lib/twilio-caller-identity.js for the evidence and why that mattered.
 //
 // * Short TTL. The only legitimate gap between mint and redeem is one client
 //   round-trip plus Twilio's inbound webhook — sub-second in practice. Two
@@ -66,20 +67,32 @@ const crypto = require('node:crypto');
 const TICKET_TTL_MS = 2 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 1000;
 
-/** ticket (string) -> { conferenceName, muted, expiresAt } */
+/** ticket (string) -> { conferenceName, muted, identity, expiresAt } */
 const tickets = new Map();
 
 /**
  * Authorize one join. Call ONLY after the caller has been checked against the
- * conference — this function asserts nothing about who is asking.
+ * conference — this function asserts nothing about whether they SHOULD be
+ * allowed, only about who the resulting ticket will work for.
  *
  * @param {string} conferenceName the conference the bearer may enter
  * @param {boolean} muted whether the bearer enters muted
+ * @param {string} identity the caller the ticket is issued to. Required
+ *   (jsec-gsx0): a ticket that works for anyone who holds it is a bearer token,
+ *   and this one transits Twilio and lands in Call/Debugger logs for its whole
+ *   TTL. Binding it means possession is not enough — you must also be the person
+ *   it was minted for, which is checked against Twilio's `From`.
  * @returns {string} the opaque ticket to hand to the client
  */
-function issueJoinTicket(conferenceName, muted) {
+function issueJoinTicket(conferenceName, muted, identity) {
   if (typeof conferenceName !== 'string' || !conferenceName) {
     throw new Error('issueJoinTicket: conferenceName is required');
+  }
+  if (typeof identity !== 'string' || !identity.trim()) {
+    // Throw rather than mint an unbound ticket. An identity-less ticket would
+    // silently degrade to the pre-gsx0 bearer semantics, and a silently weaker
+    // guard is exactly the jsec-vr1s failure mode.
+    throw new Error('issueJoinTicket: identity is required');
   }
   // 32 bytes from the CSPRNG: not guessable, and not derived from the
   // conference name, so a ticket leaks nothing about what it opens.
@@ -87,22 +100,33 @@ function issueJoinTicket(conferenceName, muted) {
   tickets.set(ticket, {
     conferenceName,
     muted: !!muted,
+    // Lowercase at the boundary, the way routes/call.js does (001z) — the
+    // registry is canonically lowercase and both sides of the later comparison
+    // must be normalised the same way or the check silently never matches.
+    identity: identity.trim().toLowerCase(),
     expiresAt: Date.now() + TICKET_TTL_MS,
   });
   return ticket;
 }
 
 /**
- * Resolve a ticket to the join it authorizes.
+ * Resolve a ticket to the join it authorizes, FOR A SPECIFIC CALLER.
  *
- * Returns null for every failure — absent, wrong type, unknown, expired — so
- * the caller has exactly one branch to get right, and a bug in this function
- * fails CLOSED (no conference to join) rather than open.
+ * The caller identity is a required argument rather than a field on the return
+ * value on purpose: if the comparison lived at the call site, forgetting it
+ * would compile, pass every "valid ticket works" test, and quietly restore
+ * bearer semantics. Making it impossible to redeem without naming who is
+ * redeeming is the point.
+ *
+ * Returns null for every failure — absent, wrong type, unknown, expired, or
+ * issued to somebody else — so the caller has exactly one branch to get right
+ * and a bug in this function fails CLOSED.
  *
  * @param {unknown} ticket
- * @returns {{conferenceName: string, muted: boolean}|null}
+ * @param {unknown} callerIdentity identity recovered from Twilio's `From`
+ * @returns {{conferenceName: string, muted: boolean, identity: string}|null}
  */
-function redeemJoinTicket(ticket) {
+function redeemJoinTicket(ticket, callerIdentity) {
   // Redundant while the store is a Map (Map.get is total) — kept as an explicit
   // boundary check so a future shared store, which may not be, cannot silently
   // change what a junk ticket does.
@@ -113,7 +137,15 @@ function redeemJoinTicket(ticket) {
     tickets.delete(ticket);
     return null;
   }
-  return { conferenceName: entry.conferenceName, muted: entry.muted };
+  // jsec-gsx0: possession is not authorization. The ticket names the caller it
+  // was minted for, and `callerIdentity` comes from Twilio's `From`, which is
+  // derived from the access token rather than from anything the client sent
+  // (see lib/twilio-caller-identity.js). A ticket lifted from a Twilio log is
+  // therefore useless to anyone but its owner.
+  if (typeof callerIdentity !== 'string' || !callerIdentity) return null;
+  if (callerIdentity.trim().toLowerCase() !== entry.identity) return null;
+
+  return { conferenceName: entry.conferenceName, muted: entry.muted, identity: entry.identity };
 }
 
 /** Drop expired tickets so the map cannot grow without bound. */

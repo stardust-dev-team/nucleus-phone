@@ -43,7 +43,8 @@ jest.mock('../../middleware/auth', () => ({
   bearerOrApiKeyOrSession: (req, res, next) => {
     const role = req.headers['x-test-role'] || 'admin';
     const identity = req.headers['x-test-identity'] || 'system';
-    req.user = { id: 1, email: `${identity}@nucleus-phone`, identity, role, displayName: identity, authSource: 'session' };
+    const authSource = req.headers['x-test-authsource'] || 'session';
+    req.user = { id: 1, email: `${identity}@nucleus-phone`, identity, role, displayName: identity, authSource };
     next();
   },
 }));
@@ -113,14 +114,17 @@ describe('POST /api/call/join — who may listen (jsec-r0k6)', () => {
 
     expect(res.statusCode).toBe(200);
     expect(typeof res.body.joinTicket).toBe('string');
-    expect(redeemJoinTicket(res.body.joinTicket)).toEqual({ conferenceName: CONF, muted: true });
+    expect(redeemJoinTicket(res.body.joinTicket, 'tom')).toEqual({ conferenceName: CONF, muted: true, identity: 'tom' });
   });
 
   test('the owning rep may re-join their own conference', async () => {
     const res = await join('caller', 'kate');
 
     expect(res.statusCode).toBe(200);
-    expect(redeemJoinTicket(res.body.joinTicket)).toEqual({ conferenceName: CONF, muted: true });
+    // jsec-gsx0: the ticket is bound to KATE — the caller it was issued to —
+    // not to whoever presents it later. An admin cannot pick it up either.
+    expect(redeemJoinTicket(res.body.joinTicket, 'kate')).toEqual({ conferenceName: CONF, muted: true, identity: 'kate' });
+    expect(redeemJoinTicket(res.body.joinTicket, 'tom')).toBeNull();
   });
 
   test('owner match is case-insensitive (display-cased identity, 001z)', async () => {
@@ -133,7 +137,27 @@ describe('POST /api/call/join — who may listen (jsec-r0k6)', () => {
   test('muted:false is carried onto the ticket — an open-mic join is authorized as such', async () => {
     const res = await join('admin', 'tom', { muted: false });
 
-    expect(redeemJoinTicket(res.body.joinTicket)).toEqual({ conferenceName: CONF, muted: false });
+    expect(redeemJoinTicket(res.body.joinTicket, 'tom')).toEqual({ conferenceName: CONF, muted: false, identity: 'tom' });
+  });
+
+  test('muted defaults to false when the body omits it, and the response shape is stable', async () => {
+    // Ported from call.test.js rather than dropped when that file's /join tests
+    // moved to an API-key refusal: the `!!muted` default and the response shape
+    // {conferenceName, muted, joinTicket} had no other coverage, and the join()
+    // helper here always sends muted:true unless told otherwise.
+    const res = await request(await listenLoopback(app))
+      .post('/api/call/join')
+      .set('x-test-role', 'admin')
+      .set('x-test-identity', 'tom')
+      .send({ conferenceName: CONF })
+      .expect(200);
+
+    const { joinTicket, ...rest } = res.body;
+    expect(rest).toEqual({ conferenceName: CONF, muted: false });
+    expect(typeof joinTicket).toBe('string');
+    expect(redeemJoinTicket(joinTicket, 'tom')).toEqual({
+      conferenceName: CONF, muted: false, identity: 'tom',
+    });
   });
 
   test('an ownerless conference is admin-only (fail closed, not fail open)', async () => {
@@ -149,6 +173,35 @@ describe('POST /api/call/join — who may listen (jsec-r0k6)', () => {
     const allowed = await join('admin', 'tom');
     expect(allowed.statusCode).toBe(200);
     expect(typeof allowed.body.joinTicket).toBe('string');
+  });
+
+  test('jsec-gsx0 N2: EACH half of the API-key guard is exercised alone', async () => {
+    // The guard reads `authSource === 'api_key' || identity === 'system'`, and
+    // review found either clause could be deleted with the suite still green —
+    // the only principal used satisfied both, so one guard was cosplaying as
+    // two. These are the two principals that separate them.
+    //
+    // (a) api_key auth carrying a NORMAL identity — the realistic automation
+    //     case. A ticket minted here is bound to an identity that can never
+    //     appear on a Voice SDK leg, so it would be unredeemable.
+    const apiKeyCaller = await request(await listenLoopback(app))
+      .post('/api/call/join')
+      .set('x-test-role', 'admin')
+      .set('x-test-identity', 'tom')
+      .set('x-test-authsource', 'api_key')
+      .send({ conferenceName: CONF, muted: true });
+    expect(apiKeyCaller.statusCode).toBe(403);
+    expect(apiKeyCaller.body.joinTicket).toBeUndefined();
+
+    // (b) a SESSION principal whose identity is the 'system' sentinel.
+    const systemSession = await request(await listenLoopback(app))
+      .post('/api/call/join')
+      .set('x-test-role', 'admin')
+      .set('x-test-identity', 'system')
+      .set('x-test-authsource', 'session')
+      .send({ conferenceName: CONF, muted: true });
+    expect(systemSession.statusCode).toBe(403);
+    expect(systemSession.body.joinTicket).toBeUndefined();
   });
 
   test('an unknown conference 404s before any ownership question is asked', async () => {

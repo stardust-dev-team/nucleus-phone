@@ -168,37 +168,26 @@ describe('POST /api/call/join', () => {
       .expect(404);
   });
 
-  test('returns conference info and a join ticket on success', async () => {
-    // jsec-r0k6: the response gained `joinTicket` — voice.js will not join a
-    // conference without one. These callers authenticate with the API key, so
-    // they are admin and clear the ownership check; who may and may not obtain
-    // a ticket is covered in call-join-authz.test.js, which seeds through the
-    // REAL conference store rather than the hand-built mock used here (that
-    // mock has no startedBy, so it cannot exercise ownership at all).
+  test('an API-key principal is refused rather than handed an unusable ticket', async () => {
+    // jsec-gsx0: a join ticket is bound to the identity that will appear on the
+    // Voice SDK leg. An API-key principal is identity 'system', which can never
+    // appear as client:<identity>, so minting for it would return 200 with a
+    // ticket nobody can redeem — a fake success that reads like a working
+    // integration until someone tries to use it. Refuse, and say why.
+    //
+    // The success path moved to call-join-authz.test.js, which uses session
+    // principals and seeds through the REAL conference store (the hand-built
+    // mock here has no startedBy, so it cannot exercise ownership at all).
     conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
 
     const res = await request(server)
       .post('/api/call/join')
       .set('x-api-key', API_KEY)
       .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom', muted: true })
-      .expect(200);
+      .expect(403);
 
-    const { joinTicket, ...rest } = res.body;
-    expect(rest).toEqual({ conferenceName: 'nucleus-call-abc', muted: true });
-    expect(typeof joinTicket).toBe('string');
-    expect(joinTicket.length).toBeGreaterThan(20);
-  });
-
-  test('muted defaults to false', async () => {
-    conference.getConference.mockReturnValue({ conferenceName: 'nucleus-call-abc' });
-
-    const res = await request(server)
-      .post('/api/call/join')
-      .set('x-api-key', API_KEY)
-      .send({ conferenceName: 'nucleus-call-abc', callerIdentity: 'tom' })
-      .expect(200);
-
-    expect(res.body.muted).toBe(false);
+    expect(res.body.error).toMatch(/API-key principal cannot join/);
+    expect(res.body.joinTicket).toBeUndefined();
   });
 });
 
