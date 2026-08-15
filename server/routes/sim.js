@@ -174,7 +174,14 @@ function registerSimConference(simCallId, identity, difficulty) {
     contactId: null,
     dbRowId: simCallId,
   });
-  updateConference(conferenceName, { type: 'sim', difficulty });
+  // direction:'sim' is load-bearing (post-merge C2), not decoration.
+  // createConference defaults direction to 'outbound', so without this a
+  // practice call surfaced in GET /api/call/active as type:'live' with the
+  // rep's own startedBy — and the iOS dialer polls that as its double-dial
+  // precondition, refusing every outbound call for that rep until the entry
+  // aged out. Same cross-repo failure the /api/call/active comment in
+  // routes/call.js argues against for inbound, two files over.
+  updateConference(conferenceName, { type: 'sim', direction: 'sim', difficulty });
   return conferenceName;
 }
 
@@ -757,6 +764,19 @@ async function webhookHandler(req, res) {
       removeConference(row.conference_name);
     }
   }
+
+  // Post-merge C2: remove the in-memory entry for EVERY sim, not just those
+  // with a Twilio conference. Browser and phone sims persist neither
+  // conference_sid nor conference_name (only simCallIos does), so the block
+  // above skipped them entirely and their only exit was the stale sweep —
+  // which C1 has just, correctly, stopped applying to sims. Without this the
+  // entry would now live the full 2h backstop.
+  //
+  // Derived from the row id rather than conference_name for the same reason:
+  // registerSimConference names it `sim-<id>` and the column is NULL here.
+  // removeConference is a no-op on an absent key, so this is safe alongside
+  // the iOS path above.
+  removeConference(`sim-${row.id}`);
 
   // Async scoring pipeline (fire-and-forget after 200 response).
   (async () => {

@@ -7,6 +7,23 @@ const MAX_RETRIES = 3;
 // retry-after honoring path; this governs only the transient-5xx retries.
 const RETRY_BASE_MS = 500;
 const RETRY_CAP_MS = 8000;
+// Ceiling on a SERVER-SUPPLIED Retry-After (post-merge C3). RETRY_CAP_MS bounds
+// only our own backoff; honoring the header unbounded let a remote value hang a
+// request handler — `Retry-After: 900` meant three 15-minute sleeps, and
+// server/index.js sets no request timeout, so GET /api/contacts/lookup (which
+// chains four hubspotFetch calls, each with a fresh budget) could hold a socket
+// for the better part of an hour on an ordinary `Retry-After: 60`. Wait at most
+// this long per attempt no matter what the server asks for.
+const RETRY_AFTER_CAP_MS = 30000;
+
+/** Parse a Retry-After delta-seconds header into bounded ms; 0 if unusable.
+ *  RFC 7231 also permits an HTTP-date form, which parseInt yields NaN for —
+ *  hence the isFinite guard rather than a bare parseInt (see the 429 path). */
+function retryAfterMs(resp) {
+  const secs = parseInt(resp.headers.get('retry-after') || '', 10);
+  if (!Number.isFinite(secs) || secs <= 0) return 0;
+  return Math.min(secs * 1000, RETRY_AFTER_CAP_MS);
+}
 
 // Full-jitter capped exponential backoff — the AWS-recommended anti-stampede: a uniform
 // pick in [0, min(cap, base·2^attempt)] FULLY decorrelates retries across many CRM writes
@@ -70,8 +87,13 @@ async function hubspotFetch(path, options = {}, _retries = 0) {
       const text = await resp.text().catch(() => '');
       throwHttpError(resp, text, method, path, { service: 'HubSpot' });
     }
-    const retryAfter = Math.max(1, parseInt(resp.headers.get('retry-after') || '2', 10));
-    await new Promise(r => setTimeout(r, retryAfter * 1000));
+    // Math.max(1, parseInt(...)) propagated NaN on the RFC-legal HTTP-date form
+    // of Retry-After, and Node coerces setTimeout(fn, NaN) to 1ms — four
+    // requests ~1ms apart at an endpoint that had just rate-limited us
+    // (post-merge C4). Fall back to the documented 2s default instead, and cap
+    // the honored value the same way the 5xx path does.
+    const waitMs = retryAfterMs(resp) || 2000;
+    await new Promise(r => setTimeout(r, waitMs));
     await discardBody(resp);
     return hubspotFetch(path, options, _retries + 1);
   }
@@ -102,8 +124,7 @@ async function hubspotFetch(path, options = {}, _retries = 0) {
     // Honor Retry-After when the server sends one (RFC 7231 defines it for 503).
     // Our own backoff peaks at 2s; if HubSpot says "30s" during a real outage,
     // hammering would burn the whole budget in under two seconds.
-    const serverHint = parseInt(resp.headers.get('retry-after') || '', 10);
-    const waitMs = Math.max(backoffMs(_retries), Number.isFinite(serverHint) ? serverHint * 1000 : 0);
+    const waitMs = Math.max(backoffMs(_retries), retryAfterMs(resp));
     await new Promise(r => setTimeout(r, waitMs));
     await discardBody(resp);
     return hubspotFetch(path, options, _retries + 1);
