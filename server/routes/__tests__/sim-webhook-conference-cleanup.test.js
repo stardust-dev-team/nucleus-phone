@@ -124,7 +124,7 @@ describe('Vapi webhook end-of-call — defensive conference cleanup (B2b)', () =
     expect(conference.removeConference).toHaveBeenCalledWith('sim-42');
   });
 
-  test('PWA browser-mode sim (no conference_sid): no Twilio call', async () => {
+  test('PWA browser-mode sim (no conference_sid): no Twilio call, but the in-memory entry IS removed', async () => {
     pool.query.mockResolvedValue({
       rows: [{ id: 42, caller_identity: 'kate', difficulty: 'easy', conference_sid: null, conference_name: null }],
       rowCount: 1,
@@ -138,8 +138,17 @@ describe('Vapi webhook end-of-call — defensive conference cleanup (B2b)', () =
 
     await new Promise(r => setImmediate(r));
 
+    // No Twilio conference exists for a browser sim, so nothing is called there.
     expect(client.conferences).not.toHaveBeenCalled();
-    expect(conference.removeConference).not.toHaveBeenCalled();
+
+    // post-merge C2 — this assertion is INVERTED from what it used to be, and
+    // the old version was pinning a leak. Browser/phone sims persist neither
+    // conference_sid nor conference_name (only simCallIos does), so the
+    // conference_sid-gated cleanup above skipped them and nothing removed the
+    // in-memory entry. It then surfaced in GET /api/call/active as type:'live'
+    // and wedged that rep's iOS dialer until it aged out. The removal is keyed
+    // off the row id because conference_name is NULL here.
+    expect(conference.removeConference).toHaveBeenCalledWith('sim-42');
   });
 
   test('Twilio 404 on conference.update is swallowed (expected on happy path)', async () => {
