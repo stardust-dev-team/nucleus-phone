@@ -27,7 +27,8 @@
  * Two things a signature check alone could not do, and now does:
  *   (1) A DEACTIVATED user kept access for the remaining life of a 30-day
  *       token, because nothing loaded the row. loadUserById returns null for
- *       is_active=false, so revocation takes effect here too.
+ *       is_active=false, so revocation now lands both at connect AND on every
+ *       subscribe — an open socket must not outlive the account behind it.
  *   (2) Role and identity were unknown at this layer. They are exactly what the
  *       subscribe check needs.
  */
@@ -39,10 +40,11 @@ const { logEvent } = require('./debug-log');
 const { AQ_RANK } = require('./aq-constants');
 const { loadUserById } = require('../middleware/auth');
 const { hasMinRole } = require('../middleware/rbac');
-const { getConference } = require('./conference');
+const { getConference, onConferenceRemoved } = require('./conference');
 
 // callId -> Set<ws>
 const subscriptions = new Map();
+
 
 // callId -> Set<'manufacturer:model'> — avoids re-broadcasting same equipment
 const seen = new Map();
@@ -71,14 +73,20 @@ const callAirQuality = new Map();
 async function resolveUser(payload) {
   if (payload?.userId) return loadUserById(payload.userId);
 
-  if (payload?.identity && payload?.role) {
-    // Re-read the current row by identity; ignore the token's own role claim.
+  if (payload?.identity && payload?.role && payload?.email) {
+    // Mirror sessionAuth EXACTLY: same predicate, and resolve by EMAIL, not by
+    // identity. `identity VARCHAR(50) UNIQUE` is case-SENSITIVELY unique, so
+    // 'Blake' and 'blake' can both exist; `LOWER(identity) = LOWER($1)` could
+    // match two rows and `rows[0]` with no ORDER BY would let heap order decide
+    // which principal you become. Not reachable today — every legacy token in
+    // the wild carries an email — but this is the exact shape of divergence
+    // that has bitten this lineage twice, so don't leave it lying around.
     const { pool } = require('../db');
     const { rows } = await pool.query(
       `SELECT id, email, identity, role, display_name, is_active
          FROM nucleus_phone_users
-        WHERE LOWER(identity) = LOWER($1)`,
-      [payload.identity]
+        WHERE email = $1`,
+      [payload.email]
     );
     if (!rows.length || !rows[0].is_active) return null;
     const row = rows[0];
@@ -109,16 +117,21 @@ function subscribeDenialReason(user, callId) {
   if (!user) return 'no authenticated user on the socket';
   if (typeof callId !== 'string' || !callId) return 'malformed callId';
 
+  // Admin bypass FIRST, deliberately. "An admin sees anything" is the rule, and
+  // putting the not-found return above it made that choice by accident: the
+  // admin-only equipment test harness (routes/equipment.js) subscribes to
+  // `test-<timestamp>` keys that are not conferences and never will be, so an
+  // admin was refused their own tooling. Ordering is the whole decision here.
+  if (hasMinRole(user.role, 'admin')) return null;
+
   const conf = getConference(callId);
   if (!conf) {
-    // Fail closed on an unknown conference. The in-memory store is the only
-    // record of who owns what, so "not found" means "cannot be authorized" —
-    // never "no owner, therefore anyone". This also covers the post-restart
-    // case, where the transcript stream is dead anyway.
+    // Fail closed on an unknown conference for everyone else. The in-memory
+    // store is the only record of who owns what, so "not found" means "cannot
+    // be authorized" — never "no owner, therefore anyone". Also covers the
+    // post-restart case, where the transcript stream is dead anyway.
     return 'unknown or ended conference';
   }
-
-  if (hasMinRole(user.role, 'admin')) return null;
 
   const owner = typeof conf.startedBy === 'string' ? conf.startedBy.toLowerCase() : '';
   const me = (user.identity || '').toLowerCase();
@@ -128,6 +141,27 @@ function subscribeDenialReason(user, callId) {
   if (owner && me && owner === me) return null;
 
   return 'not your call';
+}
+
+/**
+ * Re-resolve the socket's user, or null if the account is gone/deactivated.
+ *
+ * Returns null on a lookup error too — fail closed. A socket that cannot prove
+ * who it is right now does not get to subscribe to anything new; the existing
+ * subscription is left alone, because tearing down a live cockpit on a
+ * transient DB blip would be its own outage.
+ */
+async function refreshUser(ws) {
+  const id = ws._user && ws._user.id;
+  if (!id) return null;
+  try {
+    const user = await loadUserById(id);
+    if (user) ws._user = user;
+    return user;
+  } catch (err) {
+    console.error('live-analysis: user refresh failed:', err.message);
+    return null;
+  }
 }
 
 /** Send JSON if the socket is still open. Never throws into the message loop. */
@@ -143,7 +177,43 @@ function safeSend(ws, payload) {
 function attachWebSocket(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
 
+  // jsec-z4ff: drop subscribers the moment their conference leaves the store.
+  //
+  // Subscriptions used to outlive a conference harmlessly — broadcast() never
+  // re-authorizes — but `subscribe` now refuses an unknown conference, and
+  // useLiveAnalysis re-subscribes on every socket reconnect. Without this, a
+  // network blip after a removal blanks a live cockpit for the rest of the
+  // call. Registered centrally so no future removal path can forget it; three
+  // existing paths already did (the stale sweeper, the poll-fallback give-up,
+  // the sim close-out). cleanupCall is idempotent.
+  //
+  // Registered HERE rather than at module load: this is server lifecycle, and
+  // binding it at import would fire in every test that merely requires this
+  // module for broadcast().
+  onConferenceRemoved(cleanupCall);
+
   httpServer.on('upgrade', (req, socket, head) => {
+    // MUST be the first statement. Node removes its own 'error' listener from
+    // the socket before emitting 'upgrade', and the only thing that reattaches
+    // one is ws.handleUpgrade (its first line is `socket.on('error', ...)`).
+    // Any await BEFORE handleUpgrade therefore leaves the socket with ZERO
+    // error listeners, and an 'error' on a listener-less EventEmitter is an
+    // uncaughtException — which, with no process-level handler in this app,
+    // exits the process.
+    //
+    // jsec-z4ff put a DB round-trip in exactly that window, turning the upgrade
+    // into a remote process-kill: a TCP RST mid-lookup (radio loss, app kill,
+    // NAT reaping — or one authenticated attacker in a loop) crashes the
+    // dialer. Worse than a restart, because lib/conference.js is in-memory: the
+    // crash wipes activeConferences, so every live cockpit then fails the very
+    // ownership check this change added, and /api/call/end 404s for calls in
+    // flight. Closing a read primitive by opening a kill primitive for the same
+    // actor is not a trade worth making.
+    socket.on('error', (err) => {
+      console.warn('live-analysis: socket error during upgrade:', err.message);
+      socket.destroy();
+    });
+
     const { pathname } = new URL(req.url, `http://${req.headers.host}`);
     if (pathname !== '/api/live-analysis') {
       socket.destroy();
@@ -202,7 +272,7 @@ function attachWebSocket(httpServer) {
   wss.on('connection', (ws) => {
     ws._callId = null;
 
-    ws.on('message', (raw) => {
+    ws.on('message', async (raw) => {
       let msg;
       try {
         msg = JSON.parse(raw);
@@ -213,7 +283,15 @@ function attachWebSocket(httpServer) {
       if (msg.type === 'subscribe' && msg.callId) {
         // jsec-z4ff: the subscription key is a conference name, so subscribing
         // is exactly "let me listen to this call" — authorize it as such.
-        const denial = subscribeDenialReason(ws._user, msg.callId);
+        //
+        // Re-resolve the user rather than trusting the row captured at connect.
+        // A socket can live for hours; without this, a deactivation or a
+        // demotion would not reach an already-open connection, and the holder
+        // could keep subscribing to NEW conferences with stale privileges. HTTP
+        // re-checks per request, so this keeps the two consistent. loadUserById
+        // is cached for 5s, so the cost is a cache hit in practice.
+        const fresh = await refreshUser(ws);
+        const denial = subscribeDenialReason(fresh, msg.callId);
         if (denial) {
           console.warn(`live-analysis: subscribe REFUSED for ${ws._user?.identity || '(unknown)'} on ${msg.callId} — ${denial}`);
           logEvent('error', 'live-analysis', `subscribe REFUSED: ${denial}`, {

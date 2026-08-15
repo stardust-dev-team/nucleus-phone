@@ -354,6 +354,32 @@ describe('GET /api/call/active', () => {
     expect(res.body.calls[0].type).toBe('live');
   });
 
+  test('jsec-z4ff: INBOUND conferences stay OUT of the identity-scoped view', async () => {
+    // z4ff gave inbound conferences a real owner (previously the literal
+    // 'inbound') so a rep can read their own inbound cockpit. That would
+    // silently have changed THIS route too — and the iOS dialer polls it as a
+    // double-dial precondition. The conference exists from the moment the DID
+    // rings, before anyone answers, and `type: forward` reps are rung on their
+    // MOBILE, not the dialer — so a ringing-then-voicemail inbound call would
+    // block that rep's outbound dialing, for up to 2h if the conference-end
+    // webhook is dropped (the stale sweeper's ceiling).
+    const now = new Date();
+    conference.listActiveConferences.mockReturnValue([
+      { conferenceName: 'nucleus-call-tom', conferenceSid: 'CF1', startedAt: now, startedBy: 'tom', leadPhone: '+16025550001' },
+      { conferenceName: 'nucleus-inbound-tom', conferenceSid: 'CF9', startedAt: now, startedBy: 'tom', direction: 'inbound', leadPhone: '+16025559999' },
+    ]);
+    client.conferences.mockReturnValue({
+      participants: { list: jest.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(server)
+      .get('/api/call/active?identity=tom')
+      .set('x-api-key', API_KEY)
+      .expect(200);
+
+    expect(res.body.calls.map((c) => c.conferenceName)).toEqual(['nucleus-call-tom']);
+  });
+
   test('?identity=<me> with no match returns empty array (iOS proceeds with dial)', async () => {
     const now = new Date();
     conference.listActiveConferences.mockReturnValue([

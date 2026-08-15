@@ -453,7 +453,21 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   // against 'inbound' anywhere (checked), and call.js's outboundCallerId is
   // reached only when !isInbound, so caller-ID behaviour is untouched.
   // Overlaps the sentinel half of jsec-968p.
-  const inboundOwner = teamRegistry.getRepByDID(calledNumber)?.identity || 'inbound';
+  // Resolve by DID first; fall back to matching the forward number against team
+  // mobiles for the LEGACY INBOUND_FORWARD_NUMBER route, which has no DID entry.
+  //
+  // That fallback is not hypothetical: INBOUND_REP_SLACK_DM and
+  // INBOUND_FORWARD_NUMBER are both set in production today (checked), so the
+  // legacy route is live AND reaches the cockpit-DM below. Leaving it on the
+  // 'inbound' sentinel would hand a real human a Slack link to a conference this
+  // change makes admin-only — precisely the broken-link flow being fixed for the
+  // mapped DIDs, just one branch over.
+  //
+  // Only if BOTH miss does the sentinel stand, and then it is correct: nobody in
+  // particular owns that call, so it is admin-only. Fail closed.
+  const inboundOwner = teamRegistry.getRepByDID(calledNumber)?.identity
+    || teamRegistry.reps.find((r) => r.mobile && r.mobile === forwardTo)?.identity
+    || 'inbound';
   createConference(conferenceName, {
     callerIdentity: inboundOwner,
     to: forwardTo,

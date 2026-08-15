@@ -50,8 +50,40 @@ function updateConference(conferenceName, updates) {
   }
 }
 
+// jsec-z4ff: observers notified whenever a conference leaves the store.
+//
+// The dependency points THIS way on purpose: live-analysis.js requires this
+// module (to authorize subscriptions against conf.startedBy), so this module
+// must not require live-analysis back. A listener list inverts it cleanly.
+//
+// Why it is needed: subscriptions used to survive a conference's removal
+// harmlessly, because broadcast() never re-authorizes. Now that `subscribe`
+// refuses an unknown conference, and useLiveAnalysis re-sends `subscribe` on
+// every socket reconnect, any network blip after a removal would permanently
+// blank a cockpit that is still on a live call. Three removal paths never
+// cleaned up their listeners (the stale sweeper below, the poll-fallback
+// give-up in routes/call.js, and the sim close-out) — routing every removal
+// through one notification covers all of them at once, present and future.
+const removalListeners = [];
+
+/** Register a callback invoked with the conference name on every removal. */
+function onConferenceRemoved(fn) {
+  removalListeners.push(fn);
+}
+
+function notifyRemoved(conferenceName) {
+  for (const fn of removalListeners) {
+    try {
+      fn(conferenceName);
+    } catch (err) {
+      // A misbehaving observer must never block teardown.
+      console.error(`conference: removal listener failed for ${conferenceName}:`, err.message);
+    }
+  }
+}
+
 function removeConference(conferenceName) {
-  activeConferences.delete(conferenceName);
+  if (activeConferences.delete(conferenceName)) notifyRemoved(conferenceName);
 }
 
 function listActiveConferences() {
@@ -76,12 +108,14 @@ const sweepInterval = setInterval(() => {
     if (noSid || tooOld) {
       console.warn(`Removing stale conference: ${name} (age=${Math.round(age / 1000)}s, sid=${!!conf.conferenceSid})`);
       activeConferences.delete(name);
+      notifyRemoved(name);
     }
   }
 }, 2 * 60 * 1000);
 sweepInterval.unref();
 
 module.exports = {
+  onConferenceRemoved,
   createConference,
   getConference,
   updateConference,
