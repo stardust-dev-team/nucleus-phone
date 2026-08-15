@@ -189,6 +189,54 @@ describe('POST /api/voice Action=join — refuses a join without a valid ticket 
   });
 });
 
+/* ───────── family 1b: a Twilio outage is not an attack ───────── */
+
+// jsec-gsx0 P1. The infrastructure alert plumbing had NO coverage at all —
+// deleting it entirely left the suite green, so the only thing tested was the
+// boolean coming out of resolveCallerIdentity, never that voice.js uses it.
+// The whole justification for that plumbing is operational: during a Twilio REST
+// degradation EVERY in-flight call is refused, each on a different conference
+// name, so the per-conference alert key would page one "someone is probing"
+// alert PER CALL — burying the real signal under noise at the exact moment
+// something is genuinely wrong.
+describe('POST /api/voice — a Twilio lookup failure alerts ONCE, and says what it is', () => {
+  const failLookup = (status) => {
+    const err = Object.assign(new Error(`HTTP ${status}`), { status });
+    client.calls.mockImplementation(() => ({ fetch: jest.fn().mockRejectedValue(err) }));
+  };
+
+  test('two 5xx refusals on DIFFERENT conferences collapse to a single alert', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    failLookup(503);
+    const server = await listenLoopback(app);
+
+    await request(server).post('/api/voice')
+      .send({ CallSid: 'CA' + '1'.repeat(32), ConferenceName: 'nucleus-call-a' });
+    await request(server).post('/api/voice')
+      .send({ CallSid: 'CA' + '2'.repeat(32), ConferenceName: 'nucleus-call-b' });
+
+    expect(sendSystemAlert).toHaveBeenCalledTimes(1);
+    const body = JSON.stringify(sendSystemAlert.mock.calls[0][1]);
+    expect(body).toMatch(/INFRASTRUCTURE failure/);
+    expect(body).not.toMatch(/someone probing/);
+  });
+
+  test('SECURITY: a 429 stays on the per-conference key, so probing cannot hide under the outage banner', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    failLookup(429);
+    const server = await listenLoopback(app);
+
+    await request(server).post('/api/voice')
+      .send({ CallSid: 'CA' + '3'.repeat(32), ConferenceName: 'nucleus-call-probe-1' });
+    await request(server).post('/api/voice')
+      .send({ CallSid: 'CA' + '4'.repeat(32), ConferenceName: 'nucleus-call-probe-2' });
+
+    // Two DISTINCT conferences on a non-infrastructure cause => two alerts.
+    expect(sendSystemAlert).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(sendSystemAlert.mock.calls[0][1])).not.toMatch(/INFRASTRUCTURE failure/);
+  });
+});
+
 /* ───────── family 2: the request body cannot steer a valid ticket ───────── */
 
 describe('POST /api/voice Action=join — the ticket, not the request body, names the conference', () => {

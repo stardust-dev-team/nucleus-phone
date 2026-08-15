@@ -43,7 +43,8 @@ jest.mock('../../middleware/auth', () => ({
   bearerOrApiKeyOrSession: (req, res, next) => {
     const role = req.headers['x-test-role'] || 'admin';
     const identity = req.headers['x-test-identity'] || 'system';
-    req.user = { id: 1, email: `${identity}@nucleus-phone`, identity, role, displayName: identity, authSource: 'session' };
+    const authSource = req.headers['x-test-authsource'] || 'session';
+    req.user = { id: 1, email: `${identity}@nucleus-phone`, identity, role, displayName: identity, authSource };
     next();
   },
 }));
@@ -172,6 +173,35 @@ describe('POST /api/call/join — who may listen (jsec-r0k6)', () => {
     const allowed = await join('admin', 'tom');
     expect(allowed.statusCode).toBe(200);
     expect(typeof allowed.body.joinTicket).toBe('string');
+  });
+
+  test('jsec-gsx0 N2: EACH half of the API-key guard is exercised alone', async () => {
+    // The guard reads `authSource === 'api_key' || identity === 'system'`, and
+    // review found either clause could be deleted with the suite still green —
+    // the only principal used satisfied both, so one guard was cosplaying as
+    // two. These are the two principals that separate them.
+    //
+    // (a) api_key auth carrying a NORMAL identity — the realistic automation
+    //     case. A ticket minted here is bound to an identity that can never
+    //     appear on a Voice SDK leg, so it would be unredeemable.
+    const apiKeyCaller = await request(await listenLoopback(app))
+      .post('/api/call/join')
+      .set('x-test-role', 'admin')
+      .set('x-test-identity', 'tom')
+      .set('x-test-authsource', 'api_key')
+      .send({ conferenceName: CONF, muted: true });
+    expect(apiKeyCaller.statusCode).toBe(403);
+    expect(apiKeyCaller.body.joinTicket).toBeUndefined();
+
+    // (b) a SESSION principal whose identity is the 'system' sentinel.
+    const systemSession = await request(await listenLoopback(app))
+      .post('/api/call/join')
+      .set('x-test-role', 'admin')
+      .set('x-test-identity', 'system')
+      .set('x-test-authsource', 'session')
+      .send({ conferenceName: CONF, muted: true });
+    expect(systemSession.statusCode).toBe(403);
+    expect(systemSession.body.joinTicket).toBeUndefined();
   });
 
   test('an unknown conference 404s before any ownership question is asked', async () => {

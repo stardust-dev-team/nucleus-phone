@@ -60,10 +60,10 @@
 // What the 300-call survey DID establish, and what this parser encodes: Voice
 // SDK legs carry `client:<identity>` (70 of 300; the other 230 were PSTN legs
 // with an E.164 `from`), and the identities are lowercase — observed values were
-// exactly ["client:tom", "client:paul"] on account
-// the production Twilio account (SID in Doppler / the Render env, deliberately
-// not repeated here — GitHub push protection classifies it as a secret), on
-// 2026-08-14.
+// exactly ["client:tom", "client:paul"], on the production Twilio account,
+// 2026-08-14. (The account SID is deliberately not quoted here — GitHub push
+// protection classifies it as a secret and rejected the first push over it. It
+// lives in the Render service env; Doppler holds the API key and auth token.)
 //
 // LOWERCASE: the identity registry is canonically lowercase ('paul', not 'Paul')
 // and routes/call.js canonicalizes at the trust boundary for that reason (001z,
@@ -72,8 +72,14 @@
 
 const CLIENT_PREFIX = 'client:';
 
-// Twilio Call SIDs are 'CA' + 32 lowercase hex. Pinning the shape keeps a
-// malformed or array-valued CallSid from ever reaching the REST client.
+// Twilio Call SIDs are 'CA' + 32 hex. Pinning the shape keeps a malformed or
+// array-valued CallSid from ever reaching the REST client.
+//
+// Case-INSENSITIVE deliberately, though every SID Twilio has ever emitted is
+// lowercase: this is a shape check guarding the REST client, not an identity
+// check, and an uppercased SID simply 404s and fails closed one step later.
+// Accepting it here costs nothing and avoids a refusal whose cause would be
+// invisible if Twilio's casing ever drifted.
 const CALL_SID_RE = /^CA[0-9a-f]{32}$/i;
 
 // Budget for the Call lookup. Deliberately far below Twilio's ~15s TwiML
@@ -161,9 +167,24 @@ async function resolveCallerIdentity(twilioClient, callSid, { timeoutMs = LOOKUP
     // setup; an operator reading the alert needs to tell them apart rather than
     // see every one labelled as probing.
     const status = err && err.status;
-    const kind = status === 404 ? 'unknown call (possible setup race)' : 'lookup unavailable';
-    return { identity: null, error: `${kind}: ${err.message}`, infrastructure: status !== 404 };
+    // Classify by INCLUSION, not by exclusion. The first cut said
+    // `infrastructure: status !== 404`, which quietly made every non-404 an
+    // "infrastructure failure" — including 4xx. That is an alert-suppression
+    // primitive, and a reachable one: every request to this route now costs one
+    // Twilio REST call, the route is unthrottled, so an attacker's own probing
+    // volume can rate-limit the account into 429s. Their continued probing
+    // would then collapse onto the single global alert key under a banner
+    // stating, in words, that it is not a probe.
+    //
+    // Only "we could not reach Twilio" is infrastructure: a transport error
+    // with no status, or a 5xx. A 4xx means Twilio answered and rejected us,
+    // which stays on the per-conference key where a burst remains visible.
+    const isInfrastructure = !status || status >= 500;
+    const kind = status === 404
+      ? 'unknown call (possible setup race)'
+      : (isInfrastructure ? 'lookup unavailable' : `lookup rejected (HTTP ${status})`);
+    return { identity: null, error: `${kind}: ${err.message}`, infrastructure: isInfrastructure };
   }
 }
 
-module.exports = { parseClientIdentity, resolveCallerIdentity };
+module.exports = { parseClientIdentity, resolveCallerIdentity, LOOKUP_TIMEOUT_MS, CALL_SID_RE };

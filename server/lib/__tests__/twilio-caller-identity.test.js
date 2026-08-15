@@ -8,7 +8,9 @@
 // this output, so its failure mode must be "return null", never "return
 // something plausible".
 
-const { parseClientIdentity, resolveCallerIdentity } = require('../twilio-caller-identity');
+const {
+  parseClientIdentity, resolveCallerIdentity, LOOKUP_TIMEOUT_MS,
+} = require('../twilio-caller-identity');
 
 describe('parseClientIdentity', () => {
   test('recovers the identity from the shape production actually sends', () => {
@@ -154,4 +156,61 @@ describe('resolveCallerIdentity — the CallSid is still client-adjacent, so its
     const out = await resolveCallerIdentity(twilio, SID);
     expect(out.infrastructure).toBe(true);
   });
+});
+
+describe('the production lookup budget, not just the mechanism (jsec-gsx0 P2)', () => {
+  test('LOOKUP_TIMEOUT_MS sits well inside Twilio\'s ~15s TwiML deadline', () => {
+    // The slow-lookup test passes an explicit timeoutMs, so it pins the
+    // MECHANISM and never the shipped value — raising the constant to 30000
+    // "to cut false refusals" would leave that test green while reinstating the
+    // precise bug it was written to kill: twilio-node's 30s default outliving
+    // Twilio's deadline, so the 403 and the Slack alert never render and the
+    // caller just gets a dropped call. Pin the value itself.
+    expect(LOOKUP_TIMEOUT_MS).toBeLessThan(15000);
+    expect(LOOKUP_TIMEOUT_MS).toBeGreaterThan(500);   // not so tight it flaps
+  });
+});
+
+describe('failure classification is by INCLUSION (jsec-gsx0 P3)', () => {
+  const clientWith = (impl) => ({ calls: jest.fn(() => ({ fetch: impl })) });
+  const SID = 'CA' + '0'.repeat(28) + 'abcd';
+  const failWith = (status) => {
+    const err = Object.assign(new Error(`HTTP ${status}`), { status });
+    return resolveCallerIdentity(clientWith(jest.fn().mockRejectedValue(err)), SID);
+  };
+
+  test('SECURITY: a 429 is NOT infrastructure — an attacker must not be able to steer their own refusals onto the collapsed alert key', () => {
+    // Every request to /api/voice now costs one Twilio REST call and the route
+    // is unthrottled, so sustained probing can rate-limit the account itself.
+    // Classifying by exclusion (`status !== 404`) made those 429s
+    // "infrastructure", collapsing the attacker's refusals onto one alert that
+    // states in words that it is not a probe. That is an alert-suppression
+    // primitive handed to the exact adversary this change exists to stop.
+    const out = await429();
+    return out.then((r) => {
+      expect(r.infrastructure).toBe(false);
+      expect(r.error).toMatch(/lookup rejected \(HTTP 429\)/);
+    });
+  });
+
+  test('a 5xx IS infrastructure', async () => {
+    expect((await failWith(503)).infrastructure).toBe(true);
+  });
+
+  test('a transport error with no status IS infrastructure', async () => {
+    const twilio = clientWith(jest.fn().mockRejectedValue(new Error('ECONNRESET')));
+    expect((await resolveCallerIdentity(twilio, SID)).infrastructure).toBe(true);
+  });
+
+  test('a 404 stays its own case — a setup race, not infrastructure', async () => {
+    const out = await failWith(404);
+    expect(out.infrastructure).toBe(false);
+    expect(out.error).toMatch(/unknown call/);
+  });
+
+  test('a 403 is not infrastructure either', async () => {
+    expect((await failWith(403)).infrastructure).toBe(false);
+  });
+
+  function await429() { return failWith(429); }
 });
