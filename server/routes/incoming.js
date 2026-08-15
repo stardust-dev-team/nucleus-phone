@@ -39,7 +39,14 @@ const baseUrl = process.env.APP_URL || 'https://nucleus-phone.onrender.com';
 // shared fail-loud wrapper — same behavior at all three consumers
 // (incoming.js, escalation.js, sim.js) so a corrupt team.json crashes
 // boot consistently rather than producing a half-healthy deploy.
-const inboundRoutes = loadRegistryOrExit('incoming').getAllInboundRoutes();
+// jsec-z4ff: keep the REGISTRY, not a plucked-out method. Capturing
+// `teamRegistry.getRepByDID` into a const binds the function reference at
+// module load, which both freezes it against any future registry reload and
+// makes it unspyable from tests — the call site below goes through the object
+// for that reason. Same instance as the route table, so the two can never
+// disagree about which member a DID belongs to.
+const teamRegistry = loadRegistryOrExit('incoming');
+const inboundRoutes = teamRegistry.getAllInboundRoutes();
 
 // Phase 2 deploy-config guard (Linus P1-2 + R2 P1-A): when Phase 2 is
 // ENABLED (`INBOUND_CONFERENCE_ARCHITECTURE=true`) AND any route uses
@@ -422,8 +429,47 @@ router.post('/', makeTwilioWebhook(), async (req, res) => {
   // leadPhone = the rep's number (who gets dialed INTO the conference).
   // The status callback at /api/call/status reads conf.leadPhone to know
   // who to dial on conference-start.
+  // jsec-z4ff: own this conference by the REP IT IS RINGING, not the literal
+  // 'inbound'. The DID identifies exactly one team member, so the identity was
+  // always recoverable — it just wasn't recorded, and that gap became
+  // load-bearing the moment conference ownership started authorizing things.
+  //
+  // Concretely: ~60 lines below, this handler DMs that rep a cockpit deep link
+  // (`/cockpit/<caller>?conf=<conference>`). The cockpit opens the live-analysis
+  // socket, which now authorizes `subscribe` by conference ownership. Owned by
+  // 'inbound', no rep would ever match, and every rep following their own Slack
+  // link would land on a cockpit whose transcript silently never arrives — a
+  // shipped feature broken by a security fix, which is the failure mode the
+  // jsec-r0k6 bead warned about explicitly.
+  //
+  // Falls back to the 'inbound' sentinel only for the legacy
+  // INBOUND_FORWARD_NUMBER route, which has no team member behind it. A
+  // sentinel-owned conference matches no identity and is therefore admin-only —
+  // fail closed, and correct: nobody in particular owns that call.
+  //
+  // Knock-on effects, all improvements and all previously blocked by the
+  // sentinel: the rep can now end their own inbound conference via
+  // /api/call/end, and sees it in /api/call/active. Nothing compares startedBy
+  // against 'inbound' anywhere (checked), and call.js's outboundCallerId is
+  // reached only when !isInbound, so caller-ID behaviour is untouched.
+  // Overlaps the sentinel half of jsec-968p.
+  // Resolve by DID first; fall back to matching the forward number against team
+  // mobiles for the LEGACY INBOUND_FORWARD_NUMBER route, which has no DID entry.
+  //
+  // That fallback is not hypothetical: INBOUND_REP_SLACK_DM and
+  // INBOUND_FORWARD_NUMBER are both set in production today (checked), so the
+  // legacy route is live AND reaches the cockpit-DM below. Leaving it on the
+  // 'inbound' sentinel would hand a real human a Slack link to a conference this
+  // change makes admin-only — precisely the broken-link flow being fixed for the
+  // mapped DIDs, just one branch over.
+  //
+  // Only if BOTH miss does the sentinel stand, and then it is correct: nobody in
+  // particular owns that call, so it is admin-only. Fail closed.
+  const inboundOwner = teamRegistry.getRepByDID(calledNumber)?.identity
+    || teamRegistry.reps.find((r) => r.mobile && r.mobile === forwardTo)?.identity
+    || 'inbound';
   createConference(conferenceName, {
-    callerIdentity: 'inbound',
+    callerIdentity: inboundOwner,
     to: forwardTo,
     contactName: callerPhone,
     companyName: null,
