@@ -339,8 +339,29 @@ router.get('/active', ...callerGuard, async (req, res) => {
   // useActiveCalls polls every 3s — enriching first meant every rep's poll billed Twilio for
   // other reps' conferences and blocked on their latency, only to filter the result away. It
   // also means another rep's data is never materialized in this process at all.
+  // jsec-z4ff: INBOUND conferences stay out of the identity-scoped view.
+  //
+  // Until z4ff they were owned by the literal 'inbound', so they matched no
+  // scopeIdentity and were invisible to every non-admin. Giving them a real
+  // owner — so a rep can read their own inbound cockpit — would silently have
+  // changed THIS route too, and this route feeds a guard in ANOTHER repo: the
+  // iOS dialer polls it as a double-dial precondition ("you're already on a
+  // call on another device", see the header above).
+  //
+  // The conference is created the moment the DID rings, before anyone answers,
+  // and `type: forward` reps are rung on their MOBILE, not the dialer. So a
+  // ringing-then-voicemail inbound call would start blocking that rep's
+  // outbound dialing — and since the map entry only clears on the
+  // conference-end webhook or the 2h stale sweep, a dropped webhook would wedge
+  // their dialer for two hours. That is a behaviour change to a cross-repo
+  // contract, not the "improvement" an earlier draft of this change called it.
+  //
+  // Admins are unaffected (scopeIdentity is null for them), and the
+  // live-analysis authorization that motivated the ownership change reads
+  // conf.startedBy directly rather than going through this route.
   const conferences = listActiveConferences().filter(
-    (c) => !scopeIdentity || (c.startedBy || '').toLowerCase() === scopeIdentity,
+    (c) => !scopeIdentity
+      || ((c.startedBy || '').toLowerCase() === scopeIdentity && c.direction !== 'inbound'),
   );
 
   const enriched = await Promise.all(

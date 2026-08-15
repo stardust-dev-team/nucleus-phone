@@ -14,10 +14,29 @@
 // The constants below are also redeclared at the top of the file for
 // readability in the test bodies — they're identical to the factory's.
 jest.mock('../../lib/team-registry', () => {
+  // jsec-z4ff: getRepByDID must model reality here. The real registry sets
+  // byDID for EVERY member with an inbound block regardless of route type
+  // (team-registry.js — byDID.set(did, rep) sits in the same loop that builds
+  // inboundRoutes), and incoming.js now uses it to own an inbound conference by
+  // the rep it rings. Leaving this stubbed at `() => null` made the fixture
+  // silently exercise the legacy no-rep fallback for every route, so the
+  // production behaviour would have gone untested.
+  const REPS_BY_MOBILE = [
+    { identity: 'ryann', name: 'Ryann', mobile: '+14803630494' },
+  ];
+  const REPS_BY_DID = {
+    '+16234620197': { identity: 'ryann', name: 'Ryann', role: 'caller' },
+    '+16029050230': { identity: 'paul', name: 'Paul', role: 'admin' },
+    '+16025550101': { identity: 'kate', name: 'Kate', role: 'caller' },
+  };
   const fakeRegistry = {
-    reps: [],
+    // jsec-z4ff: `reps` is used to resolve the LEGACY INBOUND_FORWARD_NUMBER
+    // route's owner by matching the forward number against team mobiles. That
+    // route is live in production (both env vars are set), so the fixture has
+    // to model it or the fallback goes untested.
+    reps: REPS_BY_MOBILE,
     getRepByIdentity: () => null,
-    getRepByDID: () => null,
+    getRepByDID: (did) => REPS_BY_DID[did] || null,
     getAllInboundRoutes: () => ({
       '+16234620197': { forward: '+14803630494', slack: 'D-pstn', name: 'Ryann' },
       '+16029050230': { iosIdentity: 'paul', slack: 'D-ios', name: 'Paul' },
@@ -103,6 +122,19 @@ describe('POST /api/voice/incoming — legacy forward route', () => {
     const [, state] = conference.createConference.mock.calls[0];
     expect(state).toMatchObject({ to: '+14803630494', direction: 'inbound', repName: 'Ryann' });
 
+    // jsec-z4ff: the conference is OWNED BY THE REP IT RINGS, not the literal
+    // 'inbound'. The DID identifies exactly one team member, so the identity
+    // was always recoverable — it just wasn't recorded, and that gap became
+    // load-bearing once conference ownership started authorizing things.
+    //
+    // Load-bearing HERE specifically: this same handler DMs the rep a cockpit
+    // deep link, the cockpit opens the live-analysis socket, and that socket
+    // now authorizes `subscribe` by conference ownership. Owned by 'inbound',
+    // no rep would ever match and every rep following their own Slack link
+    // would get a cockpit whose transcript silently never arrives.
+    expect(state.callerIdentity).toBe('ryann');
+    expect(state.callerIdentity).not.toBe('inbound');
+
     // INSERT shape: catches column drift, table renames, lost CallSid/phone
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toMatch(/INSERT INTO nucleus_phone_calls/);
@@ -113,6 +145,51 @@ describe('POST /api/voice/incoming — legacy forward route', () => {
       '+14155551212',
     ]);
   });
+
+  test('jsec-z4ff: the LEGACY forward route resolves its owner by mobile, so its Slack cockpit link still works', async () => {
+    // INBOUND_REP_SLACK_DM and INBOUND_FORWARD_NUMBER are BOTH set in
+    // production, so this route is live and does DM a human a cockpit deep
+    // link. Left on the 'inbound' sentinel, that link would open a cockpit the
+    // new live-analysis rule makes admin-only — the same broken-link flow being
+    // fixed for the mapped DIDs, one branch over.
+    const registry = require('../../lib/team-registry').loadRegistryOrExit();
+    const spy = jest.spyOn(registry, 'getRepByDID').mockReturnValue(null);
+
+    await request(await listenLoopback(app))
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: PSTN_NUMBER, From: '+14155551212', CallSid: 'CA-pstn-legacy' })
+      .expect(200);
+
+    const [, state] = conference.createConference.mock.calls[0];
+    expect(state.callerIdentity).toBe('ryann');   // matched by mobile, not DID
+    spy.mockRestore();
+  });
+
+  test('jsec-z4ff: a DID with no team member behind it keeps the inbound sentinel, and is therefore admin-only', async () => {
+    // The legacy INBOUND_FORWARD_NUMBER route has no rep. Falling back to the
+    // 'inbound' sentinel is correct there: the conference matches no identity,
+    // so the live-analysis subscribe check treats it as ownerless and
+    // admin-only. Fail closed — nobody in particular owns that call.
+    const registry = require('../../lib/team-registry').loadRegistryOrExit();
+    const spy = jest.spyOn(registry, 'getRepByDID').mockReturnValue(null);
+    // Defeat the mobile fallback too — the sentinel is only correct when BOTH
+    // resolution paths miss.
+    const realReps = registry.reps;
+    registry.reps = [];
+
+    await request(await listenLoopback(app))
+      .post('/api/voice/incoming')
+      .type('form')
+      .send({ To: PSTN_NUMBER, From: '+14155551212', CallSid: 'CA-pstn-orphan' })
+      .expect(200);
+
+    const [, state] = conference.createConference.mock.calls[0];
+    expect(state.callerIdentity).toBe('inbound');
+    spy.mockRestore();
+    registry.reps = realReps;
+  });
+
 });
 
 /* ─── (b) iOS-only route — <Client> TwiML, no conference ─── */
