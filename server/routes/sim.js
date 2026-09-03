@@ -11,7 +11,7 @@ const { sessionAuth, bearerOrApiKeyOrSession } = require('../middleware/auth');
 const { rbac } = require('../middleware/rbac');
 const { pool } = require('../db');
 const { createOutboundCall, stopCall, stopCallAndLog, getCall } = require('../lib/vapi');
-const { listPersonas, resolveAssistantId } = require('../lib/personas');
+const { listPersonas, resolveAssistantId, activePersonaId, getPersona } = require('../lib/personas');
 const { createConference, updateConference, removeConference, getConference } = require('../lib/conference');
 const { generateAccessToken, client: twilioClient } = require('../lib/twilio');
 const { pickGreeting } = require('../lib/sim-greetings');
@@ -60,6 +60,11 @@ router.use(sessionAuth, rbac('external_caller'));
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 const ID_RE = /^\d+$/;
 
+// Difficulty whitelist for the PWA POST /call path. The VALUE (legacy env var
+// name) is no longer read directly for assistant resolution — that now goes
+// through resolveAssistantId({ personaId: activePersonaId(), difficulty }),
+// which tries the active persona's env var first and falls back to this legacy
+// var. The map is kept as the canonical "is this a valid difficulty?" set.
 const DIFFICULTY_TO_ASSISTANT = {
   easy: 'VAPI_SIM_EASY_ID',
   medium: 'VAPI_SIM_MEDIUM_ID',
@@ -96,13 +101,14 @@ function validateId(req, res) {
 // Cached for process lifetime — invalidated on deploy (Render restarts the process).
 const PERSONAS_DIR = path.join(__dirname, '..', '..', 'config', 'sim-personas');
 const promptVersionCache = {};
-function getPromptVersion(difficulty) {
-  if (promptVersionCache[difficulty]) return promptVersionCache[difficulty];
-  const filePath = path.join(PERSONAS_DIR, `mike-garza-${difficulty}.txt`);
+function getPromptVersion(difficulty, personaId = activePersonaId()) {
+  const cacheKey = `${personaId}-${difficulty}`;
+  if (promptVersionCache[cacheKey]) return promptVersionCache[cacheKey];
+  const filePath = path.join(PERSONAS_DIR, `${personaId}-${difficulty}.txt`);
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const hash = crypto.createHash('md5').update(content).digest('hex').substring(0, 8);
-    promptVersionCache[difficulty] = hash;
+    promptVersionCache[cacheKey] = hash;
     return hash;
   } catch (err) {
     console.error(`SIM: failed to read persona file ${filePath}: ${err.message}`);
@@ -164,12 +170,13 @@ async function persistScores(rowId, result) {
  * had the right answer. `sim-${id}` matches what Cockpit.jsx subscribes to and
  * what this file broadcasts on.
  */
-function registerSimConference(simCallId, identity, difficulty) {
+function registerSimConference(simCallId, identity, difficulty, personaId = activePersonaId()) {
   const conferenceName = `sim-${simCallId}`;
+  const contactName = getPersona(personaId)?.displayName || 'Practice Contact';
   createConference(conferenceName, {
     callerIdentity: identity,
     to: null,
-    contactName: 'Mike Garza',
+    contactName,
     companyName: `Practice — ${difficulty}`,
     contactId: null,
     dbRowId: simCallId,
@@ -237,10 +244,18 @@ router.post('/call', sessionAuth, async (req, res) => {
     return res.status(409).json({ error: 'Practice call already in progress' });
   }
 
-  // Resolve assistant ID
-  const assistantId = process.env[DIFFICULTY_TO_ASSISTANT[difficulty]];
+  // Resolve assistant ID for the active persona. resolveAssistantId tries the
+  // persona's own env var (e.g. VAPI_SIM_KSI_EASY_ID) then the legacy shared
+  // var (VAPI_SIM_EASY_ID), so an unset SIM_ACTIVE_PERSONA + legacy-only env
+  // behaves exactly as before (mike-garza on the legacy vars).
+  const personaId = activePersonaId();
+  const assistantId = resolveAssistantId({ personaId, difficulty });
   if (!assistantId) {
-    return res.status(500).json({ error: `Missing env var ${DIFFICULTY_TO_ASSISTANT[difficulty]}` });
+    const assistantVar = getPersona(personaId)?.assistantEnvVars?.[difficulty]
+      || `VAPI_SIM_${difficulty.toUpperCase()}_ID`;
+    return res.status(500).json({
+      error: `Missing Vapi assistant env var for ${personaId}/${difficulty} (set ${assistantVar})`,
+    });
   }
 
   // Browser mode: client creates the call via Vapi Web SDK, server just
@@ -251,7 +266,7 @@ router.post('/call', sessionAuth, async (req, res) => {
     if (!publicKey) {
       return res.status(500).json({ error: 'VAPI_PUBLIC_KEY not set' });
     }
-    const promptVersion = getPromptVersion(difficulty);
+    const promptVersion = getPromptVersion(difficulty, personaId);
     try {
       const { rows: [row] } = await pool.query(
         `INSERT INTO sim_call_scores (caller_identity, difficulty, prompt_version, status)
@@ -259,8 +274,8 @@ router.post('/call', sessionAuth, async (req, res) => {
          RETURNING id`,
         [identity, difficulty, promptVersion]
       );
-      registerSimConference(row.id, identity, difficulty);
-      res.json({ simCallId: row.id, assistantId, publicKey, firstMessage: pickGreeting(difficulty) });
+      registerSimConference(row.id, identity, difficulty, personaId);
+      res.json({ simCallId: row.id, assistantId, publicKey, firstMessage: pickGreeting(difficulty, personaId) });
     } catch (err) {
       console.error('sim: INSERT failed:', err.message);
       res.status(500).json({ error: 'Failed to record practice call' });
@@ -272,7 +287,7 @@ router.post('/call', sessionAuth, async (req, res) => {
   // validated above (line ~167); re-using rather than re-looking-up.
   let call;
   try {
-    const greeting = pickGreeting(difficulty);
+    const greeting = pickGreeting(difficulty, personaId);
     call = await createOutboundCall({
       assistantId,
       customerNumber: phone,
@@ -290,7 +305,7 @@ router.post('/call', sessionAuth, async (req, res) => {
     return res.status(502).json({ error: 'Failed to initiate practice call' });
   }
 
-  const promptVersion = getPromptVersion(difficulty);
+  const promptVersion = getPromptVersion(difficulty, personaId);
   const listenUrl = call.monitor?.listenUrl || null;
   const controlUrl = call.monitor?.controlUrl || null;
   try {
@@ -300,7 +315,7 @@ router.post('/call', sessionAuth, async (req, res) => {
        RETURNING id`,
       [call.id, identity, difficulty, promptVersion, listenUrl, controlUrl]
     );
-    registerSimConference(row.id, identity, difficulty);
+    registerSimConference(row.id, identity, difficulty, personaId);
     res.json({ simCallId: row.id, vapiCallId: call.id });
   } catch (err) {
     console.error('sim: INSERT failed after Vapi call initiated, stopping orphan:', err.message);
@@ -940,7 +955,7 @@ async function simCallIos(req, res) {
   // persona_id is persisted so the B2b conference-start webhook can
   // recover the persona/difficulty pair after a process restart (the
   // in-memory activeConferences entry is lost on restart).
-  const promptVersion = getPromptVersion(difficulty);
+  const promptVersion = getPromptVersion(difficulty, personaId);
   let simCallId;
   try {
     const { rows: [row] } = await pool.query(
@@ -976,7 +991,7 @@ async function simCallIos(req, res) {
   createConference(conferenceName, {
     callerIdentity: identity,
     to: null,
-    contactName: 'Mike Garza',
+    contactName: getPersona(personaId)?.displayName || 'Practice Contact',
     companyName: `Practice — ${difficulty}`,
     contactId: null,
     dbRowId: simCallId,

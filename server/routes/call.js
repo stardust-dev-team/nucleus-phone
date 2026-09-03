@@ -788,7 +788,7 @@ async function handleSimConferenceStart({ FriendlyName, ConferenceSid, conf }) {
         assistantId,
         customerNumber: simConferenceNumber,
         assistantOverrides: {
-          firstMessage: pickGreeting(difficulty),
+          firstMessage: pickGreeting(difficulty, personaId),
           variableValues: { simCallId: String(simRow.id), conferenceName: FriendlyName },
         },
       });

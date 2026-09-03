@@ -1,0 +1,91 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Dave Kowalski",
+    "email": null,
+    "phone": "+13175551188",
+    "company": "Midwest Air Power",
+    "title": null,
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": null,
+    "fitScore": null,
+    "fitReason": null,
+    "persona": null,
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "Located in Indianapolis, IN — that's all we know"
+    ],
+    "intel_nuggets": [
+      "Company name: Midwest Air Power. 'Air Power' suggests compressed air — but could be sales, service, rental, or all three.",
+      "Phone number sourced from a business listing — no email, no LinkedIn, no enrichment data.",
+      "No CRM history. No prior contact. No email engagement. True cold outreach.",
+      "Industry classified as 'Industrial Machinery' — broad. Confirm he's a distributor before pitching a distributor program."
+    ],
+    "opening_line": null,
+    "adapted_script": "You're going in almost blind. All you have is a company name and a phone number. Your entire job on this call is DISCOVERY: is this a compressed-air distributor, what does he sell, and does he already carry a dryer/filtration line? Start by confirming you've reached the owner. Ask what the business does and how he handles air treatment on a compressor sale. Listen for 'drop-ship,' 'Kaishan,' 'we just buy whatever' — any of those is your opening. He's likely guarded and skeptical (he's been burned by a manufacturer before), so you have to earn the right to pitch. Don't propose the distributor program until you've confirmed he's a distributor, he's not locked to a brand, and you've heard the margin/lead-time pain in his own words.",
+    "watch_outs": [
+      "No email on file — if you get one during the call, that's a win",
+      "No title — you don't even know for certain he's the decision maker; confirm it",
+      "Zero interaction history — he has never heard of KSI",
+      "Don't reference data you don't have — you'll sound like you're guessing. And SCOPE: KSI's line here is dryers and filtration ONLY"
+    ],
+    "product_reference": [
+      "ECOTROC KTA-S — refrigerated dryers, 14 to ~1,890 CFM, ~$1,880 up to ~$47,000. The everyday treatment attach if he'll carry a line.",
+      "ECOTROC DDAP — desiccant dryers for low-dewpoint / critical air. Higher ticket, higher margin.",
+      "ECOCLEAN APF — coalescing + particulate filtration, ~$155 to ~$709 per housing. Recurring consumable pull-through.",
+      "Positioning (only after you've confirmed he's a distributor who drop-ships): a treatment line he OWNS with real margin, plus KSI Midwest lead-feed and co-marketing.",
+      "German-engineered — reliability protects a service shop's reputation. Lead times and support are the objection under every other objection for this guy."
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": []
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "midwestairpower.com",
+      "company_name": "Midwest Air Power",
+      "segment": null,
+      "status": "discovered",
+      "discovery_source": "business_listing",
+      "created_at": "2026-03-15T12:00:00.000Z",
+      "enriched_at": null
+    }
+  ],
+
+  "icpScore": null,
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": false,
+      "company": true,
+      "title": false,
+      "linkedin": false
+    },
+    "validation_status": "partial",
+    "validated_at": "2026-03-15T12:00:00.000Z"
+  },
+
+  "emailEngagement": [],
+
+  "companyData": {
+    "name": "Midwest Air Power",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Indianapolis",
+    "state": "IN",
+    "numberofemployees": null,
+    "annualrevenue": null,
+    "company_vernacular": null
+  }
+}

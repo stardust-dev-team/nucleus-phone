@@ -92,13 +92,14 @@ describe('GET /api/sim/personas', () => {
       .expect(200);
 
     expect(Array.isArray(res.body.personas)).toBe(true);
-    expect(res.body.personas).toHaveLength(1);
+    expect(res.body.personas).toHaveLength(2);
     expect(res.body.personas[0]).toMatchObject({
       id: 'mike-garza',
       displayName: 'Mike Garza',
       role: 'CNC shop owner, Mesa AZ',
       difficulties: ['easy', 'medium', 'hard'],
     });
+    expect(res.body.personas.map((p) => p.id)).toContain('ksi-dave');
   });
 
   // Linus review #6 — the endpoint exists to serve iOS bearer-token callers.
@@ -112,7 +113,7 @@ describe('GET /api/sim/personas', () => {
       .set('Authorization', 'Bearer fake-jwt')
       .expect(200);
 
-    expect(res.body.personas).toHaveLength(1);
+    expect(res.body.personas).toHaveLength(2);
     expect(res.body.personas[0].id).toBe('mike-garza');
   });
 

@@ -11,12 +11,31 @@ const { buildVernacular } = require('../lib/company-vernacular');
 const { normalizePhone } = require('../lib/phone');
 const { normalizeCompanyName } = require('../lib/company-normalizer');
 const { TEST_COCKPIT_DATA } = require('../lib/test-cockpit-data');
-const SIM_MIKE_GARZA = require('../config/sim-contacts/mike-garza.json');
-const SIM_MIKE_GARZA_BY_DIFFICULTY = {
-  easy:   require('../config/sim-contacts/mike-garza-easy.json'),
-  medium: require('../config/sim-contacts/mike-garza-medium.json'),
-  hard:   require('../config/sim-contacts/mike-garza-hard.json'),
+const { activePersonaId } = require('../lib/personas');
+
+// Sim-contact registry, keyed by persona id. `base` is the default briefing;
+// `byDifficulty` overrides it per easy/medium/hard. The practice cockpit
+// requests these via GET /api/cockpit/sim-<personaId> (or the persona-neutral
+// `sim-active`, which resolves to SIM_ACTIVE_PERSONA).
+const SIM_CONTACTS = {
+  'mike-garza': {
+    base: require('../config/sim-contacts/mike-garza.json'),
+    byDifficulty: {
+      easy:   require('../config/sim-contacts/mike-garza-easy.json'),
+      medium: require('../config/sim-contacts/mike-garza-medium.json'),
+      hard:   require('../config/sim-contacts/mike-garza-hard.json'),
+    },
+  },
+  'ksi-dave': {
+    base: require('../config/sim-contacts/ksi-dave.json'),
+    byDifficulty: {
+      easy:   require('../config/sim-contacts/ksi-dave-easy.json'),
+      medium: require('../config/sim-contacts/ksi-dave-medium.json'),
+      hard:   require('../config/sim-contacts/ksi-dave-hard.json'),
+    },
+  },
 };
+const SIM_PREFIX = 'sim-';
 
 const router = Router();
 
@@ -114,11 +133,20 @@ router.get('/:identifier', bearerOrApiKeyOrSession, rbac('external_caller'), asy
   const refresh = req.query.refresh === 'true';
 
   try {
-    // Simulation contact — static data, no API calls
-    if (identifier === 'sim-mike-garza') {
-      const difficulty = req.query.difficulty;
-      const simData = SIM_MIKE_GARZA_BY_DIFFICULTY[difficulty] || SIM_MIKE_GARZA;
-      return res.json(simData);
+    // Simulation contact — static data, no API calls.
+    //   sim-active       → the SIM_ACTIVE_PERSONA persona (what the practice UI requests)
+    //   sim-<personaId>  → that specific persona (e.g. sim-mike-garza, sim-ksi-dave)
+    // Unset SIM_ACTIVE_PERSONA makes sim-active resolve to mike-garza, so this
+    // behaves exactly as before for the default deployment.
+    if (identifier.startsWith(SIM_PREFIX)) {
+      const requested = identifier.slice(SIM_PREFIX.length);
+      const personaId = requested === 'active' ? activePersonaId() : requested;
+      const contacts = SIM_CONTACTS[personaId];
+      if (contacts) {
+        const difficulty = req.query.difficulty;
+        return res.json(contacts.byDifficulty[difficulty] || contacts.base);
+      }
+      return res.status(404).json({ error: `Unknown sim persona: ${personaId}` });
     }
 
     // Test caller — return rich mock data, no API calls

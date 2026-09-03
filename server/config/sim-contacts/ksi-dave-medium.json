@@ -1,0 +1,115 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Dave Kowalski",
+    "email": "dave@midwestairpower.com",
+    "phone": "+13175551188",
+    "company": "Midwest Air Power",
+    "title": "Owner",
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": {
+      "summary": "Independent compressed-air distributor + service shop owner in Indianapolis. 22 years in the trade. Sells and services compressors. NTMA-style trade-show regular.",
+      "durationInRole": "11 years",
+      "durationInCompany": "11 years",
+      "pastExperience": "Came up on the service side",
+      "connectionDegree": "2nd"
+    },
+    "fitScore": "74",
+    "fitReason": "Independent compressed-air distributor in the Midwest corridor, likely sells compressors with treatment attach opportunity — dryer/filtration line status unconfirmed",
+    "persona": "Distributor Owner",
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "Independent distributor owner — respect the operator, skip the corporate pitch",
+      "Service-first shop in Indianapolis — his reputation is the business",
+      "Midwest corridor — KSI is building here, but confirm his territory before promising lead-feed"
+    ],
+    "intel_nuggets": [
+      "Runs an independent compressed-air distributor + service shop — brand lineup not confirmed (likely Kaishan or another value line).",
+      "Revenue estimated ~$5-6M from SalesNav data 6 months ago — may have changed.",
+      "Whether he carries a dedicated dryer/filtration line is UNKNOWN — this is the discovery question that decides the whole call.",
+      "Indianapolis HQ, possibly a second location. 15-20 employees.",
+      "No confirmed manufacturer exclusive — verify he's free to add a line before pitching the program."
+    ],
+    "opening_line": "Hey Dave, I noticed you run an independent air shop in Indy — I work with a lot of distributors on the treatment side of their compressor sales.",
+    "adapted_script": "You know he's an independent distributor but not his exact brand lineup or whether he already carries a dryer/filtration line. Your discovery has to fill those gaps: ask what he sells, how he handles treatment on a compressor sale today, and whether he drop-ships dryers. If he drop-ships (likely), the margin gap is your opening — frame KSI as a line he'd OWN with real margin, a treatment attach on every compressor, and Midwest lead-feed. Confirm territory before promising leads and confirm he's not locked to a manufacturer. Products: ECOTROC KTA-S refrigerated, ECOTROC DDAP desiccant, ECOCLEAN APF filtration. Don't assume the pain — surface it first.",
+    "watch_outs": [
+      "Revenue and employee data may be stale — verify, don't cite",
+      "Don't assume he drop-ships or that he has no dryer line — ask before pitching the fix",
+      "He's a 22-year trade veteran — talk distributor economics, don't oversimplify",
+      "SCOPE: KSI's line here is dryers and filtration ONLY — keep the recommendation to those"
+    ],
+    "product_reference": [
+      "ECOTROC KTA-S — refrigerated dryers, 14 to ~1,890 CFM, ~$1,880 up to ~$47,000. The everyday attach on a compressor sale if he'll carry the line.",
+      "ECOTROC DDAP — desiccant dryers for low-dewpoint / critical air. Higher ticket, higher margin.",
+      "ECOCLEAN APF — coalescing + particulate filtration, ~$155 to ~$709 per housing. Recurring consumable pull-through.",
+      "The angle if he drop-ships today: real margin on a line he OWNS vs. cost-plus-nothing catalog drop-ship, plus KSI lead-feed + co-marketing in his corridor.",
+      "German-engineered — reliability protects the service reputation of a shop that lives on callbacks."
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": [
+      {
+        "channel": "email",
+        "summary": "Opened 'KSI Distributor Program — Midwest' email 1x",
+        "disposition": null,
+        "createdAt": "2026-03-25T12:00:00.000Z"
+      }
+    ]
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "midwestairpower.com",
+      "company_name": "Midwest Air Power",
+      "segment": "compressed_air_distributor",
+      "status": "enriched",
+      "discovery_source": "phantombuster_salesnav",
+      "created_at": "2026-02-26T12:00:00.000Z",
+      "enriched_at": "2026-02-28T12:00:00.000Z"
+    }
+  ],
+
+  "icpScore": {
+    "domain": "midwestairpower.com",
+    "fit_score": "74",
+    "fit_reason": "Independent compressed-air distributor, Midwest corridor, likely treatment-attach opportunity, owner-operator — dryer/filtration line status unconfirmed",
+    "persona": "Distributor Owner",
+    "segment": "compressed_air_distributor"
+  },
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": true,
+      "company": true,
+      "title": true,
+      "linkedin": false
+    },
+    "validation_status": "valid",
+    "validated_at": "2026-03-01T12:00:00.000Z"
+  },
+
+  "emailEngagement": [
+    { "event_type": "open", "created_at": "2026-03-25T12:00:00.000Z", "campaign_name": "KSI Distributor Program" }
+  ],
+
+  "companyData": {
+    "name": "Midwest Air Power",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Indianapolis",
+    "state": "IN",
+    "numberofemployees": "15-20",
+    "annualrevenue": "~$5-6M (6mo old)",
+    "company_vernacular": "Independent compressed-air distributor + service shop, Indianapolis. Sells and services compressors. Brand lineup and dryer/filtration line status unconfirmed."
+  }
+}

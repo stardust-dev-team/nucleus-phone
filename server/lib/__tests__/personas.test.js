@@ -1,4 +1,4 @@
-const { listPersonas, resolveAssistantId, validatePersonaConfig, _resetCache } = require('../personas');
+const { listPersonas, resolveAssistantId, validatePersonaConfig, activePersonaId, getPersona, _resetCache } = require('../personas');
 
 describe('lib/personas', () => {
   const savedEnv = { ...process.env };
@@ -9,12 +9,18 @@ describe('lib/personas', () => {
   });
 
   describe('listPersonas()', () => {
-    test('returns mike-garza as the only persona today', () => {
+    test('returns the registered personas (mike-garza + ksi-dave)', () => {
       const personas = listPersonas();
-      expect(personas).toHaveLength(1);
-      expect(personas[0]).toMatchObject({
+      expect(personas).toHaveLength(2);
+      const byId = Object.fromEntries(personas.map((p) => [p.id, p]));
+      expect(byId['mike-garza']).toMatchObject({
         id: 'mike-garza',
         displayName: 'Mike Garza',
+        difficulties: ['easy', 'medium', 'hard'],
+      });
+      expect(byId['ksi-dave']).toMatchObject({
+        id: 'ksi-dave',
+        displayName: 'Dave Kowalski',
         difficulties: ['easy', 'medium', 'hard'],
       });
     });
@@ -109,6 +115,9 @@ describe('lib/personas', () => {
       process.env.VAPI_SIM_MIKE_GARZA_EASY_ID = 'e';
       process.env.VAPI_SIM_MIKE_GARZA_MEDIUM_ID = 'm';
       process.env.VAPI_SIM_MIKE_GARZA_HARD_ID = 'h';
+      process.env.VAPI_SIM_KSI_EASY_ID = 'ke';
+      process.env.VAPI_SIM_KSI_MEDIUM_ID = 'km';
+      process.env.VAPI_SIM_KSI_HARD_ID = 'kh';
       expect(validatePersonaConfig()).toBe(0);
     });
 
@@ -120,9 +129,87 @@ describe('lib/personas', () => {
       delete process.env.VAPI_SIM_MEDIUM_ID;
       delete process.env.VAPI_SIM_HARD_ID;
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      expect(validatePersonaConfig()).toBe(3);
-      expect(warn).toHaveBeenCalledTimes(3);
+      // 2 personas × 3 difficulties, all unresolved (assets all present).
+      expect(validatePersonaConfig()).toBe(6);
+      expect(warn).toHaveBeenCalledTimes(6);
       warn.mockRestore();
+    });
+
+    // Linus review #1 — a persona registered in personas.json but missing its
+    // greeting pool / base cockpit contact / prompt files must surface LOUD at
+    // boot, not silently mid-call (a missing greeting pool opens a call with the
+    // WRONG persona's identity). Pin that validatePersonaConfig counts each.
+    test('counts a persona with no greeting pool, no base contact, and no prompt files', () => {
+      const fs = require('fs');
+      const fakePersona = JSON.stringify([{
+        id: 'ghost',
+        displayName: 'Ghost',
+        role: 'Test fixture',
+        summary: 'Registered but has zero assets on disk / in greeting pools',
+        difficulties: ['easy'],
+        assistantEnvVars: { easy: 'VAPI_SIM_GHOST_EASY_ID' },
+      }]);
+      const realFs = jest.requireActual('fs');
+      const spy = jest.spyOn(fs, 'readFileSync').mockImplementation((p, ...rest) => {
+        if (String(p).endsWith('personas.json')) return fakePersona;
+        return realFs.readFileSync(p, ...rest);
+      });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        _resetCache();
+        process.env.VAPI_SIM_GHOST_EASY_ID = 'g'; // assistant slot resolves — isolate the asset checks
+        // Expect 3 misses: greeting pool, base contact json, prompt txt.
+        expect(validatePersonaConfig()).toBe(3);
+      } finally {
+        warn.mockRestore();
+        spy.mockRestore();
+        _resetCache();
+      }
+    });
+  });
+
+  describe('activePersonaId()', () => {
+    test('defaults to mike-garza when SIM_ACTIVE_PERSONA is unset', () => {
+      delete process.env.SIM_ACTIVE_PERSONA;
+      expect(activePersonaId()).toBe('mike-garza');
+    });
+
+    test('empty string is treated as unset', () => {
+      process.env.SIM_ACTIVE_PERSONA = '';
+      expect(activePersonaId()).toBe('mike-garza');
+    });
+
+    test('returns the env value when it names a known persona', () => {
+      process.env.SIM_ACTIVE_PERSONA = 'ksi-dave';
+      expect(activePersonaId()).toBe('ksi-dave');
+    });
+
+    test('falls back to mike-garza and warns once for an unknown persona', () => {
+      process.env.SIM_ACTIVE_PERSONA = 'nobody';
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(activePersonaId()).toBe('mike-garza');
+      expect(activePersonaId()).toBe('mike-garza');
+      expect(warn).toHaveBeenCalledTimes(1); // one-time warn
+      warn.mockRestore();
+    });
+  });
+
+  describe('getPersona()', () => {
+    test('returns the full record (incl. assistantEnvVars) for a known id', () => {
+      const p = getPersona('ksi-dave');
+      expect(p).toMatchObject({
+        id: 'ksi-dave',
+        displayName: 'Dave Kowalski',
+        assistantEnvVars: {
+          easy: 'VAPI_SIM_KSI_EASY_ID',
+          medium: 'VAPI_SIM_KSI_MEDIUM_ID',
+          hard: 'VAPI_SIM_KSI_HARD_ID',
+        },
+      });
+    });
+
+    test('returns undefined for an unknown id', () => {
+      expect(getPersona('who-dis')).toBeUndefined();
     });
   });
 });
