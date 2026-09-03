@@ -1,0 +1,133 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Dave Kowalski",
+    "email": "dave@midwestairpower.com",
+    "phone": "+13175551188",
+    "company": "Midwest Air Power",
+    "title": "Owner",
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": {
+      "summary": "22 years in compressed air. Bought Midwest Air Power from his old boss in 2015. Independent distributor + service shop — two locations (Indianapolis HQ + Fort Wayne), ~18 employees, 3 service trucks. Sells and services Kaishan rotary-screw compressors plus used/reman. Actively frustrated that he makes almost nothing on the dryers he drop-ships with every compressor package.",
+      "durationInRole": "11 years",
+      "durationInCompany": "11 years",
+      "pastExperience": "Service tech, then bought the business (2015)",
+      "connectionDegree": "2nd"
+    },
+    "fitScore": "91",
+    "fitReason": "Independent Kaishan distributor with no dryer/filtration line, actively fed up with drop-ship margins, no exclusive lock — ready-to-move treatment attach in KSI's open Midwest corridor",
+    "persona": "Distributor Owner",
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "Bought the business from his old boss in 2015 — self-made operator, respect it",
+      "Service-first shop — his reputation IS the business; a bad drop-shipped dryer is HIS callback",
+      "Just closed a Kaishan package and made nothing on the dryer that went with it — the pain is fresh",
+      "Independent, no Atlas Copco / Gardner Denver / Sullair exclusive — free and willing to add a line",
+      "Central Indiana into Ohio — exactly KSI's open Midwest corridor; lead-feed is a real promise"
+    ],
+    "intel_nuggets": [
+      "NO dryer/filtration line — drop-ships treatment at cost-plus-nothing. Last dryer he drop-shipped took 3 weeks and made him look bad. He wants a better answer NOW.",
+      "Sells & services Kaishan rotary screws — every compressor package is a treatment attach he's currently giving away.",
+      "Was burned by a manufacturer on backorders once — lead time and support are the thing he actually cares about. Answer it directly and you win.",
+      "Two locations, ~18 employees, 3 trucks, ~$6M revenue. Owner-operator — decides on the spot, no committee.",
+      "Not locked to any brand on treatment. If the margin and support are there, he'll carry the line."
+    ],
+    "opening_line": "Hey Dave — I work with independent distributors on the treatment side. I hear you're selling Kaishan compressors but drop-shipping the dryers. I think I can fix that.",
+    "adapted_script": "He's ALREADY frustrated about drop-ship margins — this call is timely. Talk to him as a distributor, never an end-user. Lead-feed and margin are the hooks; support/lead-time is the closer (it answers his backorder scar directly). Position ECOTROC KTA-S refrigerated dryers as the everyday attach on his Kaishan sales, ECOTROC DDAP desiccant as the higher-margin critical-air option, and ECOCLEAN APF filtration as the high-turn consumable pull-through. Make the treatment-attach math explicit: every compressor he already sells becomes a second, higher-margin line he OWNS. If he asks about lead time, support, or lead-feed — those are buying signals, close on them.",
+    "watch_outs": [
+      "He built this himself — talk peer-to-peer, don't be pushy",
+      "The drop-ship pain is fresh — don't waste his time, get to margin + support fast",
+      "Talk distributor economics, not end-user features",
+      "SCOPE: KSI's line here is dryers and filtration ONLY — keep the recommendation to those"
+    ],
+    "product_reference": [
+      "ECOTROC KTA-S — refrigerated dryers, 14 to ~1,890 CFM, ~$1,880 up to ~$47,000. The everyday attach on a Kaishan sale — real margin on a line he owns instead of a drop-shipped catalog dryer.",
+      "ECOTROC DDAP — desiccant dryers for low-dewpoint / critical air. Higher ticket, higher margin, the step up when refrigerated isn't enough.",
+      "ECOCLEAN APF — coalescing + particulate filtration, ~$155 to ~$709 per housing. High-turn consumable that re-orders on a cycle — recurring margin, not a one-time sale.",
+      "German-engineered — protects his service reputation; he eats the callback when a cheap dryer fails, so reliability IS margin for him.",
+      "THE PROGRAM for Dave: carry ECOTROC + ECOCLEAN as a treatment line he owns, attach it to every Kaishan compressor package, and take KSI's qualified Midwest lead-feed + co-marketing on top. Fixes the margin gap, the lead-time scar, and the empty half of every compressor sale in one move."
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": [
+      {
+        "channel": "email",
+        "summary": "Opened 'Stop drop-shipping your dryers — own the margin' email 5x in 2 hours — urgent interest",
+        "disposition": null,
+        "createdAt": "2026-03-31T14:00:00.000Z"
+      },
+      {
+        "channel": "email",
+        "summary": "Clicked the distributor margin/attach-rate calculator",
+        "disposition": null,
+        "createdAt": "2026-03-30T11:00:00.000Z"
+      },
+      {
+        "channel": "email",
+        "summary": "Opened 'KSI Distributor Program — Midwest' email 3x — strong interest",
+        "disposition": null,
+        "createdAt": "2026-03-28T16:00:00.000Z"
+      }
+    ]
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "midwestairpower.com",
+      "company_name": "Midwest Air Power",
+      "segment": "compressed_air_distributor",
+      "status": "enriched",
+      "discovery_source": "phantombuster_salesnav",
+      "created_at": "2026-02-26T12:00:00.000Z",
+      "enriched_at": "2026-02-28T12:00:00.000Z"
+    }
+  ],
+
+  "icpScore": {
+    "domain": "midwestairpower.com",
+    "fit_score": "91",
+    "fit_reason": "Independent Kaishan distributor, no dryer/filtration line, actively frustrated with drop-ship margins, no exclusive lock, central-Indiana-into-Ohio corridor — high-intent treatment attach",
+    "persona": "Distributor Owner",
+    "segment": "compressed_air_distributor"
+  },
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": true,
+      "company": true,
+      "title": true,
+      "linkedin": false
+    },
+    "validation_status": "valid",
+    "validated_at": "2026-03-30T12:00:00.000Z"
+  },
+
+  "emailEngagement": [
+    { "event_type": "open", "created_at": "2026-03-31T14:30:00.000Z", "campaign_name": "Own the Margin — Distributor Program" },
+    { "event_type": "open", "created_at": "2026-03-31T14:15:00.000Z", "campaign_name": "Own the Margin — Distributor Program" },
+    { "event_type": "open", "created_at": "2026-03-31T14:00:00.000Z", "campaign_name": "Own the Margin — Distributor Program" },
+    { "event_type": "click", "created_at": "2026-03-30T11:00:00.000Z", "campaign_name": "KSI Distributor Program" },
+    { "event_type": "open", "created_at": "2026-03-28T16:00:00.000Z", "campaign_name": "KSI Distributor Program" }
+  ],
+
+  "companyData": {
+    "name": "Midwest Air Power",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Indianapolis",
+    "state": "IN",
+    "numberofemployees": "18",
+    "annualrevenue": "$6M",
+    "company_vernacular": "Independent compressed-air distributor + service shop. Two locations (Indianapolis HQ + Fort Wayne). Sells & services Kaishan rotary screws. Service-first. No dryer/filtration line — drop-ships treatment at thin margin and just got burned on a 3-week lead time. Actively looking for a better answer."
+  }
+}

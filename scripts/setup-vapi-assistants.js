@@ -1,17 +1,26 @@
 #!/usr/bin/env node
 /**
  * One-time setup: provision a Twilio phone number, import it into Vapi,
- * and create 3 Mike Garza simulation assistants (easy/medium/hard).
+ * and create 3 simulation assistants (easy/medium/hard) for a persona.
  *
  * Usage:
- *   node scripts/setup-vapi-assistants.js
+ *   node scripts/setup-vapi-assistants.js [persona]
+ *     persona — a persona id from config/sim-personas/personas.json
+ *               (default: mike-garza). e.g. `node scripts/setup-vapi-assistants.js ksi-dave`
+ *   You can also set SIM_SETUP_PERSONA instead of the positional arg.
  *
  * Requires these env vars (from .env or exported):
  *   VAPI_API_KEY          — shared Vapi account key
  *   TWILIO_ACCOUNT_SID    — Twilio account SID
  *   TWILIO_AUTH_TOKEN      — Twilio auth token
  *
- * Outputs all env vars you need to add to .env / Render.
+ * Outputs all env vars you need to add to .env / Render. The assistant-id
+ * var NAMES come from the persona's `assistantEnvVars` in personas.json
+ * (e.g. VAPI_SIM_KSI_EASY_ID for ksi-dave), so they line up with what
+ * resolveAssistantId() reads at runtime.
+ *
+ * The Twilio number is shared across personas — provision it once (mike-garza
+ * run), then subsequent persona runs reuse SIM_PHONE_NUMBER / VAPI_PRACTICE_PHONE_ID.
  */
 
 const fs = require('fs');
@@ -20,6 +29,19 @@ const crypto = require('crypto');
 
 // Load .env from project root
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+// Persona selection (positional arg or SIM_SETUP_PERSONA, default mike-garza).
+const PERSONA_ID = process.argv[2] || process.env.SIM_SETUP_PERSONA || 'mike-garza';
+const PERSONAS = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'config', 'sim-personas', 'personas.json'), 'utf-8')
+);
+const PERSONA = PERSONAS.find((p) => p.id === PERSONA_ID);
+if (!PERSONA) {
+  console.error(`Unknown persona '${PERSONA_ID}'. Known: ${PERSONAS.map((p) => p.id).join(', ')}`);
+  process.exit(1);
+}
+// Shared greeting source of truth (server/lib/sim-greetings.js) — persona-keyed.
+const { pickGreeting } = require('../server/lib/sim-greetings');
 
 const VAPI_API_KEY = process.env.VAPI_API_KEY;
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -121,36 +143,8 @@ async function importNumberToVapi(phoneNumber) {
 }
 
 function loadPrompt(difficulty) {
-  const filePath = path.join(__dirname, '..', 'config', 'sim-personas', `mike-garza-${difficulty}.txt`);
+  const filePath = path.join(__dirname, '..', 'config', 'sim-personas', `${PERSONA_ID}-${difficulty}.txt`);
   return fs.readFileSync(filePath, 'utf-8');
-}
-
-// Greeting pools — randomized per call so reps don't memorize the opener.
-// The system prompt tells Mike NOT to generate a greeting (firstMessage handles it).
-const GREETING_POOLS = {
-  easy: [
-    "Garza Precision, this is Mike. What can I do for you?",
-    "Hey, Mike Garza.",
-    "This is Mike at Garza Precision, how can I help you?",
-    "Garza Precision, Mike speaking.",
-  ],
-  medium: [
-    "Yeah, this is Mike.",
-    "Mike speaking.",
-    "Garza Precision.",
-    "This is Mike.",
-  ],
-  hard: [
-    "Garza Precision.",
-    "Yeah.",
-    "Mike.",
-    "Hello???",
-  ],
-};
-
-function pickGreeting(difficulty) {
-  const pool = GREETING_POOLS[difficulty];
-  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 async function createAssistant(difficulty, voiceId, webhookSecret) {
@@ -158,7 +152,7 @@ async function createAssistant(difficulty, voiceId, webhookSecret) {
   const systemPrompt = loadPrompt(difficulty);
 
   const result = await vapiPost('assistant', {
-    name: `Mike Garza (${difficulty})`,
+    name: `${PERSONA.displayName} (${difficulty})`,
     model: {
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
@@ -173,7 +167,7 @@ async function createAssistant(difficulty, voiceId, webhookSecret) {
       useSpeakerBoost: false,
       inputPreprocessingEnabled: false,
     },
-    firstMessage: pickGreeting(difficulty),
+    firstMessage: pickGreeting(difficulty, PERSONA_ID),
     backgroundDenoisingEnabled: false,
     backgroundSound: 'off',
     endCallFunctionEnabled: true,
@@ -221,21 +215,24 @@ async function main() {
     console.log(`\n4. Generated webhook secret: ${webhookSecret}`);
   }
 
-  // Step 5: Check for existing assistants
-  const existingEasy = process.env.VAPI_SIM_EASY_ID;
-  const existingMedium = process.env.VAPI_SIM_MEDIUM_ID;
-  const existingHard = process.env.VAPI_SIM_HARD_ID;
+  // Step 5: Check for existing assistants (this persona's env-var names).
+  const EASY_VAR = PERSONA.assistantEnvVars.easy;
+  const MEDIUM_VAR = PERSONA.assistantEnvVars.medium;
+  const HARD_VAR = PERSONA.assistantEnvVars.hard;
+  const existingEasy = process.env[EASY_VAR];
+  const existingMedium = process.env[MEDIUM_VAR];
+  const existingHard = process.env[HARD_VAR];
   if (existingEasy || existingMedium || existingHard) {
     console.log('\n⚠  WARNING: Existing assistant IDs detected in env:');
-    if (existingEasy) console.log(`   VAPI_SIM_EASY_ID=${existingEasy}`);
-    if (existingMedium) console.log(`   VAPI_SIM_MEDIUM_ID=${existingMedium}`);
-    if (existingHard) console.log(`   VAPI_SIM_HARD_ID=${existingHard}`);
+    if (existingEasy) console.log(`   ${EASY_VAR}=${existingEasy}`);
+    if (existingMedium) console.log(`   ${MEDIUM_VAR}=${existingMedium}`);
+    if (existingHard) console.log(`   ${HARD_VAR}=${existingHard}`);
     console.log('   This script will create NEW assistants. Old ones will be orphaned in Vapi.');
     console.log('   Delete old assistants manually via Vapi dashboard or API.\n');
   }
 
   // Step 6: Create 3 assistants
-  console.log('\n5. Creating Vapi assistants...');
+  console.log(`\n5. Creating Vapi assistants for persona '${PERSONA_ID}' (${PERSONA.displayName})...`);
   const easyId = await createAssistant('easy', voiceId, webhookSecret);
   created.assistants.push({ difficulty: 'easy', id: easyId });
   const mediumId = await createAssistant('medium', voiceId, webhookSecret);
@@ -247,12 +244,17 @@ async function main() {
   console.log('\n=== Setup Complete ===\n');
   console.log('Add these to .env and Render:\n');
   console.log(`VAPI_WEBHOOK_SECRET=${webhookSecret}`);
-  console.log(`VAPI_SIM_EASY_ID=${easyId}`);
-  console.log(`VAPI_SIM_MEDIUM_ID=${mediumId}`);
-  console.log(`VAPI_SIM_HARD_ID=${hardId}`);
+  console.log(`${EASY_VAR}=${easyId}`);
+  console.log(`${MEDIUM_VAR}=${mediumId}`);
+  console.log(`${HARD_VAR}=${hardId}`);
   console.log(`SIM_ELEVENLABS_VOICE_ID=${voiceId}`);
   console.log(`SIM_PHONE_NUMBER=${simPhone}`);
   console.log(`VAPI_PRACTICE_PHONE_ID=${phoneNumberId}`);
+  if (PERSONA_ID !== 'mike-garza') {
+    console.log(`\n# To make this persona the active practice persona, also set:`);
+    console.log(`SIM_ACTIVE_PERSONA=${PERSONA_ID}`);
+    console.log(`# (Unset SIM_ACTIVE_PERSONA to revert to mike-garza.)`);
+  }
 }
 
 main().catch(err => {
