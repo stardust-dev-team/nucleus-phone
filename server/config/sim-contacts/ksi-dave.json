@@ -1,0 +1,126 @@
+{
+  "identity": {
+    "resolved": true,
+    "hubspotContactId": null,
+    "hubspotCompanyId": null,
+    "name": "Dave Kowalski",
+    "email": "dave@midwestairpower.com",
+    "phone": "+13175551188",
+    "company": "Midwest Air Power",
+    "title": "Owner",
+    "linkedinUrl": null,
+    "profileImage": null,
+    "pbContactData": {
+      "summary": "22 years in compressed air. Bought Midwest Air Power from his old boss in 2015. Runs an independent distributor + service shop — two locations (Indianapolis HQ + Fort Wayne satellite), ~18 employees, 3 service trucks. Sells and services Kaishan rotary-screw compressors plus used/reman equipment. Service is his differentiator.",
+      "durationInRole": "11 years",
+      "durationInCompany": "11 years",
+      "pastExperience": "Service tech, then bought the business (2015)",
+      "connectionDegree": "2nd"
+    },
+    "fitScore": "91",
+    "fitReason": "Independent compressed-air distributor, no exclusive lock, sells Kaishan compressors with no dedicated dryer/filtration line — greenfield treatment attach in KSI's open Midwest corridor",
+    "persona": "Distributor Owner",
+    "source": "simulation"
+  },
+
+  "rapport": {
+    "rapport_starters": [
+      "Bought the business from his old boss in 2015 — self-made, respect the operator",
+      "Service-first shop, not a box-mover — lead with respect for his service reputation",
+      "Sells Kaishan compressors — every compressor sale is a treatment attach he's leaving on the table",
+      "Independent, no Atlas Copco / Gardner Denver / Sullair exclusive — free to add a line",
+      "Central Indiana into Ohio — KSI's open Midwest corridor, lead-feed angle is real"
+    ],
+    "intel_nuggets": [
+      "No dedicated dryer/filtration line — drop-ships whatever's cheap when a compressor sale needs treatment. Thin margin, no relationship, no control over lead time.",
+      "Sells & services Kaishan rotary screws — the ECOTROC/ECOCLEAN line pairs naturally as a treatment attach on every compressor package.",
+      "Was burned by a manufacturer before (backorders blew up a big install) — lead times and support are a scar. Answer it directly.",
+      "Two locations, ~18 employees, 3 trucks, ~$6M revenue. Owner-operator — he makes the call, no committee.",
+      "Territory is central Indiana into Ohio — the exact Midwest corridor KSI is building out. Lead-feed + co-marketing is a live promise, not fluff."
+    ],
+    "opening_line": "Hey Dave, I work with independent distributors on the air-treatment side — I had a question about how you handle dryers and filtration on your Kaishan compressor sales.",
+    "adapted_script": "This is a DISTRIBUTOR recruitment call — talk to him like a distributor, never an end-user. Lead with the gap: he sells Kaishan compressors but has no dryer/filtration line, so he drop-ships treatment at almost zero margin. Frame KSI as (1) real margin on a line he OWNS, (2) German engineering that protects his service reputation, (3) qualified lead-feed + co-marketing in his central-Indiana-into-Ohio corridor, (4) responsive support and honest lead times — this directly answers his backorder scar, (5) a treatment attach on every compressor he already sells. Products: ECOTROC KTA-S refrigerated dryers, ECOTROC DDAP desiccant, ECOCLEAN APF filtration. Avoid: sounding scripted, corporate fluff, or pitching him like he's buying one dryer.",
+    "watch_outs": [
+      "He built this up himself — respect his independence, don't be pushy",
+      "Been burned on backorders — lead time and support are the objection under every other objection. Answer it head-on.",
+      "Talk distributor economics (margin vs drop-ship), not end-user features — treating him like a buyer of one unit loses him",
+      "SCOPE: KSI's line here is dryers and filtration ONLY — keep the recommendation to those"
+    ],
+    "product_reference": [
+      "ECOTROC KTA-S — refrigerated dryers, 14 to ~1,890 CFM, ~$1,880 up to ~$47,000. The everyday attach on a Kaishan compressor sale — real margin on a line he owns vs. a drop-shipped catalog dryer.",
+      "ECOTROC DDAP — desiccant dryers for low-dewpoint / critical air. Higher ticket, higher margin, the answer when a refrigerated dryer isn't enough.",
+      "ECOCLEAN APF — coalescing + particulate filtration, ~$155 to ~$709 per housing. High-turn consumable pull-through — filters follow every dryer and re-order on a cycle.",
+      "German-engineered treatment — protects his service reputation; he's the one who eats the callback when a cheap drop-shipped dryer fails.",
+      "The program, not just the product: KSI feeds qualified leads + co-markets in his Midwest corridor and supports honest lead times — the direct answer to his backorder scar."
+    ],
+    "fallback": false
+  },
+
+  "interactionHistory": {
+    "interactions": [
+      {
+        "channel": "email",
+        "summary": "Opened 'KSI Distributor Program — Midwest' email 3x — strong interest",
+        "disposition": null,
+        "createdAt": "2026-03-25T12:00:00.000Z"
+      },
+      {
+        "channel": "email",
+        "summary": "Clicked link to the distributor margin/attach-rate one-pager",
+        "disposition": null,
+        "createdAt": "2026-03-23T12:00:00.000Z"
+      }
+    ]
+  },
+
+  "priorCalls": [],
+
+  "pipelineData": [
+    {
+      "domain": "midwestairpower.com",
+      "company_name": "Midwest Air Power",
+      "segment": "compressed_air_distributor",
+      "status": "enriched",
+      "discovery_source": "phantombuster_salesnav",
+      "created_at": "2026-02-26T12:00:00.000Z",
+      "enriched_at": "2026-02-28T12:00:00.000Z"
+    }
+  ],
+
+  "icpScore": {
+    "domain": "midwestairpower.com",
+    "fit_score": "91",
+    "fit_reason": "Independent compressed-air distributor + service shop, sells Kaishan compressors, no dedicated dryer/filtration line, no exclusive lock, central-Indiana-into-Ohio corridor — greenfield treatment attach in KSI's open Midwest territory",
+    "persona": "Distributor Owner",
+    "segment": "compressed_air_distributor"
+  },
+
+  "qaIntel": {
+    "fields_available": {
+      "phone": true,
+      "email": true,
+      "company": true,
+      "title": true,
+      "linkedin": false
+    },
+    "validation_status": "valid",
+    "validated_at": "2026-03-01T12:00:00.000Z"
+  },
+
+  "emailEngagement": [
+    { "event_type": "open", "created_at": "2026-03-25T14:00:00.000Z", "campaign_name": "KSI Distributor Program" },
+    { "event_type": "open", "created_at": "2026-03-25T10:00:00.000Z", "campaign_name": "KSI Distributor Program" },
+    { "event_type": "open", "created_at": "2026-03-24T16:00:00.000Z", "campaign_name": "KSI Distributor Program" },
+    { "event_type": "click", "created_at": "2026-03-23T11:00:00.000Z", "campaign_name": "KSI Distributor Program" }
+  ],
+
+  "companyData": {
+    "name": "Midwest Air Power",
+    "industry": "Industrial Machinery & Equipment",
+    "city": "Indianapolis",
+    "state": "IN",
+    "numberofemployees": "18",
+    "annualrevenue": "$6M",
+    "company_vernacular": "Independent compressed-air distributor + service shop. Two locations (Indianapolis HQ + Fort Wayne). Sells & services Kaishan rotary-screw compressors + used/reman. Service-first, not a box-mover. No dedicated dryer/filtration line — drop-ships treatment at thin margin."
+  }
+}

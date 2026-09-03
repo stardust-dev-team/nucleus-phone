@@ -177,7 +177,7 @@ function AppContent() {
               role={role}
               callState={callState}
               twilioStatus={twilioHook.status}
-              forcedId="sim-mike-garza"
+              forcedId="sim-active"
             />
           }
         />
