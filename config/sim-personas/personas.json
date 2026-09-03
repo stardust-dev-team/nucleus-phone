@@ -10,5 +10,17 @@
       "medium": "VAPI_SIM_MIKE_GARZA_MEDIUM_ID",
       "hard": "VAPI_SIM_MIKE_GARZA_HARD_ID"
     }
+  },
+  {
+    "id": "ksi-dave",
+    "displayName": "Dave Kowalski",
+    "role": "Compressed-air distributor owner, Indianapolis IN",
+    "summary": "Owner of Midwest Air Power, an independent compressed-air distributor + service shop. Sells Kaishan rotary-screw compressors but has no dedicated dryer/filtration line — drop-ships treatment at thin margin. KSI distributor-recruitment target.",
+    "difficulties": ["easy", "medium", "hard"],
+    "assistantEnvVars": {
+      "easy": "VAPI_SIM_KSI_EASY_ID",
+      "medium": "VAPI_SIM_KSI_MEDIUM_ID",
+      "hard": "VAPI_SIM_KSI_HARD_ID"
+    }
   }
 ]
