@@ -76,6 +76,17 @@ body {
   box-shadow: var(--aunshin-shadow-sodium-glow);
 }
 
+/* ── Live-call two-channel canon (§F1 v2, mirrors aunshin-brand-kit typography.css) ──
+   cockpit->Tom (operator, read silently) is sans; Tom->them (spoken aloud to the
+   counterparty) is Newsreader serif. See docs/design/two-font-canon.md (aunshin-copilot)
+   and aunshin-brand-kit README.md "Live-call two-channel canon". */
+.aunshin-operator {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.aunshin-spoken {
+  font-family: 'Newsreader', Georgia, serif;
+}
+
 /* ── Display type utility — Aunshin wordmark settings ── */
 .aunshin-display {
   font-family: 'Fraunces', Georgia, serif;
