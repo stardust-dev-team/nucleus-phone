@@ -35,9 +35,13 @@ export default function SuggestionCard({ suggestion }) {
       data-trigger={trigger}
     >
       <div className="flex-1 min-w-0">
+        {/* Tom->them channel (§F1 v2 two-font canon): words meant to be spoken
+            aloud to the counterparty render in Newsreader serif, matching
+            aunshin-copilot's HeroCard `say`-beat treatment. */}
         <p
-          className="text-[13px] leading-[1.4]"
+          className="aunshin-spoken text-[13px] leading-[1.4]"
           style={{ color: 'var(--cockpit-text)' }}
+          data-channel="spoken"
         >
           {suggestion.text}
         </p>

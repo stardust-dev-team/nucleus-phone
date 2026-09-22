@@ -65,6 +65,12 @@ export default function useLiveAnalysis(callId, enabled = true) {
   const [suggestionHistory, setSuggestionHistory] = useState([]); // last 5 suggestions
   const [objection, setObjection] = useState(null);         // { objection, rebuttal }
   const [navigatorStatus, setNavigatorStatus] = useState('ok');
+  // coach_whisper: cockpit->Tom pacing nudges (§F1 v2 two-font canon — sans,
+  // never spoken to the counterparty). Own history array, same last-5
+  // accumulation shape as suggestionHistory, but never conflated with it —
+  // the whisper channel and the response_suggestion channel render in
+  // different fonts (see LiveContainer.jsx).
+  const [whisperHistory, setWhisperHistory] = useState([]);
 
   const wsRef = useRef(null);
   const retriesRef = useRef(0);
@@ -74,6 +80,7 @@ export default function useLiveAnalysis(callId, enabled = true) {
 
   const seenRef = useRef(new Set());
   const suggestionSeqRef = useRef(0);
+  const whisperSeqRef = useRef(0);
 
   // Navigator refs — mutated by WS messages without triggering re-renders.
   // The `transcript_chunk` handler reads `.current` to do Tier 0 matching.
@@ -90,6 +97,7 @@ export default function useLiveAnalysis(callId, enabled = true) {
     setSuggestionHistory([]);
     setObjection(null);
     setNavigatorStatus('ok');
+    setWhisperHistory([]);
     // jsec-z4ff: clear the denial too. Every other field resets on a callId
     // change; leaving this one set would show "no access" on the NEXT call.
     setAccessDenied(null);
@@ -185,6 +193,12 @@ export default function useLiveAnalysis(callId, enabled = true) {
           case 'objection_detected':
             if (msg.data) setObjection(msg.data);
             return;
+          case 'coach_whisper':
+            if (msg.data) {
+              const entry = { ...msg.data, _seq: ++whisperSeqRef.current };
+              setWhisperHistory(prev => [...prev.slice(-4), entry]);
+            }
+            return;
           case 'prediction_loaded':
             // Replace entirely (null allowed) — prevents stale cross-cycle matches
             predictionRef.current = msg.data || null;
@@ -257,5 +271,6 @@ export default function useLiveAnalysis(callId, enabled = true) {
   return {
     equipment, sizing, recommendation, connected, accessDenied,
     phase, sentiment, suggestionHistory, objection, navigatorStatus,
+    whisperHistory,
   };
 }

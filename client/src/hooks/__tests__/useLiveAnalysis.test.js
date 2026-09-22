@@ -7,7 +7,8 @@
  * drift; today the server always sends history.
  */
 
-import { mergeSentimentUpdate, normalizeForPredictionMatch } from '../useLiveAnalysis';
+import { renderHook, act } from '@testing-library/react';
+import useLiveAnalysis, { mergeSentimentUpdate, normalizeForPredictionMatch } from '../useLiveAnalysis';
 import { SENTIMENT_HISTORY_MAX } from '../../components/cockpit/navigator-constants';
 
 describe('mergeSentimentUpdate', () => {
@@ -144,5 +145,90 @@ describe('normalizeForPredictionMatch', () => {
       const twice = normalizeForPredictionMatch(once);
       expect(twice).toBe(once);
     }
+  });
+});
+
+/**
+ * WS `coach_whisper` handling (bead copilot-699).
+ *
+ * The server (server/lib/coach-whisper.js -> conversation-pipeline.js)
+ * broadcasts `{type: 'coach_whisper', data: {...}}` over the same socket
+ * as `response_suggestion`, but the hook's onmessage switch had no case
+ * for it — it fell through to `default: return` and was silently dropped.
+ * These tests prove the case exists, routes into its own `whisperHistory`
+ * state (never conflated with `suggestionHistory` — separate two-font-canon
+ * channels, see LiveContainer.jsx), and caps at the same last-5 window as
+ * suggestionHistory.
+ */
+class MockWebSocket {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    MockWebSocket.instances.push(this);
+  }
+  send() {}
+  close(code, reason) {
+    this.readyState = 3;
+    if (this.onclose) this.onclose({ code, reason });
+  }
+}
+MockWebSocket.instances = [];
+
+describe('useLiveAnalysis — coach_whisper WS handling', () => {
+  const originalWebSocket = global.WebSocket;
+
+  beforeEach(() => {
+    MockWebSocket.instances = [];
+    global.WebSocket = MockWebSocket;
+  });
+
+  afterEach(() => {
+    global.WebSocket = originalWebSocket;
+  });
+
+  function openSocket(result) {
+    const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+    act(() => { ws.onopen(); });
+    return ws;
+  }
+
+  function sendMessage(ws, msg) {
+    act(() => { ws.onmessage({ data: JSON.stringify(msg) }); });
+  }
+
+  test('coach_whisper is stored in whisperHistory, not dropped', () => {
+    const { result } = renderHook(() => useLiveAnalysis('call-123', true));
+    const ws = openSocket(result);
+
+    sendMessage(ws, {
+      type: 'coach_whisper',
+      data: { source: 'ai', author_name: 'Aunshin Coach', text: 'Slow down on price.', ts: '2026-09-21T00:00:00.000Z' },
+    });
+
+    expect(result.current.whisperHistory).toHaveLength(1);
+    expect(result.current.whisperHistory[0].text).toBe('Slow down on price.');
+    expect(result.current.whisperHistory[0]).toHaveProperty('_seq');
+  });
+
+  test('coach_whisper never lands in suggestionHistory — separate channel', () => {
+    const { result } = renderHook(() => useLiveAnalysis('call-456', true));
+    const ws = openSocket(result);
+
+    sendMessage(ws, { type: 'coach_whisper', data: { text: 'Let them finish.' } });
+
+    expect(result.current.suggestionHistory).toHaveLength(0);
+    expect(result.current.whisperHistory).toHaveLength(1);
+  });
+
+  test('whisperHistory caps at the last 5 entries, like suggestionHistory', () => {
+    const { result } = renderHook(() => useLiveAnalysis('call-789', true));
+    const ws = openSocket(result);
+
+    for (let i = 0; i < 7; i++) {
+      sendMessage(ws, { type: 'coach_whisper', data: { text: `whisper ${i}` } });
+    }
+
+    expect(result.current.whisperHistory).toHaveLength(5);
+    expect(result.current.whisperHistory[4].text).toBe('whisper 6');
   });
 });

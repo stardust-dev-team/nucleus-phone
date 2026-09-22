@@ -39,6 +39,13 @@ export default function LiveContainer({ data, active, contact, callId, isPractic
     );
   }
 
+  // coach_whisper (§F1 v2 two-font canon): cockpit->Tom pacing nudge, read
+  // silently, never spoken to the counterparty — renders sans, as a passive
+  // corner panel (per coach-whisper.js's design intent), not a hero card.
+  // Only the latest whisper is shown; older ones are superseded, not history.
+  const whisperHistory = safe.whisperHistory || [];
+  const latestWhisper = whisperHistory.length > 0 ? whisperHistory[whisperHistory.length - 1] : null;
+
   return (
     <div className="flex flex-col gap-0 min-h-0">
       <LiveAnalysis
@@ -48,6 +55,19 @@ export default function LiveContainer({ data, active, contact, callId, isPractic
         callId={callId}
         isPractice={isPractice}
       />
+      {latestWhisper && (
+        <div
+          className="aunshin-operator px-3 py-1.5 text-[12px]"
+          style={{
+            color: 'var(--cockpit-text-secondary)',
+            borderTop: '1px solid var(--cockpit-card-border)',
+          }}
+          role="status"
+          data-channel="operator"
+        >
+          {latestWhisper.text}
+        </div>
+      )}
       {navigatorEnabled && (
         <ConversationNavigator
           phase={safe.phase}
