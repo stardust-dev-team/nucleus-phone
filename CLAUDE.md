@@ -128,6 +128,10 @@ Jest + supertest. Config: `jest.config.js`. Tests in `server/lib/__tests__/` and
 - `server/routes/signals.js` — proxies to multichannel API. CRITICAL: /pipeline route MUST be before /:domain (Express route ordering)
 - Env: MULTICHANNEL_API_URL, MC_API_KEY
 
-## Follow-ups — HARD RULE
+## Follow-ups
 
-Never offer `/schedule` (or `/loop`, `CronCreate`, `ScheduleWakeup`) for one-off end-of-session checks — the global `~/.claude/CLAUDE.md` rule. Approved method: append to `FOLLOWUPS.md` at the repo root (format at its top); read it at session start, append at end-of-session when a later verification is needed. `/schedule` stays acceptable only for recurring routines Tom already endorsed.
+Scheduling is allowed. Offer `/schedule`, `/loop` or a cron/wakeup when a follow-up genuinely
+fits one, with a self-contained prompt. `FOLLOWUPS.md` (format at its top) stays an optional home for
+follow-ups that need a human decision or have no clean schedule; read it at the start of any session
+its entries might affect, and mention any new entry in the session summary. See `~/.claude/CLAUDE.md`
+"Follow-ups (cross-project)".
