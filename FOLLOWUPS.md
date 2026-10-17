@@ -2,13 +2,12 @@
 
 Repo-local log of "verify this in a few hours/days when X completes" follow-up tasks. Read at the start of any session that might be affected by a pending follow-up; append at end-of-session when a check is needed but you're not landing it now.
 
-## Why this file exists, not `/schedule`
+## Why this file exists
 
-`~/.claude/CLAUDE.md` "Follow-ups — HARD RULE" forbids offering `/schedule` (or any auto-fire mechanism: `/loop`, `CronCreate`, `ScheduleWakeup`) for one-off "verify in N days" follow-ups. Pattern was tried four times on `joruva-dialer-mac` and never worked: by the time a scheduled run fires, context has drifted, the original judgment for *why* the check matters is lost, and the agent either no-ops or files spurious issues.
-
-This file is the documented escape hatch. A future session reading the entry has the same context the originating session had.
-
-`/schedule` is still acceptable for proactive recurring routines Tom has already endorsed (e.g. weekly triage). Don't pitch it for end-of-session "verify this later" checks.
+A durable, repo-local home for follow-ups that need a human decision or have no clean
+schedule; a future session reading the entry has the same context the originating session
+had. When a follow-up genuinely fits a timer (a dated check, a soak window), `/schedule` or
+`/loop` is fine too. See `~/.claude/CLAUDE.md` "Follow-ups (cross-project)".
 
 ## Format
 
