@@ -28,18 +28,34 @@ describe('push-credential-cache', () => {
     expect(cache.get(2)).toBe('CRtwo');
   });
 
-  test('expired entries miss and are evicted', () => {
-    cache._reset(50); // 50ms TTL for fast test
-    cache.set(1, 'CRprod123');
-    expect(cache.get(1)).toBe('CRprod123');
-    expect(cache._size()).toBe(1);
+  // Fake clock, not real sleeps: a wall-clock setTimeout race flaked under the full suite (jsec-oo8u). The module reads
+  // Date.now(), which jest's modern fake timers control.
+  describe('with a fake clock', () => {
+    beforeEach(() => { jest.useFakeTimers(); });
+    afterEach(() => { jest.useRealTimers(); });
 
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        expect(cache.get(1)).toBeUndefined();
-        expect(cache._size()).toBe(0);
-        resolve();
-      }, 60);
+    test('expired entries miss and are evicted', () => {
+      cache._reset(50);
+      cache.set(1, 'CRprod123');
+      expect(cache.get(1)).toBe('CRprod123');
+      expect(cache._size()).toBe(1);
+
+      jest.advanceTimersByTime(49);
+      expect(cache.get(1)).toBe('CRprod123');   // one ms inside the TTL: still a hit
+      jest.advanceTimersByTime(1);
+      expect(cache.get(1)).toBeUndefined();     // expiresAt <= now: expired at exactly the TTL
+      expect(cache._size()).toBe(0);
+    });
+
+    test('set on existing user_id refreshes TTL', () => {
+      cache._reset(50);
+      cache.set(1, 'CRold');                    // would expire at t=50
+      jest.advanceTimersByTime(30);
+      cache.set(1, 'CRnew');                    // refreshed: expires at t=80
+      jest.advanceTimersByTime(30);             // t=60: past the OLD expiry, inside the new one
+      expect(cache.get(1)).toBe('CRnew');
+      jest.advanceTimersByTime(20);             // t=80: expires at refresh-time + TTL, not old-expiry + TTL
+      expect(cache.get(1)).toBeUndefined();
     });
   });
 
@@ -66,21 +82,6 @@ describe('push-credential-cache', () => {
     cache.set(1, '');
     expect(cache.get(1)).toBeUndefined();
     expect(cache._size()).toBe(0);
-  });
-
-  test('set on existing user_id refreshes TTL', () => {
-    cache._reset(50);
-    cache.set(1, 'CRold');
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        cache.set(1, 'CRnew');
-        // Should still be present after another 30ms (well within new TTL)
-        setTimeout(() => {
-          expect(cache.get(1)).toBe('CRnew');
-          resolve();
-        }, 30);
-      }, 30);
-    });
   });
 });
 
